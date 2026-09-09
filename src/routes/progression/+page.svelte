@@ -42,6 +42,12 @@
 	// Arbre affiché : parcours d'intégration (4 étapes) ou tram de prospection (7 étapes).
 	let treeKey = $state<TreeKey>('integration');
 	const currentTree = $derived(TREES.find((t) => t.key === treeKey) ?? TREES[0]);
+	// Les formations (technique / commercial) listent les 14 familles du catalogue :
+	// rendues en grille avec un rond par élément (un arbre horizontal de 14 nœuds
+	// serait illisible).
+	const isGridTree = $derived(
+		treeKey === 'formation_technique' || treeKey === 'formation_theorique'
+	);
 
 	// Tous les arbres sont chargés en une requête pour afficher l'avancement
 	// (et la validation) de chaque catégorie dans les onglets.
@@ -193,12 +199,84 @@
 						{toggleError}
 					</p>
 				{/if}
-				<ProgressionTree
-					steps={currentTree.steps}
-					validated={validatedByTree[treeKey] ?? []}
-					{canEdit}
-					onToggle={handleToggle}
-				/>
+				{#if isGridTree}
+					{@const done = validatedByTree[treeKey]?.length ?? 0}
+					<div class="w-full max-w-2xl">
+						<div class="flex items-center justify-between text-[12px]">
+							<span class="font-semibold text-foreground">Progression</span>
+							<span class="font-medium text-muted-foreground">
+								{done}/{currentTree.steps.length} élément{done > 1 ? 's' : ''} validé{done > 1 ? 's' : ''}
+							</span>
+						</div>
+						<div class="mt-2 h-2 overflow-hidden rounded-full bg-card2">
+							<div
+								class="h-full rounded-full bg-linear-to-r from-emerald-400 to-emerald-600 transition-all duration-500"
+								style={`width:${(done / currentTree.steps.length) * 100}%`}
+							></div>
+						</div>
+						{#if canEdit}
+							<p class="mt-2 text-[11px] text-muted-foreground">
+								Clique sur un rond pour valider la formation — reclique pour la retirer.
+							</p>
+						{/if}
+					</div>
+
+					<!-- Un rond par élément : familles du catalogue (même liste que le
+					     select « Projet » du nouveau contact) ou modules de vente. -->
+					<div class="grid w-full max-w-2xl grid-cols-1 gap-2 sm:grid-cols-2">
+						{#each currentTree.steps as step}
+							{@const active = (validatedByTree[treeKey] ?? []).includes(step.key)}
+							<button
+								type="button"
+								disabled={!canEdit}
+								onclick={() => handleToggle(step.key)}
+								title={canEdit
+									? active
+										? `Retirer « ${step.label} »`
+										: `Valider « ${step.label} »`
+									: step.label}
+								class={[
+									'flex items-center gap-3 rounded-xl border px-3.5 py-2.5 text-left transition-all duration-150',
+									canEdit
+										? 'cursor-pointer hover:border-emerald-500/50 hover:bg-emerald-500/5'
+										: 'cursor-default',
+									active
+										? 'border-emerald-500/50 bg-emerald-500/10'
+										: 'border-line bg-card2/40'
+								].join(' ')}
+							>
+								<span
+									class={[
+										'grid size-6 shrink-0 place-items-center rounded-full border-2 transition-all duration-150',
+										active
+											? 'border-emerald-500 bg-emerald-500 text-white shadow-md shadow-emerald-900/40'
+											: 'border-line bg-base'
+									].join(' ')}
+								>
+									{#if active}
+										<Check class="size-3.5" strokeWidth={3.5} />
+									{/if}
+								</span>
+								<span
+									class={[
+										'text-[12.5px] leading-snug font-medium',
+										active ? 'text-foreground' : 'text-muted-foreground'
+									].join(' ')}
+								>
+									<span class="mr-1.5 text-[13px]">{step.emoji}</span>
+									{step.label}
+								</span>
+							</button>
+						{/each}
+					</div>
+				{:else}
+					<ProgressionTree
+						steps={currentTree.steps}
+						validated={validatedByTree[treeKey] ?? []}
+						{canEdit}
+						onToggle={handleToggle}
+					/>
+				{/if}
 			{/if}
 		</CardContent>
 	</Card>

@@ -3,6 +3,7 @@
 	import {
 		Bot,
 		BarChart3,
+		Calculator,
 		CalendarDays,
 		Clock,
 		Contact,
@@ -51,6 +52,7 @@
 	const icons: Record<string, Component> = {
 		dashboard: LayoutDashboard,
 		calendar: CalendarDays,
+		calculator: Calculator,
 		agents: Bot,
 		backend: Server,
 		telegram: Send,

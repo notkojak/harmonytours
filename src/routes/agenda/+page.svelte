@@ -560,8 +560,10 @@
 				type: 'rdv',
 				date,
 				time: time ?? contact.followUp?.time ?? undefined,
-				// On conserve le commercial rattaché et le statut du RDV déplacé.
+				// On conserve le commercial rattaché, le type (motif) et le statut du
+				// RDV déplacé.
 				commercial: contact.followUp?.commercial ?? undefined,
+				motif: contact.followUp?.motif ?? undefined,
 				status:
 					(contact.followUp?.status as 'annulé' | 'déballé' | 'vendu' | undefined) ?? undefined
 			}
@@ -623,33 +625,42 @@
 		canCreateEvents ? 'cursor-grab touch-none active:cursor-grabbing' : 'cursor-pointer';
 
 	// Couleurs du RDV selon son statut : bleu (en attente), violet (déballé),
-	// rouge (annulé), vert (vendu).
-	const rdvStatusClass = (status: string | null | undefined) =>
+	// rouge (annulé), vert (vendu). Un RDV « Confortation » ou « Gestion
+	// dossier » encore programmé s'affiche en violet comme une réunion.
+	const rdvStatusClass = (status: string | null | undefined, motif?: string | null | undefined) =>
 		status === 'déballé'
 			? 'bg-violet-500/15 text-violet-400 hover:bg-violet-500/25 light:bg-violet-500/15 light:text-violet-700 light:hover:bg-violet-500/25'
 			: status === 'annulé'
 				? 'bg-red-500/15 text-red-400 hover:bg-red-500/25 light:bg-red-500/15 light:text-red-700 light:hover:bg-red-500/25'
 				: status === 'vendu'
 					? 'bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 light:bg-emerald-500/15 light:text-emerald-700 light:hover:bg-emerald-500/25'
-					: 'bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 light:bg-blue-500/15 light:text-blue-700 light:hover:bg-blue-500/25';
+					: motif === 'confortation' || motif === 'gestion'
+						? 'bg-violet-500/15 text-violet-400 hover:bg-violet-500/25 light:bg-violet-500/15 light:text-violet-700 light:hover:bg-violet-500/25'
+						: 'bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 light:bg-blue-500/15 light:text-blue-700 light:hover:bg-blue-500/25';
 
-	const rdvGhostClass = (status: string | null | undefined) =>
+	const rdvGhostClass = (status: string | null | undefined, motif?: string | null | undefined) =>
 		status === 'déballé'
 			? 'border-violet-500/60 bg-violet-500/10 text-violet-400/70 light:text-violet-700/80'
 			: status === 'annulé'
 				? 'border-red-500/60 bg-red-500/10 text-red-400/70 light:text-red-700/80'
 				: status === 'vendu'
 					? 'border-emerald-500/60 bg-emerald-500/10 text-emerald-400/70 light:text-emerald-700/80'
-					: 'border-blue-500/60 bg-blue-500/10 text-blue-400/70 light:text-blue-700/80';
+					: motif === 'confortation' || motif === 'gestion'
+						? 'border-violet-500/60 bg-violet-500/10 text-violet-400/70 light:text-violet-700/80'
+						: 'border-blue-500/60 bg-blue-500/10 text-blue-400/70 light:text-blue-700/80';
 
-	const rdvStatusLabel = (status: string | null | undefined) =>
+	const rdvStatusLabel = (status: string | null | undefined, motif?: string | null | undefined) =>
 		status === 'déballé'
 			? 'Déballé'
 			: status === 'annulé'
 				? 'Annulé'
 				: status === 'vendu'
 					? 'Vendu'
-					: 'En attente';
+					: motif === 'confortation'
+						? 'Confortation'
+						: motif === 'gestion'
+							? 'Gestion dossier'
+							: 'En attente';
 
 	// Prénoms des commerciaux liés (la valeur peut contenir plusieurs noms,
 	// séparés par « et » ou par une virgule).
@@ -875,7 +886,10 @@
 										class={[
 											'pointer-events-none absolute right-1 left-1 z-0 flex flex-col items-start gap-1 overflow-hidden rounded-md border border-dashed px-2 py-1.5',
 											dragBlock.kind === 'rdv'
-												? rdvGhostClass(dragBlock.rdv.followUp?.status)
+												? rdvGhostClass(
+														dragBlock.rdv.followUp?.status,
+														dragBlock.rdv.followUp?.motif
+													)
 												: (EVENT_STYLE[dragBlock.evenement.type] ?? EVENT_STYLE.gestion)
 										].join(' ')}
 										style={`top:${dragTarget.slot * ROW_H}px;height:${Math.min(
@@ -913,7 +927,7 @@
 											}}
 											class={[
 												chipWeek,
-												rdvStatusClass(rdv.followUp?.status),
+												rdvStatusClass(rdv.followUp?.status, rdv.followUp?.motif),
 												chipCursor(rdv),
 												dragBlock?.kind === 'rdv' && dragBlock.rdv._id === rdv._id
 													? 'opacity-40'
@@ -969,11 +983,11 @@
 														{rdvCommercialLabel(rdv)}
 													</span>
 												{/if}
-												{#if rdv.followUp?.status}
+												{#if rdv.followUp?.status || rdv.followUp?.motif}
 													<span
 														class="hidden w-full truncate text-[10px] font-normal opacity-80 sm:block"
 													>
-														{rdvStatusLabel(rdv.followUp.status)}
+														{rdvStatusLabel(rdv.followUp?.status, rdv.followUp?.motif)}
 													</span>
 												{/if}
 											{:else}
@@ -1169,7 +1183,7 @@
 												class={[
 													chipMonth,
 													'flex-col',
-													rdvStatusClass(rdv.followUp?.status),
+													rdvStatusClass(rdv.followUp?.status, rdv.followUp?.motif),
 													chipCursor(rdv)
 												].join(' ')}
 												title={`${rdv.name}${rdv.projet ? ` — ${rdv.projet}` : ''}${

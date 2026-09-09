@@ -66,6 +66,10 @@
 	const now = new Date();
 	let followUpDate = $state(new CalendarDate(now.getFullYear(), now.getMonth() + 1, now.getDate()));
 
+	// L'agenda (web et mobile) affiche du lundi au samedi : un RDV un dimanche
+	// serait invisible. On interdit la saisie d'un dimanche pour un RDV.
+	const isSunday = (date: DateValue) => date.toDate(getLocalTimeZone()).getDay() === 0;
+
 	const formattedDate = $derived(
 		followUpDate.toDate(getLocalTimeZone()).toLocaleDateString('fr-FR', {
 			weekday: 'short',
@@ -91,6 +95,26 @@
 		event.preventDefault();
 		if (!name.trim()) {
 			error = 'Le nom du contact est requis.';
+			return;
+		}
+		if (!source) {
+			error = 'La source est requise.';
+			return;
+		}
+		if (!address.trim()) {
+			error = "L'adresse est requise.";
+			return;
+		}
+		if (!phone.trim()) {
+			error = 'Le numéro de téléphone est requis.';
+			return;
+		}
+		if (!projet) {
+			error = 'Le projet est requis.';
+			return;
+		}
+		if (followUpType === 'rdv' && isSunday(followUpDate)) {
+			error = 'Les RDV ne peuvent pas être planifiés un dimanche.';
 			return;
 		}
 		busy = true;
@@ -126,13 +150,13 @@
 	>
 		<DialogHeader>
 			<DialogTitle class="flex items-center gap-2.5 text-[15px] font-semibold">
-			<span
-				class="grid size-8 place-items-center rounded-lg border border-line bg-card2 text-muted-foreground"
-			>
-				<UserPlus class="size-4" strokeWidth={1.7} />
-			</span>
-			Nouveau contact
-		</DialogTitle>
+				<span
+					class="grid size-8 place-items-center rounded-lg border border-line bg-card2 text-muted-foreground"
+				>
+					<UserPlus class="size-4" strokeWidth={1.7} />
+				</span>
+				Nouveau contact
+			</DialogTitle>
 		</DialogHeader>
 
 		<form onsubmit={handleSubmit} class="space-y-4">
@@ -221,19 +245,20 @@
 					<div
 						class="relative inline-grid grid-cols-2 gap-1 rounded-xl border border-line bg-card2/60 p-0.5"
 					>
-					<button
-						type="button"
-						onclick={() => (followUpType = 'rdv')}
-						class={[
-							'flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition-all',
-							followUpType === 'rdv'
-								? 'bg-primary text-primary-foreground shadow-md shadow-primary/25'
-								: 'text-muted-foreground hover:bg-primary/10 hover:text-violet-200 light:hover:text-violet-600'
-						].join(' ')}
-					>
-						<span class="text-[13px] leading-none">📅</span>
-						Ajouter un RDV
-					</button>						<button
+						<button
+							type="button"
+							onclick={() => (followUpType = 'rdv')}
+							class={[
+								'flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition-all',
+								followUpType === 'rdv'
+									? 'bg-primary text-primary-foreground shadow-md shadow-primary/25'
+									: 'text-muted-foreground hover:bg-primary/10 hover:text-violet-200 light:hover:text-violet-600'
+							].join(' ')}
+						>
+							<span class="text-[13px] leading-none">📅</span>
+							Ajouter un RDV
+						</button>
+						<button
 							type="button"
 							onclick={() => (followUpType = 'rappel')}
 							class={[
@@ -246,22 +271,22 @@
 							<span class="text-[13px] leading-none">🔔</span>
 							Ajouter un rappel
 						</button>
-						</div>
+					</div>
 
-						{#if followUpType === 'rdv'}
-							<Button
-								type="button"
-								variant="outline"
-								size="sm"
-								class="w-full border-line text-[12px]"
-								onclick={() => (agendaOpen = true)}
-							>
-								<CalendarDays class="size-3.5" />
-								Voir l'agenda
-							</Button>
-						{/if}
+					{#if followUpType === 'rdv'}
+						<Button
+							type="button"
+							variant="outline"
+							size="sm"
+							class="w-full border-line text-[12px]"
+							onclick={() => (agendaOpen = true)}
+						>
+							<CalendarDays class="size-3.5" />
+							Voir l'agenda
+						</Button>
+					{/if}
 
-						<div class="flex gap-3">
+					<div class="flex gap-3">
 						<div class="flex-1 space-y-1.5">
 							<Label for="contactDate">Date</Label>
 							<Popover>
@@ -276,6 +301,7 @@
 										locale="fr-FR"
 										type="single"
 										value={followUpDate}
+										isDateDisabled={(date) => followUpType === 'rdv' && isSunday(date)}
 										onValueChange={(value: DateValue | undefined) => {
 											if (value) followUpDate = value as CalendarDate;
 										}}
@@ -299,8 +325,6 @@
 							</div>
 						{/if}
 					</div>
-
-
 				</div>
 			</div>
 

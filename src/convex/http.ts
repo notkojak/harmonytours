@@ -1,7 +1,7 @@
 import { httpRouter } from 'convex/server';
 import { auth } from './auth';
 import { signin, me } from './auth_mobile';
-import { beastdoorSync } from './beastdoor';
+import { beastdoorSync, upsertPorteDirect } from './beastdoor';
 import {
 	agenda,
 	createContact,
@@ -40,5 +40,7 @@ http.route({ path: '/api/mobile/evenements/delete', method: 'POST', handler: del
 // le web). L'app pousse ses changements avec son token ; chaque ligne est
 // liée à l'utilisateur connecté.
 http.route({ path: '/api/mobile/beastdoor-sync', method: 'POST', handler: beastdoorSync });
+// Écriture directe d'une porte (sans passer par la file de synchro de l'app).
+http.route({ path: '/api/mobile/portes', method: 'POST', handler: upsertPorteDirect });
 
 export default http;

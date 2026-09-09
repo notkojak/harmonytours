@@ -298,7 +298,8 @@ export const listRdvCommerciaux = query({
 				_id: u._id,
 				firstName: u.firstName ?? '',
 				lastName: u.lastName ?? '',
-				role: u.role ?? null
+				role: u.role ?? null,
+				photo: u.photo ?? null
 			}));
 	}
 });
@@ -409,6 +410,7 @@ export const listTeamMembers = query({
 			rdvTraites: number;
 			ventes: number;
 			caPeriode: number;
+			caAttente: number;
 			caErreur: number;
 			caAnnulations: number;
 			caTotal: number;
@@ -420,6 +422,7 @@ export const listTeamMembers = query({
 			rdvTraites: 0,
 			ventes: 0,
 			caPeriode: 0,
+			caAttente: 0,
 			caErreur: 0,
 			caAnnulations: 0,
 			caTotal: 0
@@ -442,19 +445,21 @@ export const listTeamMembers = query({
 			return { ids: visiblePartners, share: visiblePartners.length >= 2 ? 0.5 : 1 };
 		};
 
-		// RDV : suivi courant de type RDV, contacts non traités, dans la période.
-		// Le RDV compte 1 pour le créateur du contact uniquement (son pipeline).
-		// Seul le RDV traité (déballé / vendu) est partagé : 0,5 pour le créateur
-		// et 0,5 pour le commercial du RDV / vendeur de la vente (binôme).
-		// Les ventes et le CA sont partagés dans la boucle ventes ci-dessous.
+		// RDV : suivi courant de type RDV, contacts non traités. Les compteurs
+		// RDV TAP / GMS / total sont rattachés à la DATE DE PLANIFICATION du RDV
+		// (fu.date). Le RDV compte 1 pour le créateur du contact uniquement (son
+		// pipeline). Le RDV traité (déballé / vendu) est partagé : 0,5 pour le
+		// créateur et 0,5 pour le commercial du RDV / vendeur de la vente
+		// (binôme). Les ventes et le CA sont partagés dans la boucle ventes
+		// ci-dessous.
 		for (const c of contacts) {
 			const fu = c.followUp;
 			if (!fu || fu.type !== 'rdv' || c.statut === 'traité') continue;
-			if (fu.date < startISO || fu.date >= endISO) continue;
 			const treated = fu.status === 'vendu' || fu.status === 'déballé';
+			const plannedInPeriod = fu.date >= startISO && fu.date < endISO;
 
-			// RDV complet : 1 pour le créateur du contact.
-			if (c.createdBy && visibleIds.has(c.createdBy)) {
+			// RDV complet : 1 pour le créateur du contact, à la date de planification.
+			if (plannedInPeriod && c.createdBy && visibleIds.has(c.createdBy)) {
 				const s = get(c.createdBy);
 				if (c.source === 'TAP') s.rdvTap += 1;
 				else if (c.source === 'GMS') s.rdvGms += 1;
@@ -464,7 +469,7 @@ export const listTeamMembers = query({
 			// RDV traité : partagé 0,5 / 0,5 avec le commercial du RDV ou le
 			// vendeur de la vente (un RDV « vendu » peut n'avoir aucun commercial
 			// renseigné, le binôme se voit alors via la vente).
-			if (treated) {
+			if (treated && plannedInPeriod) {
 				// Le vendeur de la vente sert de binôme ; on préfère une vente valide,
 				// mais une vente annulée compte quand même (elle a été conclue).
 				const saleVendeur = (
@@ -478,16 +483,17 @@ export const listTeamMembers = query({
 			}
 		}
 
-		// Ventes : les annulées sont exclues, mais les ventes en erreur restent comptabilisées.
 		// Le CA est basé sur le HT. Quand un commercial accompagnateur est ajouté à la vente,
 		// ça crée un binôme : la vente est divisée par 2 entre le vendeur et la personne
 		// qui a pris le contact (createdBy). Sans accompagnateur, le vendeur compte pour 1.
 		const contactById = new Map(contacts.map((c) => [c._id, c]));
 
-		// CA total de la période sélectionnée : ventes valides ET en erreur (le CA
-		// réalisé de la période), hors annulées — suit le jour / semaine / mois.
+		// CA total de la période sélectionnée (colonne TOTAL HT) : seules les ventes
+		// VALIDÉES comptent. Les ventes « en attente » (pas encore validées), « erreur »
+		// et « annulée » sont exclues et suivies à part (caAttente / caErreur /
+		// caAnnulations). Suit le jour / semaine / mois.
 		for (const v of ventes) {
-			if (v.statut === 'annulée') continue;
+			if (v.statut !== 'valide') continue;
 			if (v.date < startTs || v.date >= endTs) continue;
 			const { ids, share } = partners(v.vendeurId, contactById.get(v.contactId)?.createdBy);
 			for (const id of ids) get(id).caTotal += v.totalHT * share;
@@ -495,7 +501,8 @@ export const listTeamMembers = query({
 
 		// Période : ventes et CA de la période sélectionnée. Les ventes annulées
 		// comptent toujours (le CA mois ne retombe pas à 0) ; les ventes en erreur
-		// sont déduites du CA mois et suivies à part dans caErreur.
+		// sont déduites du CA mois et suivies à part dans caErreur ; les ventes en
+		// attente (non validées) sont suivies à part dans caAttente.
 		for (const v of ventes) {
 			if (v.date < startTs || v.date >= endTs) continue;
 			const { ids, share } = partners(v.vendeurId, contactById.get(v.contactId)?.createdBy);
@@ -503,6 +510,7 @@ export const listTeamMembers = query({
 				const s = get(id);
 				s.ventes += share;
 				if (v.statut === 'erreur') s.caErreur += v.totalHT * share;
+				else if (v.statut === 'en attente') s.caAttente += v.totalHT * share;
 				else s.caPeriode += v.totalHT * share;
 			}
 		}
@@ -549,6 +557,7 @@ export const listTeamMembers = query({
 					rdvTraites: s.rdvTraites,
 					ventes: s.ventes,
 					caPeriode: s.caPeriode,
+					caAttente: s.caAttente,
 					caErreur: s.caErreur,
 					caAnnulations: s.caAnnulations,
 					caTotal: s.caTotal

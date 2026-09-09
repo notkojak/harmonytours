@@ -50,6 +50,64 @@ export const TREES = [
 			{ key: 'rdv30', label: '30 RDV en 1 mois' },
 			{ key: 'ca30', label: '30 000 € de CA en 1 mois' }
 		]
+	},
+	// Formations sur les familles du catalogue (même liste que le select
+	// « Projet » du nouveau contact) : technique et commercial.
+	{
+		key: 'formation_technique',
+		label: 'Formation technique',
+		steps: [
+			{ key: 'photovoltaique', label: 'Photovoltaïque' },
+			{ key: 'batterie', label: 'Batterie' },
+			{ key: 'borne_recharge', label: 'Borne de recharge' },
+			{ key: 'pac', label: 'PAC air / eau' },
+			{ key: 'climatisation', label: 'Climatisation air / air' },
+			{ key: 'ballon_thermo', label: 'Ballon thermodynamique' },
+			{ key: 'chauffe_eau', label: 'Chauffe-eau électrique' },
+			{ key: 'sanitaire', label: 'Sanitaire / ventilation / électricité' },
+			{ key: 'toiture', label: 'Toiture' },
+			{ key: 'facade', label: 'Façade' },
+			{ key: 'combles', label: 'Combles & charpente' },
+			{ key: 'pergola', label: 'Pergola & carport' },
+			{ key: 'portes', label: "Portes d'entrée" },
+			{ key: 'menuiseries', label: 'Menuiseries & fermetures' }
+		]
+	},
+	{
+		key: 'formation_theorique',
+		label: 'Formations commerciales',
+		steps: [
+			{ key: 'photovoltaique', label: 'Photovoltaïque' },
+			{ key: 'batterie', label: 'Batterie' },
+			{ key: 'borne_recharge', label: 'Borne de recharge' },
+			{ key: 'pac', label: 'PAC air / eau' },
+			{ key: 'climatisation', label: 'Climatisation air / air' },
+			{ key: 'ballon_thermo', label: 'Ballon thermodynamique' },
+			{ key: 'chauffe_eau', label: 'Chauffe-eau électrique' },
+			{ key: 'sanitaire', label: 'Sanitaire / ventilation / électricité' },
+			{ key: 'toiture', label: 'Toiture' },
+			{ key: 'facade', label: 'Façade' },
+			{ key: 'combles', label: 'Combles & charpente' },
+			{ key: 'pergola', label: 'Pergola & carport' },
+			{ key: 'portes', label: "Portes d'entrée" },
+			{ key: 'menuiseries', label: 'Menuiseries & fermetures' }
+		]
+	},
+	// Technique de ventes : modules du book de formation commercial (TAP déjà
+	// couvert par la tram de prospection ; qualification, découverte et
+	// fondamentaux du RDV retirés).
+	{
+		key: 'technique_ventes',
+		label: 'Technique de ventes',
+		steps: [
+			{ key: 'deroule_rdv', label: "Déroulé d'un RDV" },
+			{ key: 'catalogue', label: 'Le catalogue' },
+			{ key: 'deballe_fi', label: 'Déballe FI' },
+			{ key: 'deballe_solaire', label: 'Déballe Solaire' },
+			{ key: 'objections', label: 'Objections' },
+			{ key: 'do', label: 'DO' },
+			{ key: 'conforte', label: 'Conforte' }
+		]
 	}
 ] as const;
 

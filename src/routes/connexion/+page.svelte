@@ -91,9 +91,9 @@
 	<Card class="w-full max-w-sm rounded-2xl border-line py-0 shadow-none">
 	<CardHeader class="items-center px-6 pt-8 text-center">
 		<span class="mx-auto grid size-11 place-items-center overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-black/5">
-			<img src="/favicon.png" alt="Harmony Confort" class="size-10 rounded-xl object-contain" />
+			<img src="/favicon.png" alt="Bravaux" class="size-10 rounded-xl object-contain" />
 		</span>
-		<CardTitle class="mt-4 text-xl font-bold tracking-tight">Harmony Confort</CardTitle>
+		<CardTitle class="mt-4 text-xl font-bold tracking-tight">Bravaux</CardTitle>
 		<CardDescription class="text-[13px]">Connecte-toi à ton tableau de bord</CardDescription>
 	</CardHeader>
 

@@ -24,3 +24,4 @@ vite.config.ts.timestamp-*
 
 # Outillage local Freebuff
 .freebuff/
+.env*

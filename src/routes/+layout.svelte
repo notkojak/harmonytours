@@ -74,7 +74,9 @@
 										? 'Zones de prospection'
 										: pathname === '/bilan'
 											? 'Bilan de prospection'
-											: 'Tableau de bord'}
+											: pathname === '/chiffrage'
+												? 'Chiffrage'
+												: 'Tableau de bord'}
 				/>
 				<div
 					class={[

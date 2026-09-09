@@ -58,11 +58,13 @@
 	const statutLabel = (s: string | undefined | null): string => {
 		if (s === 'erreur') return 'Erreur';
 		if (s === 'annulée') return 'Annulée';
+		if (s === 'en attente') return 'En attente';
 		return 'Valide';
 	};
 	const statutClass = (s: string | undefined | null): string => {
 		if (s === 'erreur') return 'bg-orange-500/15 text-orange-400';
 		if (s === 'annulée') return 'bg-red-500/15 text-red-400';
+		if (s === 'en attente') return 'bg-sky-500/15 text-sky-400';
 		return 'bg-emerald-500/15 text-emerald-400';
 	};
 

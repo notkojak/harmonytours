@@ -26,12 +26,12 @@
 	<PopoverTrigger
 		class="flex w-full items-center gap-2.5 rounded-xl border border-line bg-card p-2.5 text-left transition-colors hover:bg-card2"
 	>
-		<img src="/favicon.png" alt="Harmony Confort" class="size-8 shrink-0 rounded-lg object-cover" />
+		<img src="/favicon.png" alt="Bravaux" class="size-8 shrink-0 rounded-lg object-cover" />
 		<span class="min-w-0 flex-1 leading-tight">
 			<span class="block truncate text-[13px] font-semibold text-foreground">
 				{current ? agencyLabel(current) : 'Choisir une agence'}
 			</span>
-			<span class="block truncate text-[11px] text-muted-foreground"> Harmony Confort </span>
+			<span class="block truncate text-[11px] text-muted-foreground"> Bravaux </span>
 		</span>
 		<ChevronsUpDown class="size-4 shrink-0 text-muted-foreground" strokeWidth={1.7} />
 	</PopoverTrigger>

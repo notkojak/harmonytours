@@ -52,6 +52,7 @@
 				rdvTraites: acc.rdvTraites + member.rdvTraites,
 				ventes: acc.ventes + member.ventes,
 				caPeriode: acc.caPeriode + member.caPeriode,
+				caAttente: acc.caAttente + (member.caAttente ?? 0),
 				caErreur: acc.caErreur + member.caErreur,
 				caAnnulations: acc.caAnnulations + member.caAnnulations,
 				caTotal: acc.caTotal + member.caTotal
@@ -65,6 +66,7 @@
 				rdvTraites: 0,
 				ventes: 0,
 				caPeriode: 0,
+				caAttente: 0,
 				caErreur: 0,
 				caAnnulations: 0,
 				caTotal: 0
@@ -113,7 +115,7 @@
 				<TableHead
 					class="px-2.5 py-2 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
 				>
-					Nom Prénom
+					Commercial
 				</TableHead>
 				<TableHead
 					class="px-2.5 py-2 text-right text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
@@ -128,12 +130,12 @@
 				<TableHead
 					class="px-2.5 py-2 text-right text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
 				>
-					RDV TAP
+					TAP
 				</TableHead>
 				<TableHead
 					class="px-2.5 py-2 text-right text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
 				>
-					RDV GMS
+					GMS
 				</TableHead>
 				<TableHead
 					class="px-2.5 py-2 text-right text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
@@ -143,7 +145,7 @@
 				<TableHead
 					class="px-2.5 py-2 text-right text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
 				>
-					RDV TRAITÉS
+					TRAITÉS
 				</TableHead>
 				<TableHead
 					class="px-2.5 py-2 text-right text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
@@ -156,19 +158,24 @@
 					CA HT
 				</TableHead>
 				<TableHead
+					class="px-2.5 py-2 text-right text-[11.5px] font-semibold tracking-wide text-sky-400/70 uppercase"
+				>
+					EN ATTENTE
+				</TableHead>
+				<TableHead
 					class="px-2.5 py-2 text-right text-[11.5px] font-semibold tracking-wide text-orange-400/70 uppercase"
 				>
-					CA ERREUR HT
+					ERREUR
 				</TableHead>
 				<TableHead
 					class="px-2.5 py-2 text-right text-[11.5px] font-semibold tracking-wide text-red-400/70 uppercase"
 				>
-					CA ANNUL. HT
+					ANNULÉES
 				</TableHead>
 				<TableHead
 					class="px-2.5 py-2 text-right text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
 				>
-					CA TOTAL HT
+					TOTAL HT
 				</TableHead>
 			</TableRow>
 		</TableHeader>
@@ -229,6 +236,11 @@
 						{euro.format(member.caPeriode)}
 					</TableCell>
 					<TableCell
+						class="px-2.5 py-1.5 text-right text-[13.5px] font-semibold whitespace-nowrap text-sky-400/90"
+					>
+						{euro.format(member.caAttente ?? 0)}
+					</TableCell>
+					<TableCell
 						class="px-2.5 py-1.5 text-right text-[13.5px] font-semibold whitespace-nowrap text-orange-400/90"
 					>
 						{euro.format(member.caErreur)}
@@ -247,7 +259,7 @@
 			{/each}
 			{#if members.length === 0}
 				<TableRow class="border-line/60 hover:bg-transparent">
-					<TableCell colspan={12} class="px-4 py-8 text-center text-[13px] text-muted-foreground">
+					<TableCell colspan={13} class="px-4 py-8 text-center text-[13px] text-muted-foreground">
 						Aucun membre pour le moment.
 					</TableCell>
 				</TableRow>
@@ -297,6 +309,11 @@
 					class="px-2.5 py-1.5 text-right text-[13.5px] font-bold whitespace-nowrap text-foreground"
 				>
 					{euro.format(totals.caPeriode)}
+				</TableCell>
+				<TableCell
+					class="px-2.5 py-1.5 text-right text-[13.5px] font-bold whitespace-nowrap text-sky-400"
+				>
+					{euro.format(totals.caAttente ?? 0)}
 				</TableCell>
 				<TableCell
 					class="px-2.5 py-1.5 text-right text-[13.5px] font-bold whitespace-nowrap text-orange-400"

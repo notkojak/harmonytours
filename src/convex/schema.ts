@@ -63,9 +63,10 @@ const contacts = defineTable({
 			date: v.string(),
 			time: v.optional(v.string()),
 			// Commercial rattaché au RDV (nom affiché), autre que le créateur du contact.
-			commercial: v.optional(v.string()),
-			// Statut du RDV : non renseigné = en attente (bleu).
+			commercial: v.optional(v.string()), // Statut du RDV : non renseigné = en attente (bleu).
 			status: v.optional(v.union(v.literal('annulé'), v.literal('déballé'), v.literal('vendu'))),
+			// Type de RDV placé : confortation (validation client) ou gestion dossier.
+			motif: v.optional(v.union(v.literal('confortation'), v.literal('gestion'))),
 			// Raison de non-vente renseignée quand le RDV est passé en « déballé ».
 			nonVenteReason: v.optional(v.string()),
 			// Raison d'annulation renseignée quand le RDV est passé en « annulé ».
@@ -83,12 +84,15 @@ const contacts = defineTable({
 	.index('by_agency', ['agencyId'])
 	.index('by_createdBy', ['createdBy']); // Ventes : un contact devient client via une ou plusieurs ventes. Chaque vente
 // contient plusieurs produits (TVA + montant HT) et son vendeur.
-// Le statut de la vente peut être : valide (défaut), erreur ou annulée.
+// Le statut de la vente peut être : en attente (défaut — pas encore
+// validée), valide, erreur ou annulée.
 const ventes = defineTable({
 	contactId: v.id('contacts'),
 	vendeurId: v.id('users'),
 	vendeurName: v.string(),
-	statut: v.optional(v.union(v.literal('valide'), v.literal('erreur'), v.literal('annulée'))),
+	statut: v.optional(
+		v.union(v.literal('en attente'), v.literal('valide'), v.literal('erreur'), v.literal('annulée'))
+	),
 	// Erreur de dossier liée à la vente (posée par un manager) : documents
 	// manquants, note argumentée, date et auteur.
 	erreur: v.optional(

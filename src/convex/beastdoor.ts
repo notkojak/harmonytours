@@ -476,7 +476,10 @@ async function doorHasRdv(db: any, addressId: string): Promise<boolean> {
 	const visit = await db
 		.query('visitesBeastdoor')
 		.filter((q: any) =>
-			q.eq(q.field('addressId'), addressId).eq(q.field('status'), 'rdv')
+			q.and(
+				q.eq(q.field('addressId'), addressId),
+				q.eq(q.field('status'), 'rdv')
+			)
 		)
 		.first();
 	const activeRdvVisit = visit && !visit.deletedAt;
@@ -655,6 +658,50 @@ export const beastdoorSync = httpAction(async (ctx, request) => {
 		acceptedQueueIds: accepted,
 		serverChanges
 	});
+});
+
+// --- Endpoint HTTP POST /api/mobile/portes (écriture directe d'une porte) ---
+// Enregistre immédiatement une porte dans la BDD Harmony, sans passer par la
+// file de synchronisation de l'app. Mêmes règles que le sync unifié (agence
+// estampillée, verrous RDV, créateur). L'app garde sa file locale en filet de
+// sécurité hors-ligne.
+export const upsertPorteDirect = httpAction(async (ctx, request) => {
+	if (request.method === 'OPTIONS') return json({ ok: true }, 204);
+	if (request.method !== 'POST') {
+		return json({ ok: false, error: 'Méthode non autorisée.' }, 405);
+	}
+	const identity = await getIdentity(ctx);
+	if (!identity) {
+		return json({ ok: false, error: 'Session expirée. Reconnecte-toi.' }, 401);
+	}
+	let body: Record<string, unknown> | null = null;
+	try {
+		const parsed = await request.json();
+		body =
+			parsed && typeof parsed === 'object'
+				? (parsed as Record<string, unknown>)
+				: null;
+	} catch {
+		body = null;
+	}
+	const entityId = typeof body?.id === 'string' ? body.id : '';
+	const operation = body?.operation === 'delete' ? 'delete' : 'upsert';
+	const payload = body?.payload;
+	if (!entityId || typeof payload !== 'object' || payload === null) {
+		return json({ ok: false, error: 'Champs manquants (id, payload).' }, 400);
+	}
+	try {
+		await ctx.runMutation(api.beastdoor.upsertBeastdoorChange, {
+			entityType: 'doorAddresses',
+			entityId,
+			operation,
+			payload
+		});
+	} catch (e) {
+		const message = e instanceof Error ? e.message : 'Erreur serveur.';
+		return json({ ok: false, error: message }, 400);
+	}
+	return json({ ok: true, id: entityId });
 });
 
 // Id de l'employé cible du transfert (Pierre Torres).

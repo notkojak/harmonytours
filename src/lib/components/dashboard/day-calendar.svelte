@@ -13,6 +13,16 @@
 		authState.isAuthenticated ? { includeClients: true } : 'skip'
 	);
 
+	// Événements de l'agenda (réunion, formation, prospection, gestion) pour
+	// afficher aussi les réunions et autres événements dans le planning du jour.
+	const evenements = useQuery(api.evenements.list, () => (authState.isAuthenticated ? {} : 'skip'));
+	const profile = useQuery(api.users.getProfile, () => (authState.isAuthenticated ? {} : 'skip'));
+	// La catégorie « Gestion » n'est visible que par l'administrateur et le
+	// directeur de zone (comme la page Agenda).
+	const canSeeGestion = $derived(
+		['administrateur', 'directeur de zone'].includes(profile.data?.role ?? '')
+	);
+
 	let { date }: { date?: string } = $props();
 
 	const todayISO = $derived.by(() => {
@@ -34,6 +44,71 @@
 			.sort((a, b) => (a.followUp?.time ?? '').localeCompare(b.followUp?.time ?? ''))
 	);
 
+	// Événements du jour (réunions, formations, prospections…) à la date
+	// sélectionnée, triés par heure.
+	const todayEvents = $derived.by(() =>
+		(evenements.data ?? [])
+			.filter((e) => e.date === selectedDate && (canSeeGestion || e.type !== 'gestion'))
+			.sort((a, b) => (a.start ?? '').localeCompare(b.start ?? ''))
+	);
+
+	// Réunion : créneau fixe lundi et vendredi matin 8h30–9h30 (comme l'agenda).
+	const isReunionDay = $derived.by(() => {
+		const [yy, mm, dd] = selectedDate.split('-').map(Number);
+		const dow = new Date(yy, mm - 1, dd).getDay();
+		return dow === 1 || dow === 5;
+	});
+
+	// Couleurs / libellés / emojis des événements (mêmes que la page Agenda).
+	const EVENT_META: Record<string, { label: string; emoji: string; chip: string }> = {
+		réunion: { label: 'Réunion', emoji: '👨‍🏫', chip: 'bg-violet-500/15 text-violet-400' },
+		formation: { label: 'Formation', emoji: '🎓', chip: 'bg-yellow-500/15 text-yellow-400' },
+		prospection: { label: 'Prospection', emoji: '🔎', chip: 'bg-rose-500/15 text-rose-400' },
+		gestion: { label: 'Gestion dossier', emoji: '📁', chip: 'bg-violet-500/15 text-violet-400' }
+	};
+	const eventMeta = (type: string) =>
+		EVENT_META[type] ?? { label: 'Réunion', emoji: '👨‍🏫', chip: 'bg-violet-500/15 text-violet-400' };
+
+	// Lignes du planning : RDV + événements mélangés et triés par heure.
+	type DayItem =
+		| { kind: 'rdv'; time: string; rdv: ContactRow }
+		| {
+				kind: 'event';
+				time: string;
+				type: string;
+				titre: string | null | undefined;
+				secteur: string | null | undefined;
+				membres: string | null;
+		  };
+	const dayItems = $derived.by(() => {
+		const items: DayItem[] = [];
+		for (const rdv of todayRdv) {
+			items.push({ kind: 'rdv', time: rdv.followUp?.time ?? '', rdv });
+		}
+		for (const e of todayEvents) {
+			items.push({
+				kind: 'event',
+				time: e.start ?? '',
+				type: e.type,
+				titre: e.titre,
+				secteur: e.secteur,
+				membres: (e.membreNames ?? []).join(', ') || null
+			});
+		}
+		// Créneau fixe « Réunion » (lundi et vendredi matin 8h30–9h30).
+		if (isReunionDay) {
+			items.push({
+				kind: 'event',
+				time: '08:30',
+				type: 'réunion',
+				titre: 'Réunion',
+				secteur: null,
+				membres: null
+			});
+		}
+		return items.sort((a, b) => a.time.localeCompare(b.time));
+	});
+
 	// Titre : « Planning du jour » si la date est aujourd'hui, sinon la date choisie.
 	const planningTitle = $derived(
 		selectedDate === todayISO
@@ -45,18 +120,28 @@
 	);
 
 	// Couleur du RDV selon son statut : bleu (en attente), violet (déballé),
-	// rouge (annulé), vert (vendu).
-	function rdvStatusClass(status: string | null | undefined): string {
+	// rouge (annulé), vert (vendu). Un RDV « Confortation » ou « Gestion dossier »
+	// encore programmé s'affiche en violet comme une réunion.
+	function rdvStatusClass(
+		status: string | null | undefined,
+		motif?: string | null | undefined
+	): string {
 		if (status === 'déballé') return 'bg-violet-500/15 text-violet-400';
 		if (status === 'annulé') return 'bg-red-500/15 text-red-400';
 		if (status === 'vendu') return 'bg-emerald-500/15 text-emerald-400';
+		if (motif === 'confortation' || motif === 'gestion') return 'bg-violet-500/15 text-violet-400';
 		return 'bg-blue-500/15 text-blue-400';
 	}
 
-	function rdvStatusLabel(status: string | null | undefined): string {
+	function rdvStatusLabel(
+		status: string | null | undefined,
+		motif?: string | null | undefined
+	): string {
 		if (status === 'déballé') return 'Déballé';
 		if (status === 'annulé') return 'Annulé';
 		if (status === 'vendu') return 'Vendu';
+		if (motif === 'confortation') return 'Confortation';
+		if (motif === 'gestion') return 'Gestion dossier';
 		return 'Programmé';
 	}
 
@@ -79,46 +164,77 @@
 			</span>
 			{planningTitle}
 			<Badge variant="secondary" class="rounded-full px-2">
-				{todayRdv.length} RDV
+				{dayItems.length}
+				{dayItems.length > 1 ? 'éléments' : 'élément'}
 			</Badge>
 		</CardTitle>
 	</CardHeader>
 	<CardContent class="flex min-h-0 flex-1 flex-col px-5 pt-2 pb-5">
-		{#if todayRdv.length === 0}
+		{#if dayItems.length === 0}
 			<div class="flex flex-1 items-center justify-center py-10">
-				<p class="text-[12.5px] text-muted-foreground">Aucun RDV aujourd'hui.</p>
+				<p class="text-[12.5px] text-muted-foreground">Aucun RDV ni événement ce jour.</p>
 			</div>
 		{:else}
 			<ul class="min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
-				{#each todayRdv as rdv}
-					<button
-						type="button"
-						onclick={() => openFiche(rdv)}
-						class="flex w-full items-center gap-3 rounded-xl border border-line bg-card2 px-3 py-2 text-left transition-colors hover:bg-glass-1"
-					>
-						<span class="w-11 shrink-0 font-mono text-[11.5px] font-medium text-foreground">
-							{rdv.followUp?.time ?? ''}
-						</span>
-						<div class="min-w-0 flex-1 leading-tight">
-							<p class="truncate text-[12.5px] font-semibold text-foreground">
-								{rdv.name}
-							</p>
-							<p class="truncate text-[11px] text-muted-foreground">
-								{rdv.projet || '—'}
-							</p>
-						</div>
-						<span class="hidden shrink-0 font-mono text-[10.5px] text-muted-foreground sm:block">
-							{formatPhone(rdv.phone) || ''}
-						</span>
-						<span
-							class={[
-								'shrink-0 rounded-md px-1.5 py-0.5 text-[9.5px] font-bold tracking-wider uppercase',
-								rdvStatusClass(rdv.followUp?.status)
-							].join(' ')}
+				{#each dayItems as item}
+					{#if item.kind === 'rdv'}
+						<button
+							type="button"
+							onclick={() => openFiche(item.rdv)}
+							class="flex w-full items-center gap-3 rounded-xl border border-line bg-card2 px-3 py-2 text-left transition-colors hover:bg-glass-1"
 						>
-							{rdvStatusLabel(rdv.followUp?.status)}
-						</span>
-					</button>
+							<span class="w-11 shrink-0 font-mono text-[11.5px] font-medium text-foreground">
+								{item.time}
+							</span>
+							<div class="min-w-0 flex-1 leading-tight">
+								<p class="truncate text-[12.5px] font-semibold text-foreground">
+									{item.rdv.name}
+								</p>
+								<p class="truncate text-[11px] text-muted-foreground">
+									{item.rdv.projet || '—'}
+								</p>
+							</div>
+							<span class="hidden shrink-0 font-mono text-[10.5px] text-muted-foreground sm:block">
+								{formatPhone(item.rdv.phone) || ''}
+							</span>
+							<span
+								class={[
+									'shrink-0 rounded-md px-1.5 py-0.5 text-[9.5px] font-bold tracking-wider uppercase',
+									rdvStatusClass(item.rdv.followUp?.status, item.rdv.followUp?.motif)
+								].join(' ')}
+							>
+								{rdvStatusLabel(item.rdv.followUp?.status, item.rdv.followUp?.motif)}
+							</span>
+						</button>
+					{:else}
+						{@const meta = eventMeta(item.type)}
+						<div
+							class="flex w-full items-center gap-3 rounded-xl border border-line bg-card2 px-3 py-2"
+						>
+							<span class="w-11 shrink-0 font-mono text-[11.5px] font-medium text-foreground">
+								{item.time}
+							</span>
+							<div class="min-w-0 flex-1 leading-tight">
+								<p class="truncate text-[12.5px] font-semibold text-foreground">
+									{meta.emoji}
+									{item.titre || meta.label}
+								</p>
+								{#if item.secteur || item.membres}
+									<p class="truncate text-[11px] text-muted-foreground">
+										{item.secteur ? `📍 ${item.secteur}` : `👥 ${item.membres}`}
+									</p>
+								{/if}
+							</div>
+							<span
+								class={[
+									'shrink-0 rounded-md px-1.5 py-0.5 text-[9.5px] font-bold tracking-wider uppercase',
+									meta.chip
+								].join(' ')}
+							>
+								{meta.label}
+							</span>
+						</div>
+					{/if}
 				{/each}
 			</ul>
 		{/if}

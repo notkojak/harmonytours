@@ -15,6 +15,7 @@
 			time?: string | null;
 			commercial?: string | null;
 			status?: string | null;
+			motif?: 'confortation' | 'gestion' | null;
 			nonVenteReason?: string | null;
 			annulationReason?: string | null;
 		} | null;
@@ -49,6 +50,7 @@
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Calendar } from '$lib/components/ui/calendar/index.js';
+	import Avatar from './Avatar.svelte';
 	import {
 		Dialog,
 		DialogContent,
@@ -126,7 +128,7 @@
 		const set = new Set<string>();
 		if (contact?.createdByName) set.add(contact.createdByName);
 		for (const v of ventes.data ?? []) if (v.vendeurName) set.add(v.vendeurName);
-		return [...set].join(', ');
+		return [...set];
 	});
 
 	let saleOpen = $state(false);
@@ -144,28 +146,38 @@
 		totalTTC?: number;
 	} | null>(null);
 
-	type VenteStatut = 'valide' | 'erreur' | 'annulée';
+	type VenteStatut = 'en attente' | 'valide' | 'erreur' | 'annulée';
 	const venteStatutLabel = (s: string | undefined | null): string => {
 		if (s === 'erreur') return 'Erreur';
 		if (s === 'annulée') return 'Annulée';
+		if (s === 'en attente') return 'En attente';
 		return 'Valide';
 	};
 	const venteStatutClass = (s: string | undefined | null): string => {
 		if (s === 'erreur') return 'bg-orange-500/15 text-orange-400';
 		if (s === 'annulée') return 'bg-red-500/15 text-red-400';
+		if (s === 'en attente') return 'bg-sky-500/15 text-sky-400';
 		return 'bg-emerald-500/15 text-emerald-400';
 	};
 	// Émojis et couleurs pour mettre en évidence les ventes dans la fiche.
 	const venteEmoji = (s: string | undefined | null): string =>
-		s === 'erreur' ? '⚠️' : s === 'annulée' ? '❌' : '✅';
+		s === 'erreur' ? '⚠️' : s === 'annulée' ? '❌' : s === 'en attente' ? '⏳' : '✅';
 	const venteCardClass = (s: string | undefined | null): string =>
 		s === 'erreur'
 			? 'border-orange-500/30'
 			: s === 'annulée'
 				? 'border-red-500/30'
-				: 'border-emerald-500/30';
+				: s === 'en attente'
+					? 'border-sky-500/30'
+					: 'border-emerald-500/30';
 	const venteTotalClass = (s: string | undefined | null): string =>
-		s === 'erreur' ? 'text-orange-400' : s === 'annulée' ? 'text-red-400' : 'text-emerald-400';
+		s === 'erreur'
+			? 'text-orange-400'
+			: s === 'annulée'
+				? 'text-red-400'
+				: s === 'en attente'
+					? 'text-sky-400'
+					: 'text-emerald-400';
 	async function changeVenteStatut(venteId: string, statut: VenteStatut) {
 		try {
 			await updateVenteStatut({ venteId: venteId as Id<'ventes'>, statut });
@@ -220,9 +232,41 @@
 		authState.isAuthenticated ? {} : 'skip'
 	);
 
+	// Photos des commerciaux (nom complet → photo) pour les avatars de la fiche.
+	const membresPhotos = useQuery(api.evenements.listMembres, () =>
+		authState.isAuthenticated ? {} : 'skip'
+	);
+	const photoByName = $derived.by(() => {
+		const map = new Map<string, string>();
+		for (const m of membresPhotos.data ?? []) {
+			const key = `${m.firstName ?? ''} ${m.lastName ?? ''}`.trim().toLowerCase();
+			if (m.photo && key) map.set(key, m.photo);
+		}
+		return map;
+	});
+
 	const NONE = '__none__';
 	const commercialName = (c: { firstName?: string; lastName?: string } | null | undefined) =>
 		`${c?.firstName ?? ''} ${c?.lastName ?? ''}`.trim();
+
+	// Commerciaux rattachables en binôme : tous sauf celui qui a pris le RDV
+	// (le créateur du contact ne peut pas être son propre binôme).
+	const rattachables = $derived.by(() => {
+		const creator = (contact?.createdByName ?? '').trim().toLowerCase();
+		return (commerciaux.data ?? []).filter(
+			(c) => commercialName(c).trim().toLowerCase() !== creator
+		);
+	});
+
+	// Initiales d'un nom (secours des avatars quand aucune photo n'est trouvée).
+	const initialsOf = (name: string | null | undefined): string =>
+		(name ?? '')
+			.trim()
+			.split(/\s+/)
+			.map((w) => w[0] ?? '')
+			.slice(0, 2)
+			.join('')
+			.toUpperCase();
 
 	const suiviTimes = [
 		'10:00',
@@ -276,10 +320,19 @@
 	let editFollowUpTime = $state('10:00');
 	let editRdvCommercial = $state(NONE);
 	let editRdvStatus = $state(NONE);
+	// Type du RDV : '' (classique), 'confortation' ou 'gestion' (gestion dossier).
+	let editRdvMotif = $state<'confortation' | 'gestion' | ''>('');
 	const today = new Date();
 	let editFollowUpDate = $state(
 		new CalendarDate(today.getFullYear(), today.getMonth() + 1, today.getDate())
 	);
+
+	// L'agenda (web et mobile) affiche du lundi au samedi : un RDV un dimanche
+	// serait invisible. On interdit la saisie d'un dimanche pour un RDV (le cas
+	// hérité — RDV déjà posé un dimanche — reste modifiable sans changer la date).
+	const isSunday = (date: DateValue) => date.toDate(getLocalTimeZone()).getDay() === 0;
+	const keepsLegacySunday = (date: CalendarDate) =>
+		contact?.followUp?.type === 'rdv' && date.toString() === (contact.followUp?.date ?? '');
 
 	$effect(() => {
 		if (contact) {
@@ -295,6 +348,7 @@
 			editFollowUpTime = contact.followUp?.time ?? '10:00';
 			editRdvCommercial = contact.followUp?.commercial ?? NONE;
 			editRdvStatus = contact.followUp?.status ?? NONE;
+			editRdvMotif = contact.followUp?.motif ?? '';
 			editSwitchReason = '';
 			if (contact.followUp?.date) {
 				const [y, m, d] = contact.followUp.date.split('-').map(Number);
@@ -333,6 +387,14 @@
 			recontactError = 'Renseigne la raison du passage en rappel.';
 			return;
 		}
+		if (
+			recontactFollowUpType === 'rdv' &&
+			isSunday(recontactFollowUpDate) &&
+			!keepsLegacySunday(recontactFollowUpDate)
+		) {
+			recontactError = 'Les RDV ne peuvent pas être planifiés un dimanche.';
+			return;
+		}
 		recontactBusy = true;
 		recontactError = '';
 		try {
@@ -347,6 +409,11 @@
 					type: recontactFollowUpType,
 					date: recontactFollowUpDate.toString(),
 					time: recontactFollowUpType === 'rdv' ? recontactFollowUpTime : undefined,
+					// On conserve le type du RDV existant quand on le repositionne.
+					motif:
+						recontactFollowUpType === 'rdv' && contact.followUp?.type === 'rdv'
+							? (contact.followUp?.motif ?? undefined)
+							: undefined,
 					...(recontactFollowUpType === 'rdv'
 						? {
 								commercial: recontactRdvCommercial !== NONE ? recontactRdvCommercial : undefined,
@@ -368,6 +435,10 @@
 					type: recontactFollowUpType,
 					date: recontactFollowUpDate.toString(),
 					time: recontactFollowUpType === 'rdv' ? recontactFollowUpTime : null,
+					motif:
+						recontactFollowUpType === 'rdv' && contact.followUp?.type === 'rdv'
+							? (contact.followUp?.motif ?? null)
+							: null,
 					...(recontactFollowUpType === 'rdv'
 						? {
 								commercial: recontactRdvCommercial !== NONE ? recontactRdvCommercial : null,
@@ -433,6 +504,8 @@
 				time: fu.time ?? null,
 				commercial: patch.commercial !== undefined ? patch.commercial : (fu.commercial ?? null),
 				status: patch.status !== undefined ? patch.status : (fu.status ?? null),
+				// On conserve le type du RDV (confortation / gestion dossier).
+				motif: fu.motif ?? null,
 				nonVenteReason:
 					patch.nonVenteReason !== undefined ? patch.nonVenteReason : (fu.nonVenteReason ?? null),
 				annulationReason:
@@ -589,7 +662,9 @@
 						? 'bg-orange-400'
 						: v.statut === 'annulée'
 							? 'bg-red-400'
-							: 'bg-emerald-400'
+							: v.statut === 'en attente'
+								? 'bg-sky-400'
+								: 'bg-emerald-400'
 			});
 		}
 
@@ -598,11 +673,12 @@
 			const [y, m, d] = fu.date.split('-').map(Number);
 			const at = new Date(y, m - 1, d).getTime();
 			if (fu.type === 'rdv' && !fu.status) {
+				const motif = rdvMotifLabel(fu.motif);
 				entries.push({
 					at,
-					label: '📅 RDV planifié',
+					label: motif ? `📅 RDV ${motif}` : '📅 RDV planifié',
 					detail: fu.time ? `à ${fu.time}` : undefined,
-					dotClass: 'bg-blue-400'
+					dotClass: motif ? 'bg-violet-400' : 'bg-blue-400'
 				});
 			} else if (fu.type === 'rappel') {
 				entries.push({
@@ -642,6 +718,12 @@
 		});
 	}
 
+	function rdvMotifLabel(motif: string | null | undefined): string | null {
+		if (motif === 'confortation') return 'Confortation';
+		if (motif === 'gestion') return 'Gestion dossier';
+		return null;
+	}
+
 	function statusLabel(contact: ContactRow): string {
 		// Dès qu'une vente existe, le contact est un client — c'est son statut principal.
 		if (contact.isClient) return '👤 Client';
@@ -652,6 +734,8 @@
 			if (s === 'vendu') return '💰 Vendu';
 			if (s === 'déballé') return '📦 Déballé';
 			if (s === 'annulé') return '❌ Annulé';
+			const motif = rdvMotifLabel(contact.followUp.motif);
+			if (motif) return `📅 ${motif}`;
 			return '📅 RDV';
 		}
 		if (contact.followUp?.type === 'rappel') return '🔔 Rappel';
@@ -666,23 +750,35 @@
 			if (s === 'vendu') return 'text-emerald-400';
 			if (s === 'déballé') return 'text-violet-400';
 			if (s === 'annulé') return 'text-red-400';
+			// RDV « Confortation » / « Gestion dossier » : violet comme une réunion.
+			if (rdvMotifLabel(contact.followUp.motif)) return 'text-violet-400';
 			return 'text-blue-400';
 		}
 		if (contact.followUp?.type === 'rappel') return 'text-amber-400';
 		return 'text-muted-foreground';
 	}
 
-	function rdvStatusLabel(status: string | null | undefined): string {
+	function rdvStatusLabel(
+		status: string | null | undefined,
+		motif?: string | null | undefined
+	): string {
 		if (status === 'déballé') return '📦 Déballé';
 		if (status === 'annulé') return '❌ Annulé';
 		if (status === 'vendu') return '💰 Vendu';
+		const motifLabel = rdvMotifLabel(motif);
+		if (motifLabel) return `📅 ${motifLabel}`;
 		return '📅 Programmé';
 	}
 
-	function rdvStatusClass(status: string | null | undefined): string {
+	function rdvStatusClass(
+		status: string | null | undefined,
+		motif?: string | null | undefined
+	): string {
 		if (status === 'déballé') return 'text-violet-400';
 		if (status === 'annulé') return 'text-red-400';
 		if (status === 'vendu') return 'text-emerald-400';
+		// RDV « Confortation » / « Gestion dossier » : violet comme une réunion.
+		if (rdvMotifLabel(motif)) return 'text-violet-400';
 		return 'text-blue-400';
 	}
 
@@ -773,6 +869,14 @@
 			editError = 'Renseigne la raison du passage en rappel.';
 			return;
 		}
+		if (
+			editFollowUpType === 'rdv' &&
+			isSunday(editFollowUpDate) &&
+			!keepsLegacySunday(editFollowUpDate)
+		) {
+			editError = 'Les RDV ne peuvent pas être planifiés un dimanche.';
+			return;
+		}
 		editBusy = true;
 		editError = '';
 		try {
@@ -792,6 +896,8 @@
 					type: editFollowUpType,
 					date: editFollowUpDate.toString(),
 					time: editFollowUpType === 'rdv' ? editFollowUpTime : undefined,
+					// Type du RDV (confortation / gestion dossier) : uniquement pour un RDV.
+					motif: editFollowUpType === 'rdv' ? editRdvMotif || undefined : undefined,
 					...(editFollowUpType === 'rdv'
 						? {
 								commercial: editRdvCommercial !== NONE ? editRdvCommercial : undefined,
@@ -834,7 +940,23 @@
 								>
 									Commercial
 								</p>
-								<p class="text-[13.5px] text-foreground">{commerciauxLies || '—'}</p>
+								{#if commerciauxLies.length > 0}
+									<div class="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+										{#each commerciauxLies as name (name)}
+											<span class="flex items-center gap-1.5">
+												<Avatar
+													photo={photoByName.get(name.trim().toLowerCase())}
+													label={initialsOf(name)}
+													alt={name}
+													class="size-5 bg-muted text-[9px] font-bold text-muted-foreground"
+												/>
+												<span class="text-[13.5px] text-foreground">{name}</span>
+											</span>
+										{/each}
+									</div>
+								{:else}
+									<p class="text-[13.5px] text-foreground">—</p>
+								{/if}
 							</div>
 
 							<div class="rounded-lg border border-line bg-base px-3 py-2.5">
@@ -937,9 +1059,9 @@
 										>
 											<span
 												data-slot="select-value"
-												class={rdvStatusClass(contact.followUp?.status)}
+												class={rdvStatusClass(contact.followUp?.status, contact.followUp?.motif)}
 											>
-												{rdvStatusLabel(contact.followUp?.status)}
+												{rdvStatusLabel(contact.followUp?.status, contact.followUp?.motif)}
 											</span>
 										</SelectTrigger>
 										<SelectContent>
@@ -1000,14 +1122,31 @@
 										<SelectTrigger
 											class="h-7 w-fit min-w-[130px] gap-1.5 border border-line bg-base px-2 text-[12px]"
 										>
+											{#if contact.followUp?.commercial}
+												<Avatar
+													photo={photoByName.get(contact.followUp.commercial.trim().toLowerCase())}
+													label={initialsOf(contact.followUp.commercial)}
+													alt={contact.followUp.commercial}
+													class="size-5 bg-muted text-[9px] font-bold text-muted-foreground"
+												/>
+											{/if}
 											<span data-slot="select-value">
 												{contact.followUp?.commercial || 'Aucun'}
 											</span>
 										</SelectTrigger>
 										<SelectContent>
 											<SelectItem value={NONE}>Aucun</SelectItem>
-											{#each commerciaux.data ?? [] as c}
-												<SelectItem value={commercialName(c)}>{commercialName(c)}</SelectItem>
+											{#each rattachables as c}
+												<SelectItem value={commercialName(c)}>
+													<span class="flex items-center gap-2">
+														<Avatar
+															photo={photoByName.get(commercialName(c).trim().toLowerCase())}
+															label={initialsOf(commercialName(c))}
+															class="size-5 bg-muted text-[9px] font-bold text-muted-foreground"
+														/>
+														{commercialName(c)}
+													</span>
+												</SelectItem>
 											{/each}
 										</SelectContent>
 									</Select>
@@ -1218,6 +1357,7 @@
 													</SelectTrigger>
 													<SelectContent>
 														<SelectItem value="valide">Valide</SelectItem>
+														<SelectItem value="en attente">En attente</SelectItem>
 														{#if isManager}
 															<SelectItem value="erreur">Erreur</SelectItem>
 														{/if}
@@ -1403,6 +1543,49 @@
 									<CalendarDays class="size-3.5" />
 									Voir l'agenda
 								</Button>
+								<div class="space-y-1.5">
+									<Label>Type de RDV</Label>
+									<div
+										class="relative inline-grid grid-cols-3 gap-1 rounded-xl border border-line bg-card2/60 p-0.5"
+									>
+										<button
+											type="button"
+											onclick={() => (editRdvMotif = '')}
+											class={[
+												'flex h-8 items-center justify-center rounded-lg px-2 text-[11.5px] font-medium transition-all',
+												editRdvMotif === ''
+													? 'bg-primary text-primary-foreground shadow-md shadow-primary/25'
+													: 'text-muted-foreground hover:bg-primary/10 hover:text-violet-200 light:hover:text-violet-600'
+											].join(' ')}
+										>
+											RDV
+										</button>
+										<button
+											type="button"
+											onclick={() => (editRdvMotif = 'confortation')}
+											class={[
+												'flex h-8 items-center justify-center rounded-lg px-2 text-[11.5px] font-medium transition-all',
+												editRdvMotif === 'confortation'
+													? 'bg-primary text-primary-foreground shadow-md shadow-primary/25'
+													: 'text-muted-foreground hover:bg-primary/10 hover:text-violet-200 light:hover:text-violet-600'
+											].join(' ')}
+										>
+											Confortation
+										</button>
+										<button
+											type="button"
+											onclick={() => (editRdvMotif = 'gestion')}
+											class={[
+												'flex h-8 items-center justify-center rounded-lg px-2 text-[11.5px] font-medium transition-all',
+												editRdvMotif === 'gestion'
+													? 'bg-primary text-primary-foreground shadow-md shadow-primary/25'
+													: 'text-muted-foreground hover:bg-primary/10 hover:text-violet-200 light:hover:text-violet-600'
+											].join(' ')}
+										>
+											Gestion dossier
+										</button>
+									</div>
+								</div>
 							{/if}
 
 							{#if editFollowUpType === 'rappel' && contact.followUp?.type === 'rdv'}
@@ -1432,6 +1615,10 @@
 												locale="fr-FR"
 												type="single"
 												value={editFollowUpDate}
+												isDateDisabled={(date) =>
+													editFollowUpType === 'rdv' &&
+													isSunday(date) &&
+													!keepsLegacySunday(date as CalendarDate)}
 												onValueChange={(value: DateValue | undefined) => {
 													if (value) editFollowUpDate = value as CalendarDate;
 												}}
@@ -1462,14 +1649,31 @@
 										<Label>Commercial rattaché</Label>
 										<Select type="single" bind:value={editRdvCommercial}>
 											<SelectTrigger class="w-full border-line bg-base">
+												{#if editRdvCommercial !== NONE}
+													<Avatar
+														photo={photoByName.get(editRdvCommercial.trim().toLowerCase())}
+														label={initialsOf(editRdvCommercial)}
+														alt={editRdvCommercial}
+														class="size-5 bg-muted text-[9px] font-bold text-muted-foreground"
+													/>
+												{/if}
 												<span data-slot="select-value">
 													{editRdvCommercial !== NONE ? editRdvCommercial : 'Aucun'}
 												</span>
 											</SelectTrigger>
 											<SelectContent>
 												<SelectItem value={NONE}>Aucun</SelectItem>
-												{#each commerciaux.data ?? [] as c}
-													<SelectItem value={commercialName(c)}>{commercialName(c)}</SelectItem>
+												{#each rattachables as c}
+													<SelectItem value={commercialName(c)}>
+														<span class="flex items-center gap-2">
+															<Avatar
+																photo={photoByName.get(commercialName(c).trim().toLowerCase())}
+																label={initialsOf(commercialName(c))}
+																class="size-5 bg-muted text-[9px] font-bold text-muted-foreground"
+															/>
+															{commercialName(c)}
+														</span>
+													</SelectItem>
 												{/each}
 											</SelectContent>
 										</Select>
@@ -1574,6 +1778,10 @@
 											locale="fr-FR"
 											type="single"
 											value={recontactFollowUpDate}
+											isDateDisabled={(date) =>
+												recontactFollowUpType === 'rdv' &&
+												isSunday(date) &&
+												!keepsLegacySunday(date as CalendarDate)}
 											onValueChange={(value: DateValue | undefined) => {
 												if (value) recontactFollowUpDate = value as CalendarDate;
 											}}
@@ -1604,14 +1812,31 @@
 									<Label>Commercial rattaché</Label>
 									<Select type="single" bind:value={recontactRdvCommercial}>
 										<SelectTrigger class="w-full border-line bg-base">
+											{#if recontactRdvCommercial !== NONE}
+												<Avatar
+													photo={photoByName.get(recontactRdvCommercial.trim().toLowerCase())}
+													label={initialsOf(recontactRdvCommercial)}
+													alt={recontactRdvCommercial}
+													class="size-5 bg-muted text-[9px] font-bold text-muted-foreground"
+												/>
+											{/if}
 											<span data-slot="select-value">
 												{recontactRdvCommercial !== NONE ? recontactRdvCommercial : 'Aucun'}
 											</span>
 										</SelectTrigger>
 										<SelectContent>
 											<SelectItem value={NONE}>Aucun</SelectItem>
-											{#each commerciaux.data ?? [] as c}
-												<SelectItem value={commercialName(c)}>{commercialName(c)}</SelectItem>
+											{#each rattachables as c}
+												<SelectItem value={commercialName(c)}>
+													<span class="flex items-center gap-2">
+														<Avatar
+															photo={photoByName.get(commercialName(c).trim().toLowerCase())}
+															label={initialsOf(commercialName(c))}
+															class="size-5 bg-muted text-[9px] font-bold text-muted-foreground"
+														/>
+														{commercialName(c)}
+													</span>
+												</SelectItem>
 											{/each}
 										</SelectContent>
 									</Select>

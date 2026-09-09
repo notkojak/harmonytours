@@ -1,6 +1,6 @@
 export type FamilleCatalogue = { name: string; produits: string[] };
 
-// Catalogue Groupe Harmony Confort (applicable au 01/09/2026) — produits par famille.
+// Catalogue Groupe Bravaux (applicable au 01/09/2026) — produits par famille.
 export const CATALOGUE: FamilleCatalogue[] = [
 	{ name: "Photovoltaïque", produits: ["Installation 1 à 9 kWc (gestionnaire inclus)", "kWc supplémentaire"] },
 	{ name: "Batterie", produits: ["Onduleur hybride Solplanet ASW5000H-S2 + batterie 5 kWh", "Module batterie 5 kWh supplémentaire"] },

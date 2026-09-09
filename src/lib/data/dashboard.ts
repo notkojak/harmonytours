@@ -27,6 +27,11 @@ export const navSections = [
 			{ label: 'Books', icon: 'library', href: '/books' }
 		]
 	},
+	// Caché pour le moment (le route /chiffrage existe toujours) :
+	// {
+	// 	label: 'Outils',
+	// 	items: [{ label: 'Chiffrage', icon: 'calculator', href: '/chiffrage' }]
+	// },
 	{
 		label: 'Gestion',
 		items: [{ label: 'Administration', icon: 'shield', href: '/administration' }]
@@ -82,6 +87,7 @@ export type TeamMember = {
 	rdvTraites: number;
 	ventes: number;
 	caPeriode: number;
+	caAttente: number;
 	caErreur: number;
 	caAnnulations: number;
 	caTotal: number;

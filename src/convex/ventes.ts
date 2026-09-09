@@ -83,7 +83,9 @@ export const addVente = mutation({
 			contactId: args.contactId,
 			vendeurId,
 			vendeurName,
-			statut: 'valide',
+			// Par défaut « en attente » : la vente n'est comptée dans le CA que
+			// lorsqu'elle passe en « valide » (validation du dossier).
+			statut: 'en attente',
 			date: Date.now(),
 			produits: args.produits,
 			totalHT,
@@ -104,12 +106,18 @@ export const addVente = mutation({
 	}
 });
 
-// Change le statut d'une vente : valide, erreur ou annulée.
-// Seul le vendeur de la vente ou le créateur du contact lié peut le modifier.
+// Change le statut d'une vente : en attente (non validée), valide, erreur ou
+// annulée. Seul le vendeur de la vente ou le créateur du contact lié peut le
+// modifier.
 export const updateStatut = mutation({
 	args: {
 		venteId: v.id('ventes'),
-		statut: v.union(v.literal('valide'), v.literal('erreur'), v.literal('annulée'))
+		statut: v.union(
+			v.literal('en attente'),
+			v.literal('valide'),
+			v.literal('erreur'),
+			v.literal('annulée')
+		)
 	},
 	handler: async (ctx, args) => {
 		const user = await getCurrentUser(ctx);

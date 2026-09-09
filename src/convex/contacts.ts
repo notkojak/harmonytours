@@ -1,4 +1,4 @@
-import { mutation, query } from './_generated/server';
+import { type MutationCtx, mutation, query } from './_generated/server';
 import { v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { canManageEmployes, getCurrentUser } from './permissions';
@@ -11,9 +11,49 @@ const followUpValidator = v.object({
 	time: v.optional(v.string()),
 	commercial: v.optional(v.string()),
 	status: v.optional(v.union(v.literal('annulé'), v.literal('déballé'), v.literal('vendu'))),
+	// Type de RDV placé : confortation (validation client) ou gestion dossier.
+	motif: v.optional(v.union(v.literal('confortation'), v.literal('gestion'))),
 	nonVenteReason: v.optional(v.string()),
 	annulationReason: v.optional(v.string())
 });
+
+// Un RDV ne peut pas être planifié un dimanche : l'agenda (web et mobile)
+// affiche du lundi au samedi, un RDV du dimanche y serait invisible.
+// En édition, on tolère le cas hérité : un RDV déjà posé un dimanche reste
+// modifiable tant qu'on ne change pas sa date.
+function assertRdvNotOnSunday(
+	followUp: { type: 'rappel' | 'rdv'; date: string } | undefined,
+	current?: { type: 'rappel' | 'rdv'; date: string } | undefined
+) {
+	if (!followUp || followUp.type !== 'rdv') return;
+	const [y, m, d] = followUp.date.split('-').map((p) => Number(p));
+	if (!Number.isInteger(y) || !Number.isInteger(m) || !Number.isInteger(d)) return;
+	const isSunday = new Date(Date.UTC(y, m - 1, d)).getUTCDay() === 0;
+	if (!isSunday) return;
+	// Cas hérité : le RDV était déjà posé ce dimanche-là (même type, même
+	// date) → on laisse modifier le reste sans forcer à changer la date.
+	if (current?.type === 'rdv' && current.date === followUp.date) return;
+	throw new Error('Les RDV ne peuvent pas être planifiés un dimanche.');
+}
+
+// Le commercial rattaché (binôme) ne peut pas être celui qui a pris le RDV :
+// le créateur du contact ne peut pas être son propre binôme. On tolère le cas
+// hérité où le commercial déjà enregistré est le créateur (aucun changement).
+async function assertCommercialNotCreator(
+	ctx: MutationCtx,
+	contact: { createdBy?: Id<'users'> | null; followUp?: { commercial?: string } | null },
+	commercial: string | undefined
+) {
+	if (!commercial || !commercial.trim()) return;
+	if (commercial === contact.followUp?.commercial) return;
+	const creator = contact.createdBy ? await ctx.db.get(contact.createdBy) : null;
+	const creatorName = creator
+		? `${creator.firstName ?? ''} ${creator.lastName ?? ''}`.trim().toLowerCase()
+		: '';
+	if (creatorName && commercial.trim().toLowerCase() === creatorName) {
+		throw new Error('Le commercial rattaché ne peut pas être celui qui a pris le RDV.');
+	}
+}
 
 // Création d'un contact (client potentiel) par l'utilisateur connecté.
 export const create = mutation({
@@ -28,6 +68,7 @@ export const create = mutation({
 	},
 	handler: async (ctx, args) => {
 		const user = await getCurrentUser(ctx);
+		assertRdvNotOnSunday(args.followUp);
 		return await ctx.db.insert('contacts', {
 			...args,
 			statut: 'actif',
@@ -55,6 +96,8 @@ export const recontact = mutation({
 		if (contact.createdBy !== user._id) {
 			throw new Error('Non autorisé.');
 		}
+		assertRdvNotOnSunday(args.followUp, contact.followUp);
+		if (args.followUp) await assertCommercialNotCreator(ctx, contact, args.followUp.commercial);
 		// Historique RDV : un nouveau RDV est compté, ou la raison du passage en rappel
 		// est enregistrée sur le dernier RDV lorsqu'on le remplace par un rappel.
 		let rdvHistory: { at: number; reason?: string }[] | undefined;
@@ -82,8 +125,9 @@ export const recontact = mutation({
 
 // Mise à jour rapide du suivi depuis la fiche (mode consultation) : change le
 // statut du RDV et/ou le commercial rattaché, sans ouvrir le formulaire de
-// modification. Mêmes permissions que `update` : le créateur du contact ou le
-// commercial lié au RDV.
+// modification. Permissions : le créateur du contact, le commercial lié au RDV,
+// ou un manager CRM (administrateur, directeur de zone/agence, animateur) — qui
+// voit déjà tous les contacts de son périmètre.
 export const setFollowUpFields = mutation({
 	args: {
 		contactId: v.id('contacts'),
@@ -104,7 +148,10 @@ export const setFollowUpFields = mutation({
 		const myName = `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim().toLowerCase();
 		const isLinked =
 			!!contact.followUp?.commercial && contact.followUp.commercial.trim().toLowerCase() === myName;
-		if (!isCreator && !isLinked) {
+		// Les managers CRM voient tous les contacts de leur périmètre : ils doivent
+		// pouvoir passer un RDV en annulé/déballé (avec raison) ou vendu, même sur
+		// un RDV qu'ils n'ont ni créé ni suivi.
+		if (!isCreator && !isLinked && !canViewAllCrm(user)) {
 			throw new Error('Non autorisé.');
 		}
 
@@ -119,12 +166,15 @@ export const setFollowUpFields = mutation({
 				time: fu.time,
 				commercial: args.commercial !== undefined ? args.commercial : fu.commercial,
 				status: args.status == null || args.status === '' ? undefined : args.status,
+				// On conserve le type de RDV (confortation / gestion dossier).
+				motif: fu.motif,
 				nonVenteReason: args.nonVenteReason !== undefined ? args.nonVenteReason : fu.nonVenteReason,
 				annulationReason:
 					args.annulationReason !== undefined ? args.annulationReason : fu.annulationReason
 			}
 		};
 		if (args.commercial) {
+			await assertCommercialNotCreator(ctx, contact, args.commercial);
 			// Rejette un commercial hors de l'agence du contact (même périmètre que list).
 			const users = await ctx.db.query('users').collect();
 			const target =
@@ -356,6 +406,8 @@ export const update = mutation({
 		if (!isCreator && !isLinked) {
 			throw new Error('Non autorisé.');
 		}
+		assertRdvNotOnSunday(args.followUp, contact.followUp);
+		if (args.followUp) await assertCommercialNotCreator(ctx, contact, args.followUp.commercial);
 		if (!isCreator) {
 			// Commercial lié au RDV : autorisé uniquement à déplacer le RDV.
 			const keys = Object.keys(args).filter((k) => k !== 'contactId');
