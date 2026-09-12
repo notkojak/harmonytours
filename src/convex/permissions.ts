@@ -42,6 +42,15 @@ export async function getCurrentUser(ctx: QueryCtx | MutationCtx): Promise<Doc<'
 }
 
 /**
+ * Qui peut corriger « qui a pris le contact » (le commercial créateur) :
+ * l'administrateur, le directeur de zone et le directeur d'agence — ni
+ * l'animateur, ni le commercial qui a créé le contact.
+ */
+export function canReassignContact(user: Doc<'users'>): boolean {
+	return user.role === ROLE_ADMIN || user.role === ROLE_ZONE || user.role === ROLE_AGENCE;
+}
+
+/**
  * Admin et directeur de zone : mêmes droits (gestion des agences, employés,
  * objectifs, événements, vue sur tout le périmètre).
  */

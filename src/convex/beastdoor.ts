@@ -401,7 +401,10 @@ export const upsertBeastdoorChange = mutation({
 				);
 			}
 			const deletedAt = num(cleaned.deleted_at) ?? Date.now();
-			const updatedAt = num(cleaned.updated_at) ?? Date.now();
+			// Horodatage serveur (jamais inférieur à celui de l'appareil) : sinon le
+			// pull incrémental (`updatedAt >= lastSyncAt`) peut rater la suppression
+			// quand l'horloge d'un appareil est en retard sur celle du serveur.
+			const updatedAt = Math.max(num(cleaned.updated_at) ?? 0, Date.now());
 			if (existing) {
 				await db.patch(existing._id, { deletedAt, updatedAt });
 			}
@@ -411,6 +414,12 @@ export const upsertBeastdoorChange = mutation({
 		doc.id = entityId;
 		doc.userId = userId;
 		if (isShared) doc.agencyId = agencyId;
+		// Estampille `updatedAt` à l'heure du serveur (au moins celle de l'appareil) :
+		// garantit que la ligne progresse avec l'horloge serveur, donc que le pull
+		// incrémental des autres appareils (`updatedAt >= lastSyncAt`) la retrouvera
+		// toujours — évite les lignes « perdues » quand l'horloge d'un appareil est
+		// en retard (visites visibles sur le web mais jamais reçues par le téléphone).
+		doc.updatedAt = Math.max(num(doc.updatedAt) ?? 0, Date.now());
 		// Verrou RDV : un non-créateur (ni manager) ne peut pas faire passer une
 		// porte « catalogue / traité / non présent » si un RDV a déjà été pris.
 		if (entityType === 'doorVisits') {

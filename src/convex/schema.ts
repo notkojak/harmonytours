@@ -47,9 +47,39 @@ const agences = defineTable({
 	.index('by_name', ['name'])
 	.index('by_zone', ['zone']);
 
+// Réponses des « Questions découverte » : stockées dans un champ structuré du
+// contact (et plus dans la note, qui reste du texte libre).
+export const qualifValidator = v.object({
+	foyer: v.optional(v.string()),
+	habite: v.optional(v.string()),
+	plait: v.optional(v.string()),
+	achat: v.optional(v.string()),
+	achatDetail: v.optional(v.string()),
+	metierMme: v.optional(v.string()),
+	metierM: v.optional(v.string()),
+	imposable: v.optional(v.string()),
+	chauffage: v.optional(v.string()),
+	chauffageCout: v.optional(v.string()),
+	connait: v.optional(v.string()),
+	concurrence: v.optional(v.string()),
+	age: v.optional(v.string()),
+	changer: v.optional(v.string()),
+	pourQuand: v.optional(v.string()),
+	soncas: v.optional(v.array(v.string()))
+});
+
 // Contacts (clients potentiels) créés par les employés.
 const contacts = defineTable({
+	// Questions découverte : structuré, hors note.
+	qualif: v.optional(qualifValidator),
 	name: v.string(),
+	// Civilité du contact pour la fiche contact imprimable : choix multiple
+	// possible (un couple = « M. » + « Mme »).
+	civilites: v.optional(
+		v.array(v.union(v.literal('M.'), v.literal('Mme'), v.literal('Melle')))
+	),
+	// Ancien champ mono-valeur : conservé pour les données déjà saisies.
+	civilite: v.optional(v.union(v.literal('M.'), v.literal('Mme'), v.literal('Melle'))),
 	address: v.optional(v.string()),
 	phone: v.optional(v.string()),
 	projet: v.optional(v.string()),
@@ -70,7 +100,9 @@ const contacts = defineTable({
 			// Raison de non-vente renseignée quand le RDV est passé en « déballé ».
 			nonVenteReason: v.optional(v.string()),
 			// Raison d'annulation renseignée quand le RDV est passé en « annulé ».
-			annulationReason: v.optional(v.string())
+			annulationReason: v.optional(v.string()),
+			// Horodatage (ms) de la mise en « annulé » du RDV.
+			annulationDate: v.optional(v.number())
 		})
 	),
 	// Historique des RDV placés : conservé même si le suivi courant repasse en rappel.
@@ -78,6 +110,13 @@ const contacts = defineTable({
 	rdvHistory: v.optional(v.array(v.object({ at: v.number(), reason: v.optional(v.string()) }))),
 	// Le contact devient un client dès qu'une vente lui est rattachée.
 	isClient: v.optional(v.boolean()),
+	// Horodatage (ms) de la dernière impression de la fiche contact : permet de
+	// savoir en un coup d'œil quelles fiches ont déjà été imprimées.
+	printedAt: v.optional(v.number()),
+	// Date du contact, corrigeable depuis la fiche web. Quand elle est renseignée,
+	// elle remplace la date de création (`_creationTime`, non modifiable) partout
+	// où le contact est daté : fiche contact, annonce de RDV, impression.
+	dateContact: v.optional(v.number()),
 	agencyId: v.optional(v.id('agences')),
 	createdBy: v.optional(v.id('users'))
 })

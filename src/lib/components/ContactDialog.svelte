@@ -1,7 +1,11 @@
 <script lang="ts" module>
-	export type ContactRow = {
+	export	type ContactRow = {
 		_id: string;
 		name: string;
+		civilites?: ('M.' | 'Mme' | 'Melle')[] | null;
+		qualif?: Record<string, unknown> | null;
+		civilite?: 'M.' | 'Mme' | 'Melle' | null;
+		printedAt?: number | null;
 		address?: string | null;
 		phone?: string | null;
 		projet?: string | null;
@@ -18,6 +22,7 @@
 			motif?: 'confortation' | 'gestion' | null;
 			nonVenteReason?: string | null;
 			annulationReason?: string | null;
+			annulationDate?: number | null;
 		} | null;
 		rdvHistory?: { at: number; reason?: string }[] | null;
 		isClient?: boolean | null;
@@ -25,6 +30,8 @@
 		createdBy?: string | null;
 		createdByName?: string | null;
 		_creationTime?: number;
+		// Date du contact corrigée depuis la fiche (ms) : remplace la date de création.
+		dateContact?: number | null;
 	};
 </script>
 
@@ -39,6 +46,7 @@
 		Pencil,
 		PhoneCall,
 		Plus,
+		Printer,
 		Trash2,
 		X
 	} from '@lucide/svelte';
@@ -75,7 +83,18 @@
 	import ErreurVenteDialog from './ErreurVenteDialog.svelte';
 	import SaleDialog from './SaleDialog.svelte';
 	import AgendaApercuDialog from './agenda-apercu-dialog.svelte';
-	import { canAccessAdministration } from '$lib/data/roles';
+	import { canAccessAdministration, canReassignContact } from '$lib/data/roles';
+	import { dateInputToMs, msToDateInput } from '$lib/data/dates';
+	import {
+		contactQualif,
+		foyerLabel,
+		initialQualification,
+		qualifAnswered,
+		stripQualificationBlock,
+		toQualifDoc
+	} from '$lib/data/qualification';
+	import QualificationQuestions from './QualificationQuestions.svelte';
+	import ContactPrintSheet from './ContactPrintSheet.svelte';
 
 	let {
 		contact = $bindable(null),
@@ -86,6 +105,7 @@
 	const removeContact = useMutation(api.contacts.remove);
 	const recontactContact = useMutation(api.contacts.recontact);
 	const markContactTreated = useMutation(api.contacts.markTreated);
+	const markContactPrinted = useMutation(api.contacts.markPrinted);
 	const setFollowUpFields = useMutation(api.contacts.setFollowUpFields);
 	const updateVenteStatut = useMutation(api.ventes.updateStatut);
 	const removeVenteErreur = useMutation(api.ventes.removeErreur);
@@ -96,6 +116,9 @@
 	const myId = $derived((profile.data?._id as string | undefined) ?? undefined);
 	// Suppression possible pour le créateur du contact ou pour un manager.
 	const canDelete = $derived(!!contact && (isManager || myId === contact.createdBy));
+	// « Qui a pris le contact » : réservé au directeur de zone et au directeur
+	// d'agence (le serveur applique la même règle).
+	const canReassign = $derived(canReassignContact(profile.data?.role));
 
 	let deleteOpen = $state(false);
 	let deleteBusy = $state(false);
@@ -137,6 +160,7 @@
 		_id: string;
 		vendeurId?: string | null;
 		produits: { produit: string; tva: number; montantHT: number }[];
+		date?: number | null;
 	} | null>(null);
 	let erreurOpen = $state(false);
 	let erreurVente = $state<{
@@ -222,6 +246,7 @@
 		_id: string;
 		vendeurId?: string | null;
 		produits: { produit: string; tva: number; montantHT: number }[];
+		date?: number | null;
 	}) {
 		editingVente = vente;
 		saleEditOpen = true;
@@ -231,6 +256,28 @@
 	const commerciaux = useQuery(api.employes.listRdvCommerciaux, () =>
 		authState.isAuthenticated ? {} : 'skip'
 	);
+
+	// Employés du périmètre pour corriger « qui a pris le contact » (utilisé
+	// seulement par l'administrateur, le directeur de zone et le directeur
+	// d'agence) : actifs et rattachés à une agence, comme l'exige le serveur.
+	const preneurs = useQuery(api.access.listAssignables, () =>
+		authState.isAuthenticated && canReassign ? {} : 'skip'
+	);
+	// Options du select « Pris par » : les employés du périmètre, plus le
+	// créateur actuel s'il n'y figure pas (contact venu d'une autre zone).
+	const preneurOptions = $derived.by(() => {
+		const list = (preneurs.data ?? []).map((v) => ({
+			_id: v._id as string,
+			name: v.name,
+			isMe: v.isMe
+		}));
+		const creatorId = contact?.createdBy;
+		const creatorName = contact?.createdByName;
+		if (creatorId && creatorName && !list.some((o) => o._id === creatorId)) {
+			list.unshift({ _id: creatorId, name: creatorName, isMe: false });
+		}
+		return list;
+	});
 
 	// Photos des commerciaux (nom complet → photo) pour les avatars de la fiche.
 	const membresPhotos = useQuery(api.evenements.listMembres, () =>
@@ -311,17 +358,38 @@
 
 	let editAgendaOpen = $state(false);
 	let editName = $state('');
+	// Civilités cochées dans la fiche (choix multiple : un couple = M. + Mme).
+	let editCivilites = $state<string[]>([]);
+	const CIVILITES = ['M.', 'Mme', 'Melle'] as const;
+	function toggleEditCivilite(value: string) {
+		editCivilites = editCivilites.includes(value)
+			? editCivilites.filter((c) => c !== value)
+			: [...editCivilites, value];
+	}
+	function civChipClass(active: boolean): string {
+		return [
+			'rounded-full border px-2.5 py-1 text-[11.5px] font-medium transition-all',
+			active
+				? 'border-primary bg-primary text-primary-foreground shadow-sm shadow-primary/25'
+				: 'border-line bg-card2 text-muted-foreground hover:border-primary/40 hover:text-foreground'
+		].join(' ');
+	}
 	let editAddress = $state('');
 	let editPhone = $state('');
 	let editProjet = $state('');
 	let editSource = $state('');
 	let editNote = $state('');
+	// Date du contact (AAAA-MM-JJ) et « qui a pris le contact ».
+	let editDateContact = $state('');
+	let editCreatedBy = $state<string | undefined>(undefined);
 	let editFollowUpType = $state<'rappel' | 'rdv'>('rappel');
 	let editFollowUpTime = $state('10:00');
 	let editRdvCommercial = $state(NONE);
 	let editRdvStatus = $state(NONE);
 	// Type du RDV : '' (classique), 'confortation' ou 'gestion' (gestion dossier).
 	let editRdvMotif = $state<'confortation' | 'gestion' | ''>('');
+	// Réponses du questionnaire « Questions découverte » (lues depuis / réécrites dans la note).
+	let editQualif = $state(initialQualification());
 	const today = new Date();
 	let editFollowUpDate = $state(
 		new CalendarDate(today.getFullYear(), today.getMonth() + 1, today.getDate())
@@ -339,11 +407,25 @@
 			mode = 'view';
 			copied = '';
 			editName = contact.name;
+			editCivilites = Array.isArray(contact.civilites)
+				? [...contact.civilites]
+				: contact.civilite
+					? [contact.civilite]
+					: [];
 			editAddress = contact.address ?? '';
 			editPhone = contact.phone ?? '';
 			editProjet = contact.projet ?? '';
 			editSource = contact.source ?? '';
-			editNote = contact.note ?? '';
+			// Date affichée : la date corrigée, sinon la date de création du contact.
+			editDateContact = msToDateInput(contact.dateContact ?? contact._creationTime);
+			editCreatedBy = contact.createdBy ?? undefined;
+			// Le bloc « Questions découverte » est extrait de la note pour pré-remplir le
+			// questionnaire ; la note éditée ne garde que le texte libre (le bloc est
+			// régénéré à l'enregistrement depuis les réponses du formulaire).
+			// Réponses structurées du contact ; repli sur l'ancien bloc dans la note.
+			const parsed = contactQualif(contact);
+			editQualif = parsed ?? initialQualification();
+			editNote = stripQualificationBlock(contact.note ?? '');
 			editFollowUpType = contact.followUp?.type ?? 'rappel';
 			editFollowUpTime = contact.followUp?.time ?? '10:00';
 			editRdvCommercial = contact.followUp?.commercial ?? NONE;
@@ -511,7 +593,15 @@
 				annulationReason:
 					patch.annulationReason !== undefined
 						? patch.annulationReason
-						: (fu.annulationReason ?? null)
+						: (fu.annulationReason ?? null),
+				// Date d'annulation : posée à la première mise en « annulé », conservée
+				// ensuite (même logique que le serveur).
+				annulationDate:
+					patch.status === 'annulé'
+						? fu.status === 'annulé'
+							? fu.annulationDate
+							: Date.now()
+						: (fu.annulationDate ?? null)
 			}
 		};
 	}
@@ -616,6 +706,53 @@
 		const day = String(d.getDate()).padStart(2, '0');
 		return `${d.getFullYear()}-${m}-${day}`;
 	}
+	// Réponses du questionnaire « Questions découverte », relues depuis la note
+	// pour l'affichage structuré dans la fiche (vue consultation).
+	const viewQualif = $derived(contact ? contactQualif(contact) : null);
+	const viewQualifItems = $derived.by(() => {
+		const a = viewQualif;
+		if (!a) return [];
+		const items: { emoji: string; text: string }[] = [];
+		if (a.foyer) items.push({ emoji: '👥', text: `Foyer : ${foyerLabel(a.foyer)}` });
+		if (a.habite) items.push({ emoji: '🏠', text: `Depuis ${a.habite}` });
+		if (a.plait)
+			items.push({
+				emoji: a.plait === 'oui' ? '😊' : '😕',
+				text: a.plait === 'oui' ? 'Se plaît chez eux' : "N'aime pas son logement"
+			});
+		if (a.achat) {
+			const detail =
+				(a.achat === 'Rénovation' || a.achat === 'Autre…') && a.achatDetail.trim()
+					? ` (${a.achatDetail.trim()})`
+					: '';
+			items.push({ emoji: '🛒', text: `Dernier achat : ${a.achat}${detail}` });
+		}
+		if (a.metierMme.trim()) items.push({ emoji: '💼', text: `Mme : ${a.metierMme.trim()}` });
+		if (a.metierM.trim()) items.push({ emoji: '💼', text: `M. : ${a.metierM.trim()}` });
+		if (a.imposable)
+			items.push({ emoji: '🧾', text: a.imposable === 'oui' ? 'Imposable' : 'Non imposable' });
+		if (a.chauffage)
+			items.push({
+				emoji: '🔥',
+				text: `Chauffage : ${a.chauffage}${a.chauffageCout.trim() ? ` — ${a.chauffageCout.trim()} €/mois` : ''}`
+			});
+		if (a.connait)
+			items.push({
+				emoji: '🎯',
+				text: a.connait === 'oui' ? 'Connaît le produit' : 'Ne connaît pas le produit'
+			});
+		if (a.connait === 'oui' && a.concurrence)
+			items.push({ emoji: '💶', text: `Concurrence : ${a.concurrence}` });
+		if (a.age) items.push({ emoji: '🎂', text: a.age });
+		if (a.changer)
+			items.push({
+				emoji: '🛠️',
+				text: `Veut changer : ${a.changer}${a.pourQuand ? ` — ${a.pourQuand}` : ''}`
+			});
+		if (a.soncas.length > 0) items.push({ emoji: '🧲', text: `SONCAS : ${a.soncas.join(', ')}` });
+		return items;
+	});
+
 	const timeline = $derived.by(() => {
 		const entries: {
 			at: number;
@@ -672,14 +809,33 @@
 		if (fu?.date) {
 			const [y, m, d] = fu.date.split('-').map(Number);
 			const at = new Date(y, m - 1, d).getTime();
-			if (fu.type === 'rdv' && !fu.status) {
-				const motif = rdvMotifLabel(fu.motif);
+			const motif = rdvMotifLabel(fu.motif);
+			const rdvDot = motif ? 'bg-violet-400' : 'bg-blue-400';
+			if (fu.type === 'rdv') {
+				// Le RDV garde toujours sa date dans le suivi, même une fois passé
+				// (annulé / déballé / vendu) : seule l'étiquette change.
 				entries.push({
 					at,
-					label: motif ? `📅 RDV ${motif}` : '📅 RDV planifié',
+					label: !fu.status
+						? motif
+							? `📅 RDV ${motif}`
+							: '📅 RDV planifié'
+						: motif
+							? `📅 RDV ${motif}`
+							: '📅 RDV',
 					detail: fu.time ? `à ${fu.time}` : undefined,
-					dotClass: motif ? 'bg-violet-400' : 'bg-blue-400'
+					dotClass: rdvDot
 				});
+				// Quand le RDV est annulé, on ajoute la date d'annulation dans le suivi
+				// (repli sur la date du RDV pour les annulations antérieures à ce champ).
+				if (fu.status === 'annulé') {
+					entries.push({
+						at: fu.annulationDate ?? at,
+						label: '❌ Annulé',
+						detail: fu.annulationReason ?? undefined,
+						dotClass: 'bg-red-400'
+					});
+				}
 			} else if (fu.type === 'rappel') {
 				entries.push({
 					at,
@@ -743,19 +899,21 @@
 	}
 
 	function statusClass(contact: ContactRow): string {
-		if (contact.isClient) return 'text-emerald-400';
-		if (contact.statut === 'traité') return 'text-emerald-400';
+		// Style teinté (fond translucide + texte coloré) comme les autres badges
+		// de l'app (source, statut de vente) — jamais de fond plein.
+		if (contact.isClient) return 'bg-emerald-500/15 text-emerald-400';
+		if (contact.statut === 'traité') return 'bg-emerald-500/15 text-emerald-400';
 		if (contact.followUp?.type === 'rdv') {
 			const s = contact.followUp.status;
-			if (s === 'vendu') return 'text-emerald-400';
-			if (s === 'déballé') return 'text-violet-400';
-			if (s === 'annulé') return 'text-red-400';
+			if (s === 'vendu') return 'bg-emerald-500/15 text-emerald-400';
+			if (s === 'déballé') return 'bg-violet-500/15 text-violet-400';
+			if (s === 'annulé') return 'bg-red-500/15 text-red-400';
 			// RDV « Confortation » / « Gestion dossier » : violet comme une réunion.
-			if (rdvMotifLabel(contact.followUp.motif)) return 'text-violet-400';
-			return 'text-blue-400';
+			if (rdvMotifLabel(contact.followUp.motif)) return 'bg-violet-500/15 text-violet-400';
+			return 'bg-blue-500/15 text-blue-400';
 		}
-		if (contact.followUp?.type === 'rappel') return 'text-amber-400';
-		return 'text-muted-foreground';
+		if (contact.followUp?.type === 'rappel') return 'bg-amber-500/15 text-amber-400';
+		return 'bg-glass-3 text-muted-foreground';
 	}
 
 	function rdvStatusLabel(
@@ -836,7 +994,9 @@
 		if (prenom) lines.push(`🔔 Contact: ${prenom.toUpperCase()}`);
 		if (c.source) lines.push(`${annonceSourceEmoji(c.source)} Source : ${c.source.toUpperCase()}`);
 		if (c.name) lines.push(`👤 Nom du client : ${c.name}`);
-		if (c._creationTime) lines.push(`🕐 Date de prise du rdv : ${annonceDdMm(c._creationTime)}`);
+		// Date du contact corrigée si elle a été renseignée, sinon date de création.
+		const dateContact = c.dateContact ?? c._creationTime;
+		if (dateContact) lines.push(`🕐 Date de prise du rdv : ${annonceDdMm(dateContact)}`);
 		if (c.projet) lines.push(`💰 Produit : ${c.projet}`);
 		if (c.followUp?.date) {
 			const heure = annonceHeure(c.followUp.time);
@@ -852,6 +1012,21 @@
 			setTimeout(() => (annonceCopied = false), 2000);
 		} catch {
 			// Presse-papiers indisponible.
+		}
+	}
+
+	// Impression de la fiche : la feuille A4 paysage est déjà rendue (masquée)
+	// dans le dialogue. Après l'impression, le contact est marqué comme imprimé
+	// pour que le bouton reste vert et que la liste sache lesquelles sont faites.
+	const isPrinted = $derived(!!contact?.printedAt);
+	async function printContactSheet() {
+		if (!contact) return;
+		window.print();
+		try {
+			await markContactPrinted({ contactId: contact._id as Id<'contacts'> });
+			contact = { ...contact, printedAt: Date.now() };
+		} catch (e) {
+			console.error(e);
 		}
 	}
 
@@ -883,11 +1058,19 @@
 			await updateContact({
 				contactId: contact._id as Id<'contacts'>,
 				name: editName.trim(),
+				civilites: editCivilites as ('M.' | 'Mme' | 'Melle')[],
 				address: editAddress.trim() || undefined,
 				phone: editPhone.trim() || undefined,
 				projet: editProjet || undefined,
 				source: (editSource || undefined) as ContactSource | undefined,
+				dateContact: dateInputToMs(editDateContact),
+				...(canReassign && editCreatedBy && editCreatedBy !== contact.createdBy
+					? { createdBy: editCreatedBy as Id<'users'> }
+					: {}),
+				// La note reste du texte libre ; les questions découverte partent dans
+				// leur champ structuré `qualif`.
 				note: editNote.trim() || undefined,
+				qualif: qualifAnswered(editQualif) > 0 ? toQualifDoc(editQualif) : {},
 				rdvSwitchReason:
 					editFollowUpType === 'rappel' && contact.followUp?.type === 'rdv'
 						? editSwitchReason.trim()
@@ -920,7 +1103,7 @@
 
 <Dialog bind:open>
 	<DialogContent
-		class="max-h-[90vh] overflow-y-auto rounded-xl border-line bg-card sm:max-w-lg lg:max-w-4xl"
+		class="max-h-[90vh] overflow-y-auto rounded-xl border-line bg-card sm:max-w-lg md:max-w-4xl lg:max-w-5xl xl:max-w-6xl"
 	>
 		<DialogHeader>
 			<DialogTitle class="text-[15px] font-semibold">
@@ -931,7 +1114,7 @@
 		{#if contact}
 			{#if mode === 'view'}
 				<!-- Fiche consultable : infos à gauche, recontacts/ventes à droite sur PC -->
-				<div class="grid gap-3 lg:grid-cols-2">
+				<div class="grid gap-3 md:grid-cols-2">
 					<div class="space-y-3">
 						<div class="grid grid-cols-2 gap-3">
 							<div class="rounded-lg border border-line bg-base px-3 py-2.5">
@@ -1205,6 +1388,25 @@
 					</div>
 
 					<div class="space-y-3">
+						{#if viewQualifItems.length > 0}
+							<div class="rounded-lg border border-line bg-base px-3 py-2.5">
+								<p
+									class="mb-2 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase"
+								>
+									🧠 Questions découverte
+								</p>
+								<div class="flex flex-wrap gap-1.5">
+									{#each viewQualifItems as item}
+										<span
+											class="rounded-md border border-line bg-card2 px-2 py-1 text-[11px] text-foreground"
+										>
+											<span class="mr-1">{item.emoji}</span>{item.text}
+										</span>
+									{/each}
+								</div>
+							</div>
+						{/if}
+
 						<div class="rounded-lg border border-line bg-base px-3 py-2.5">
 							<p
 								class="mb-1 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase"
@@ -1212,7 +1414,7 @@
 								Informations sur le contact
 							</p>
 							<p class="text-[13.5px] whitespace-pre-wrap text-foreground">
-								{contact.note || '—'}
+								{contact.note ? stripQualificationBlock(contact.note) || '—' : '—'}
 							</p>
 						</div>
 
@@ -1422,83 +1624,117 @@
 			{:else if mode === 'edit'}
 				<!-- Édition : même structure que Nouveau Contact (infos / suivi sur PC) -->
 				<form onsubmit={handleSave} class="space-y-4">
-					<div class="grid grid-cols-1 gap-5 md:grid-cols-2">
-						<!-- Partie 1 : informations du contact -->
-						<div class="space-y-4">
-							<div class="space-y-1.5">
+					<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+						<div class="space-y-1.5">
+							<div class="flex flex-wrap items-center justify-between gap-2">
 								<Label for="editContactName">Nom</Label>
-								<Input
-									id="editContactName"
-									required
-									bind:value={editName}
-									class="border-line bg-base"
-								/>
-							</div>
-
-							<div class="space-y-1.5">
-								<Label for="editContactAddress">Adresse</Label>
-								<AddressInput bind:value={editAddress} />
-							</div>
-
-							<div class="grid grid-cols-2 gap-3">
-								<div class="space-y-1.5">
-									<Label for="editContactPhone">Téléphone</Label>
-									<Input
-										id="editContactPhone"
-										type="tel"
-										value={formatPhone(editPhone)}
-										oninput={(e) => {
-											editPhone = formatPhone(e.currentTarget.value);
-											onPhoneInput(e);
-										}}
-										class="border-line bg-base"
-									/>
-								</div>
-								<div class="space-y-1.5">
-									<Label for="editContactSource">Source</Label>
-									<Select type="single" bind:value={editSource}>
-										<SelectTrigger id="editContactSource" class="w-full border-line bg-base">
-											<span data-slot="select-value">
-												{editSource ? editSource : 'Choisir une source'}
-											</span>
-										</SelectTrigger>
-										<SelectContent>
-											{#each contactSources as item}
-												<SelectItem value={item}>{item}</SelectItem>
-											{/each}
-										</SelectContent>
-									</Select>
+								<div class="flex flex-wrap gap-1.5">
+									{#each CIVILITES as c}
+										<button
+											type="button"
+											onclick={() => toggleEditCivilite(c)}
+											class={civChipClass(editCivilites.includes(c))}
+										>
+											{c}
+										</button>
+									{/each}
 								</div>
 							</div>
+							<Input
+								id="editContactName"
+								required
+								bind:value={editName}
+								class="border-line bg-base"
+							/>
+						</div>
 
-							<div class="space-y-1.5">
-								<Label for="editContactProjet">Projet</Label>
-								<Select type="single" bind:value={editProjet}>
-									<SelectTrigger id="editContactProjet" class="w-full border-line bg-base">
+						<div class="space-y-1.5">
+							<Label for="editContactAddress">Adresse</Label>
+							<AddressInput bind:value={editAddress} />
+						</div>
+
+						<div class="space-y-1.5">
+							<Label for="editContactPhone">Téléphone</Label>
+							<Input
+								id="editContactPhone"
+								type="tel"
+								value={formatPhone(editPhone)}
+								oninput={(e) => {
+									editPhone = formatPhone(e.currentTarget.value);
+									onPhoneInput(e);
+								}}
+								class="border-line bg-base"
+							/>
+						</div>
+
+						<div class="space-y-1.5">
+							<Label for="editContactSource">Source</Label>
+							<Select type="single" bind:value={editSource}>
+								<SelectTrigger id="editContactSource" class="w-full border-line bg-base">
+									<span data-slot="select-value">
+										{editSource ? editSource : 'Choisir une source'}
+									</span>
+								</SelectTrigger>
+								<SelectContent>
+									{#each contactSources as item}
+										<SelectItem value={item}>{item}</SelectItem>
+									{/each}
+								</SelectContent>
+							</Select>
+						</div>
+
+						<div class="space-y-1.5">
+							<Label for="editContactDate">Date du contact</Label>
+							<Input
+								id="editContactDate"
+								type="date"
+								bind:value={editDateContact}
+								class="border-line bg-base"
+							/>
+						</div>
+
+						<div class="space-y-1.5 md:col-span-2">
+							<Label for="editContactProjet">Projet</Label>
+							<Select type="single" bind:value={editProjet}>
+								<SelectTrigger id="editContactProjet" class="w-full border-line bg-base">
+									<span data-slot="select-value">
+										{editProjet ? editProjet : 'Choisir une famille'}
+									</span>
+								</SelectTrigger>
+								<SelectContent>
+									{#each FAMILLES as item}
+										<SelectItem value={item}>{item}</SelectItem>
+									{/each}
+								</SelectContent>
+							</Select>
+						</div>
+
+						{#if canReassign}
+							<div class="space-y-1.5 md:col-span-2">
+								<Label for="editContactCreatedBy">Pris par</Label>
+								<Select type="single" bind:value={editCreatedBy}>
+									<SelectTrigger id="editContactCreatedBy" class="w-full border-line bg-base">
 										<span data-slot="select-value">
-											{editProjet ? editProjet : 'Choisir une famille'}
+											{preneurOptions.find((o) => o._id === editCreatedBy)?.name ??
+												'Choisir qui a pris le contact'}
 										</span>
 									</SelectTrigger>
 									<SelectContent>
-										{#each FAMILLES as item}
-											<SelectItem value={item}>{item}</SelectItem>
+										{#each preneurOptions as o (o._id)}
+											<SelectItem value={o._id}>{o.name}{o.isMe ? ' (moi)' : ''}</SelectItem>
 										{/each}
 									</SelectContent>
 								</Select>
+								<p class="text-[11.5px] text-muted-foreground">
+									Réservé à l'administrateur, au directeur de zone et au directeur
+									d'agence. Le contact est ensuite rattaché à cette personne (technicien
+									conseil de la fiche).
+								</p>
 							</div>
+						{/if}
+					</div>
 
-							<div class="space-y-1.5">
-								<Label for="editContactNote">Informations sur le contact</Label>
-								<Textarea
-									id="editContactNote"
-									rows={5}
-									bind:value={editNote}
-									class="min-h-32 border-line bg-base"
-								/>
-							</div>
-						</div>
-
-						<!-- Partie 2 : suivi -->
+					{#snippet suiviBlock()}
 						<div class="space-y-2">
 							<Label>Suivi</Label>
 							<div
@@ -1543,52 +1779,13 @@
 									<CalendarDays class="size-3.5" />
 									Voir l'agenda
 								</Button>
-								<div class="space-y-1.5">
-									<Label>Type de RDV</Label>
-									<div
-										class="relative inline-grid grid-cols-3 gap-1 rounded-xl border border-line bg-card2/60 p-0.5"
-									>
-										<button
-											type="button"
-											onclick={() => (editRdvMotif = '')}
-											class={[
-												'flex h-8 items-center justify-center rounded-lg px-2 text-[11.5px] font-medium transition-all',
-												editRdvMotif === ''
-													? 'bg-primary text-primary-foreground shadow-md shadow-primary/25'
-													: 'text-muted-foreground hover:bg-primary/10 hover:text-violet-200 light:hover:text-violet-600'
-											].join(' ')}
-										>
-											RDV
-										</button>
-										<button
-											type="button"
-											onclick={() => (editRdvMotif = 'confortation')}
-											class={[
-												'flex h-8 items-center justify-center rounded-lg px-2 text-[11.5px] font-medium transition-all',
-												editRdvMotif === 'confortation'
-													? 'bg-primary text-primary-foreground shadow-md shadow-primary/25'
-													: 'text-muted-foreground hover:bg-primary/10 hover:text-violet-200 light:hover:text-violet-600'
-											].join(' ')}
-										>
-											Confortation
-										</button>
-										<button
-											type="button"
-											onclick={() => (editRdvMotif = 'gestion')}
-											class={[
-												'flex h-8 items-center justify-center rounded-lg px-2 text-[11.5px] font-medium transition-all',
-												editRdvMotif === 'gestion'
-													? 'bg-primary text-primary-foreground shadow-md shadow-primary/25'
-													: 'text-muted-foreground hover:bg-primary/10 hover:text-violet-200 light:hover:text-violet-600'
-											].join(' ')}
-										>
-											Gestion dossier
-										</button>
-									</div>
-								</div>
+								<!-- Sélecteur « Type de RDV » (RDV / Confortation / Gestion dossier)
+								     masqué pour l'instant : un RDV créé ici est un RDV classique.
+								     Le motif d'un RDV existant reste conservé à l'enregistrement
+								     (editRdvMotif est pré-rempli depuis le contact). -->
 							{/if}
 
-							{#if editFollowUpType === 'rappel' && contact.followUp?.type === 'rdv'}
+							{#if editFollowUpType === 'rappel' && contact?.followUp?.type === 'rdv'}
 								<div class="space-y-1.5">
 									<Label for="editSwitchReason">Raison du passage en rappel</Label>
 									<Input
@@ -1697,6 +1894,22 @@
 								</div>
 							{/if}
 						</div>
+					{/snippet}
+
+					<!-- Prise de contact (RDV / rappel) -->
+					{@render suiviBlock()}
+
+					<QualificationQuestions bind:answers={editQualif} />
+
+					<!-- Informations sur le contact : la note, sous le questionnaire -->
+					<div class="space-y-1.5">
+						<Label for="editContactNote">Informations sur le contact</Label>
+						<Textarea
+							id="editContactNote"
+							rows={4}
+							bind:value={editNote}
+							class="min-h-28 border-line bg-base"
+						/>
 					</div>
 
 					{#if editError}
@@ -1870,7 +2083,9 @@
 			{/if}
 		{/if}
 
-		<DialogFooter class="gap-2">
+		<!-- Barre d'actions : elle se replie sur une deuxième ligne au lieu de
+		     déborder quand les boutons sont trop larges pour la fenêtre. -->
+		<DialogFooter class="gap-2 sm:flex-wrap sm:items-center">
 			{#if mode === 'view'}
 				{#if canDelete}
 					<Button variant="destructive" onclick={() => (deleteOpen = true)} class="gap-1.5">
@@ -1890,6 +2105,24 @@
 						</Button>
 					{/if}
 				{/if}
+				<Button
+					variant="outline"
+					onclick={printContactSheet}
+					class={[
+						'gap-1.5',
+						isPrinted
+							? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/15 hover:text-emerald-300'
+							: ''
+					].join(' ')}
+				>
+					{#if isPrinted}
+						<Check class="size-4" />
+						Fiche imprimée
+					{:else}
+						<Printer class="size-4" strokeWidth={1.7} />
+						Imprimer la fiche
+					{/if}
+				</Button>
 				{#if contact?.followUp?.type === 'rdv'}
 					<Button variant="outline" onclick={copyAnnonceRdv} class="gap-1.5">
 						{#if annonceCopied}
@@ -1901,8 +2134,9 @@
 						{/if}
 					</Button>
 				{/if}
-				<div class="flex-1"></div>
-				<Button variant="outline" onclick={() => (mode = 'edit')}>
+				<!-- « Modifier » reste à droite tant qu'il y a la place, sans bloquer
+				     le repli des autres boutons. -->
+				<Button variant="outline" onclick={() => (mode = 'edit')} class="sm:ml-auto">
 					<Pencil class="size-4" strokeWidth={1.7} />
 					Modifier
 				</Button>
@@ -2086,4 +2320,8 @@
 	</Dialog>
 
 	<AgendaApercuDialog bind:open={editAgendaOpen} />
+
+	{#if contact}
+		<ContactPrintSheet {contact} answers={viewQualif} />
+	{/if}
 </Dialog>

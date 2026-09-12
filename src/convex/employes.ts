@@ -337,6 +337,10 @@ export const listVendeurs = query({
 // (jour / semaine / mois autour de la date), plus le CA total de la période.
 // Quand 2 commerciaux sont liés à un RDV / une vente (créateur + commercial
 // rattaché), chacun compte 0,5 et le montant HT est divisé par 2.
+//
+// « Traité » compte aussi les ventes de la période qui ne tombent pas sur la
+// date d'un RDV déjà compté (client sans RDV, ou vente datée un autre jour) :
+// +1, ou 0,5 pour chacun en binôme (vendeur + créateur du contact).
 export const listTeamMembers = query({
 	args: {
 		period: v.union(v.literal('mois'), v.literal('semaine'), v.literal('jour')),
@@ -402,6 +406,8 @@ export const listTeamMembers = query({
 
 		const contacts = await ctx.db.query('contacts').collect();
 		const ventes = await ctx.db.query('ventes').collect();
+		// Contact par id : sert au partage des ventes (vendeur + créateur du contact).
+		const contactById = new Map(contacts.map((c) => [c._id, c]));
 
 		type Stats = {
 			rdvTap: number;
@@ -483,10 +489,32 @@ export const listTeamMembers = query({
 			}
 		}
 
+		// Ventes de la période qui ne correspondent à aucun RDV déjà compté : un
+		// client peut acheter sans RDV placé (ou la vente être datée un autre jour
+		// que le RDV). Sans ça, ces ventes n'apparaîtraient nulle part dans la
+		// colonne « traité ». Chacune compte +1, ou 0,5 pour chaque personne en
+		// binôme (vendeur + créateur du contact) — et une vente à la date d'un RDV
+		// déjà compté dans la période n'est jamais recomptée (pas de doublon).
+		for (const v of ventes) {
+			// Une vente annulée ne prouve pas qu'un RDV a été traité.
+			if (v.statut === 'annulée') continue;
+			if (v.date < startTs || v.date >= endTs) continue;
+			const contact = contactById.get(v.contactId);
+			const fu = contact?.followUp;
+			const rdvDejaCompte =
+				fu?.type === 'rdv' &&
+				fu.date >= startISO &&
+				fu.date < endISO &&
+				(fu.status === 'vendu' || fu.status === 'déballé') &&
+				contact?.statut !== 'traité';
+			if (rdvDejaCompte) continue;
+			const { ids, share } = partners(v.vendeurId, contact?.createdBy);
+			for (const id of ids) get(id).rdvTraites += share;
+		}
+
 		// Le CA est basé sur le HT. Quand un commercial accompagnateur est ajouté à la vente,
 		// ça crée un binôme : la vente est divisée par 2 entre le vendeur et la personne
 		// qui a pris le contact (createdBy). Sans accompagnateur, le vendeur compte pour 1.
-		const contactById = new Map(contacts.map((c) => [c._id, c]));
 
 		// CA total de la période sélectionnée (colonne TOTAL HT) : seules les ventes
 		// VALIDÉES comptent. Les ventes « en attente » (pas encore validées), « erreur »

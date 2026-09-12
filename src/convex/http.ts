@@ -10,6 +10,7 @@ import {
 	deleteEvenement,
 	getContact,
 	listCommerciaux,
+	markContactPrinted,
 	setFollowUp,
 	updateContact,
 	updateEvenement
@@ -29,6 +30,8 @@ http.route({ path: '/api/mobile/contacts', method: 'POST', handler: createContac
 http.route({ path: '/api/mobile/contacts/get', method: 'POST', handler: getContact });
 http.route({ path: '/api/mobile/contacts/update', method: 'POST', handler: updateContact });
 http.route({ path: '/api/mobile/contacts/delete', method: 'POST', handler: deleteContact });
+// Marque la fiche contact comme imprimée (bouton vert, état partagé web/mobile).
+http.route({ path: '/api/mobile/contacts/printed', method: 'POST', handler: markContactPrinted });
 http.route({ path: '/api/mobile/contacts/follow-up', method: 'POST', handler: setFollowUp });
 http.route({ path: '/api/mobile/commerciaux', method: 'POST', handler: listCommerciaux });
 http.route({ path: '/api/mobile/agenda', method: 'POST', handler: agenda });

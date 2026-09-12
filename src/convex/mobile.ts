@@ -31,6 +31,61 @@ function text(v: unknown): string | undefined {
 	return typeof v === 'string' && v.trim().length > 0 ? v.trim() : undefined;
 }
 
+// Questions découverte envoyées par l'app mobile : objet de chaînes (plus
+// soncas : liste de chaînes). Toute autre clé est ignorée.
+function readQualif(raw: unknown): Record<string, unknown> | undefined {
+	if (!raw || typeof raw !== 'object') return undefined;
+	const src = raw as Record<string, unknown>;
+	const keys = [
+		'foyer',
+		'habite',
+		'plait',
+		'achat',
+		'achatDetail',
+		'metierMme',
+		'metierM',
+		'imposable',
+		'chauffage',
+		'chauffageCout',
+		'connait',
+		'concurrence',
+		'age',
+		'changer',
+		'pourQuand'
+	];
+	const out: Record<string, unknown> = {};
+	for (const key of keys) {
+		const value = text(src[key]);
+		if (value) out[key] = value;
+	}
+	if (Array.isArray(src.soncas)) {
+		const soncas = src.soncas
+			.filter((x): x is string => typeof x === 'string')
+			.map((x) => x.trim())
+			.filter(Boolean);
+		if (soncas.length > 0) out.soncas = soncas;
+	}
+	return out;
+}
+
+// Civilités envoyées par l'app mobile : array de 'M.' | 'Mme' | 'Melle'.
+// Renvoie undefined si le champ est absent, [] pour vider, null si invalide.
+function readCivilites(
+	raw: unknown
+): ('M.' | 'Mme' | 'Melle')[] | undefined | null {
+	if (raw === undefined || raw === null) return undefined;
+	if (!Array.isArray(raw)) return null;
+	const allowed = ['M.', 'Mme', 'Melle'] as const;
+	const out: ('M.' | 'Mme' | 'Melle')[] = [];
+	for (const item of raw) {
+		if (typeof item !== 'string') return null;
+		const value = item.trim() as (typeof allowed)[number];
+		if (!allowed.includes(value)) return null;
+		if (!out.includes(value)) out.push(value);
+	}
+	return out;
+}
+
 // Sections de prospection envoyées par l'app : array de { nom?, secteur,
 // membres[] }. Filtre et normalise les entrées invalides.
 function parseSections(
@@ -84,6 +139,15 @@ export const createContact = httpAction(async (ctx, request) => {
 		return json({ ok: false, error: 'Source invalide.' }, 400);
 	}
 
+	// Civilités (M. / Mme / Melle, choix multiple) pour la fiche imprimable.
+	const civilites = readCivilites(body?.civilites);
+	if (civilites === null) {
+		return json({ ok: false, error: 'Civilité invalide.' }, 400);
+	}
+
+	// Questions découverte (structuré, hors note).
+	const qualif = readQualif(body?.qualif);
+
 	const fu = body?.followUp;
 	let followUp: Record<string, unknown> | undefined;
 	if (fu && typeof fu === 'object') {
@@ -100,6 +164,8 @@ export const createContact = httpAction(async (ctx, request) => {
 	try {
 		const contactId = await ctx.runMutation(api.contacts.create, {
 			name,
+			...(civilites && civilites.length > 0 ? { civilites } : {}),
+			...(qualif && Object.keys(qualif).length > 0 ? { qualif } : {}),
 			...(text(body?.address) ? { address: text(body?.address) } : {}),
 			...(text(body?.phone) ? { phone: text(body?.phone) } : {}),
 			...(text(body?.projet) ? { projet: text(body?.projet) } : {}),
@@ -175,6 +241,15 @@ export const updateContact = httpAction(async (ctx, request) => {
 		return json({ ok: false, error: 'Source invalide.' }, 400);
 	}
 
+	// Civilités (M. / Mme / Melle, choix multiple) pour la fiche imprimable.
+	const civilites = readCivilites(body?.civilites);
+	if (civilites === null) {
+		return json({ ok: false, error: 'Civilité invalide.' }, 400);
+	}
+
+	// Questions découverte (structuré, hors note) : envoyées à chaque update.
+	const qualif = readQualif(body?.qualif) ?? {};
+
 	const fu = body?.followUp;
 	let followUp: Record<string, unknown> | undefined;
 	if (fu && typeof fu === 'object') {
@@ -192,6 +267,8 @@ export const updateContact = httpAction(async (ctx, request) => {
 		await ctx.runMutation(api.contacts.update, {
 			contactId: contactId as never,
 			...(body?.name !== undefined && body?.name !== null ? { name: text(body.name) } : {}),
+			...(civilites !== null ? { civilites } : {}),
+			qualif,
 			...(body?.address !== undefined && body?.address !== null
 				? { address: text(body.address) }
 				: {}),
@@ -204,6 +281,30 @@ export const updateContact = httpAction(async (ctx, request) => {
 		return json({ ok: true });
 	} catch (e) {
 		const message = e instanceof Error ? e.message : 'Mise à jour impossible.';
+		return json({ ok: false, error: message }, 400);
+	}
+});
+
+// POST /api/mobile/contacts/printed — marque la fiche contact comme imprimée
+// (le bouton reste vert et l'état est partagé avec le web).
+export const markContactPrinted = httpAction(async (ctx, request) => {
+	if (request.method === 'OPTIONS') return json({ ok: true }, 204);
+	if (request.method !== 'POST') {
+		return json({ ok: false, error: 'Méthode non autorisée.' }, 405);
+	}
+
+	const identity = await getIdentity(ctx);
+	if (!identity) return json({ ok: false, error: 'Session expirée. Reconnecte-toi.' }, 401);
+
+	const body = await readJson(request);
+	const contactId = text(body?.contactId);
+	if (!contactId) return json({ ok: false, error: 'contactId requis.' }, 400);
+
+	try {
+		await ctx.runMutation(api.contacts.markPrinted, { contactId: contactId as never });
+		return json({ ok: true });
+	} catch (e) {
+		const message = e instanceof Error ? e.message : 'Marquage impossible.';
 		return json({ ok: false, error: message }, 400);
 	}
 });

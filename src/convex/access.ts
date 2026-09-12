@@ -75,6 +75,34 @@ export async function isUserInScope(
 	return agencyIds.has(target.agencyId as Id<'agences'>);
 }
 
+// Personnes à qui un contact peut être rattaché (« qui a pris le contact ») :
+// employés actifs du périmètre de l'utilisateur connecté et rattachés à une
+// agence — c'est la condition que vérifie `contacts.update` —, le connecté en
+// premier. Utilisé par le select de la fiche contact (administrateur,
+// directeur de zone, directeur d'agence).
+export const listAssignables = query({
+	args: {},
+	handler: async (ctx) => {
+		const user = await getCurrentUser(ctx);
+		const agencyIds = await visibleAgencyIds(ctx, user);
+		const users = await ctx.db.query('users').collect();
+		return users
+			.filter((u) => {
+				if (u.statut === 'viré') return false;
+				if (!u.agencyId) return false;
+				if (agencyIds === null) return true;
+				return agencyIds.has(u.agencyId as Id<'agences'>);
+			})
+			.map((u) => ({
+				_id: u._id,
+				name: userName(u),
+				role: u.role ?? null,
+				isMe: u._id === user._id
+			}))
+			.sort((a, b) => (a.isMe ? -1 : b.isMe ? 1 : a.name.localeCompare(b.name)));
+	}
+});
+
 // Personnes affichées dans les onglets « par personne » du CRM : les utilisateurs
 // actifs rattachés à une agence du périmètre. Pour un commercial, uniquement lui.
 export const listPeople = query({

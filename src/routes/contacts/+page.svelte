@@ -1,6 +1,7 @@
 <script lang="ts">
-	import { ContactRound, Pencil, Search } from '@lucide/svelte';
-	import { useQuery } from 'convex-svelte';
+	import { Check, ContactRound, Pencil, Printer, Search } from '@lucide/svelte';
+	import { tick, untrack } from 'svelte';
+	import { useMutation, useQuery } from 'convex-svelte';
 	import { api } from '../../convex/_generated/api.js';
 	import type { Id } from '../../convex/_generated/dataModel.js';
 	import { authState } from '$lib/auth-state.svelte';
@@ -17,8 +18,9 @@
 	} from '$lib/components/ui/table/index.js';
 	import { Tabs, TabsList, TabsTrigger } from '$lib/components/ui/tabs/index.js';
 	import { sourceClass } from '$lib/data/sources';
-	import { formatPhone } from '$lib/data/phone';
 	import ContactDialog, { type ContactRow } from '$lib/components/ContactDialog.svelte';
+	import ContactPrintSheet from '$lib/components/ContactPrintSheet.svelte';
+	import { contactQualif } from '$lib/data/qualification';
 	import PersonTabs from '$lib/components/PersonTabs.svelte';
 	import Avatar from '$lib/components/Avatar.svelte';
 
@@ -53,6 +55,35 @@
 
 	let selected = $state<ContactRow | null>(null);
 	let dialogOpen = $state(false);
+
+	// Impression directe depuis la liste : la feuille imprimable du contact est
+	// montée le temps de l'impression (elle ne s'affiche qu'à l'impression), puis
+	// le contact est marqué comme imprimé (bouton vert, état conservé).
+	const markContactPrinted = useMutation(api.contacts.markPrinted);
+	let printTarget = $state<ContactRow | null>(null);
+	let printing = $state<string | null>(null);
+	const printAnswers = $derived(printTarget ? contactQualif(printTarget) : null);
+
+	async function printContact(contact: ContactRow, event?: MouseEvent) {
+		event?.stopPropagation();
+		if (printing) return;
+		printing = contact._id;
+		printTarget = contact;
+		try {
+			await tick();
+			window.print();
+			await markContactPrinted({ contactId: contact._id as Id<'contacts'> });
+		} catch (e) {
+			console.error(e);
+		} finally {
+			// La liste est rechargée par la souscription Convex : l'état vert vient
+			// du champ `printedAt` renvoyé par la requête.
+			untrack(() => {
+				printTarget = null;
+				printing = null;
+			});
+		}
+	}
 	let search = $state('');
 	// Onglets par état du RDV : « En attente » en premier et par défaut.
 	let tab = $state<'attente' | 'deballe' | 'annule' | 'rappel' | 'traite'>('attente');
@@ -218,7 +249,7 @@
 			</Tabs>
 
 			<div class="overflow-x-auto rounded-lg border border-line">
-				<Table class="min-w-[680px]">
+				<Table class="min-w-[560px]">
 					<TableHeader>
 						<TableRow class="border-line bg-transparent hover:bg-transparent">
 							<TableHead
@@ -240,11 +271,6 @@
 								class="px-4 py-3 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
 							>
 								Commercial
-							</TableHead>
-							<TableHead
-								class="px-4 py-3 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
-							>
-								Téléphone
 							</TableHead>
 							<TableHead
 								class="px-4 py-3 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
@@ -312,9 +338,6 @@
 										—
 									{/if}
 								</TableCell>
-								<TableCell class="px-4 py-3 font-mono text-[13.5px] text-muted-foreground">
-									{formatPhone(contact.phone) || '—'}
-								</TableCell>
 								<TableCell class="px-4 py-3 text-[13.5px] text-muted-foreground">
 									{contact.projet ?? '—'}
 								</TableCell>
@@ -333,8 +356,30 @@
 									{/if}
 								</TableCell>
 								<TableCell class="px-4 py-3">
-									<div class="flex justify-end text-muted-foreground">
-										<Pencil class="size-3.5" strokeWidth={1.7} />
+									<div class="flex items-center justify-end gap-1.5">
+										<button
+											type="button"
+											onclick={(event) => printContact(contact, event)}
+											disabled={printing === contact._id}
+											class={[
+												'inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11.5px] font-medium transition-colors',
+												contact.printedAt
+													? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/15 hover:text-emerald-300'
+													: 'border-line text-muted-foreground hover:bg-glass-1 hover:text-foreground'
+											].join(' ')}
+											title={contact.printedAt
+												? 'Fiche déjà imprimée — cliquer pour réimprimer'
+												: 'Imprimer la fiche'}
+										>
+											{#if contact.printedAt}
+												<Check class="size-3.5" />
+												Imprimée
+											{:else}
+												<Printer class="size-3.5" strokeWidth={1.7} />
+												Imprimer
+											{/if}
+										</button>
+										<Pencil class="size-3.5 text-muted-foreground" strokeWidth={1.7} />
 									</div>
 								</TableCell>
 							</TableRow>
@@ -342,7 +387,7 @@
 						{#if filtered.length === 0}
 							<TableRow class="border-line/60 hover:bg-transparent">
 								<TableCell
-									colspan={8}
+									colspan={7}
 									class="px-4 py-8 text-center text-[13px] text-muted-foreground"
 								>
 									{search.trim()
@@ -359,3 +404,7 @@
 </div>
 
 <ContactDialog bind:contact={selected} bind:open={dialogOpen} />
+
+{#if printTarget}
+	<ContactPrintSheet contact={printTarget} answers={printAnswers} />
+{/if}

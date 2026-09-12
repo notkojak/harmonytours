@@ -25,8 +25,10 @@
 	import { FAMILLES } from '$lib/data/catalogue';
 	import { contactSources, type ContactSource } from '$lib/data/sources';
 	import { formatPhone, onPhoneInput } from '$lib/data/phone';
+	import { initialQualification, qualifAnswered, toQualifDoc } from '$lib/data/qualification';
 	import AddressInput from './AddressInput.svelte';
 	import AgendaApercuDialog from './agenda-apercu-dialog.svelte';
+	import QualificationQuestions from './QualificationQuestions.svelte';
 
 	let { open = $bindable(false) }: { open?: boolean } = $props();
 
@@ -52,6 +54,24 @@
 	];
 
 	let name = $state('');
+	// Civilités (M. / Mme / Melle) : choix multiple possible (couple), reprises
+	// sur la fiche contact imprimable.
+	let civilites = $state<string[]>([]);
+
+	const CIVILITES = ['M.', 'Mme', 'Melle'] as const;
+	function toggleCivilite(value: string) {
+		civilites = civilites.includes(value)
+			? civilites.filter((c) => c !== value)
+			: [...civilites, value];
+	}
+	function chipClass(active: boolean): string {
+		return [
+			'rounded-full border px-2.5 py-1 text-[11.5px] font-medium transition-all',
+			active
+				? 'border-primary bg-primary text-primary-foreground shadow-sm shadow-primary/25'
+				: 'border-line bg-card2 text-muted-foreground hover:border-primary/40 hover:text-foreground'
+		].join(' ');
+	}
 	let address = $state('');
 	let phone = $state('');
 	let projet = $state('');
@@ -62,6 +82,9 @@
 	let busy = $state(false);
 	let error = $state('');
 	let agendaOpen = $state(false);
+
+	// Réponses du questionnaire « Questions découverte » (sérialisées dans la note).
+	let qualif = $state(initialQualification());
 
 	const now = new Date();
 	let followUpDate = $state(new CalendarDate(now.getFullYear(), now.getMonth() + 1, now.getDate()));
@@ -81,6 +104,7 @@
 
 	function reset() {
 		name = '';
+		civilites = [];
 		address = '';
 		phone = '';
 		projet = '';
@@ -88,6 +112,7 @@
 		note = '';
 		followUpType = 'rdv';
 		followUpTime = '10:00';
+		qualif = initialQualification();
 		error = '';
 	}
 
@@ -122,11 +147,18 @@
 		try {
 			await createContact({
 				name: name.trim(),
+				civilites:
+					civilites.length > 0
+						? (civilites as ('M.' | 'Mme' | 'Melle')[])
+						: undefined,
 				address: address.trim() || undefined,
 				phone: phone.trim() || undefined,
 				projet: projet || undefined,
 				source: (source || undefined) as ContactSource | undefined,
+				// Les réponses des questions découverte sont stockées à part : la note
+				// reste du texte libre (plus de bloc sérialisé dedans).
 				note: note.trim() || undefined,
+				qualif: qualifAnswered(qualif) > 0 ? toQualifDoc(qualif) : undefined,
 				followUp: {
 					type: followUpType,
 					date: followUpDate.toString(),
@@ -160,86 +192,85 @@
 		</DialogHeader>
 
 		<form onsubmit={handleSubmit} class="space-y-4">
-			<div class="grid grid-cols-1 gap-5 md:grid-cols-2">
-				<!-- Partie 1 : informations du contact -->
-				<div class="space-y-4">
-					<div class="space-y-1.5">
+			<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+				<div class="space-y-1.5">
+					<div class="flex flex-wrap items-center justify-between gap-2">
 						<Label for="contactName">Nom</Label>
-						<Input
-							id="contactName"
-							required
-							placeholder="Marie Dupont"
-							bind:value={name}
-							class="border-line bg-base"
-						/>
-					</div>
-
-					<div class="space-y-1.5">
-						<Label for="contactAddress">Adresse</Label>
-						<AddressInput bind:value={address} />
-					</div>
-
-					<div class="grid grid-cols-2 gap-3">
-						<div class="space-y-1.5">
-							<Label for="contactPhone">Téléphone</Label>
-							<Input
-								id="contactPhone"
-								type="tel"
-								placeholder="06 12 34 56 78"
-								value={formatPhone(phone)}
-								oninput={(e) => {
-									phone = formatPhone(e.currentTarget.value);
-									onPhoneInput(e);
-								}}
-								class="border-line bg-base"
-							/>
-						</div>
-						<div class="space-y-1.5">
-							<Label for="contactSource">Source</Label>
-							<Select type="single" bind:value={source}>
-								<SelectTrigger id="contactSource" class="w-full border-line bg-base">
-									<span data-slot="select-value">
-										{source ? source : 'Choisir une source'}
-									</span>
-								</SelectTrigger>
-								<SelectContent>
-									{#each contactSources as item}
-										<SelectItem value={item}>{item}</SelectItem>
-									{/each}
-								</SelectContent>
-							</Select>
+						<div class="flex flex-wrap gap-1.5">
+							{#each CIVILITES as c}
+								<button
+									type="button"
+									onclick={() => toggleCivilite(c)}
+									class={chipClass(civilites.includes(c))}
+								>
+									{c}
+								</button>
+							{/each}
 						</div>
 					</div>
-
-					<div class="space-y-1.5">
-						<Label for="contactProjet">Projet</Label>
-						<Select type="single" bind:value={projet}>
-							<SelectTrigger id="contactProjet" class="w-full border-line bg-base">
-								<span data-slot="select-value">
-									{projet ? projet : 'Choisir un projet'}
-								</span>
-							</SelectTrigger>
-							<SelectContent>
-								{#each FAMILLES as item}
-									<SelectItem value={item}>{item}</SelectItem>
-								{/each}
-							</SelectContent>
-						</Select>
-					</div>
-
-					<div class="space-y-1.5">
-						<Label for="contactNote">Informations sur le contact</Label>
-						<Textarea
-							id="contactNote"
-							rows={6}
-							placeholder="Notes sur le contact…"
-							bind:value={note}
-							class="min-h-36 border-line bg-base"
-						/>
-					</div>
+					<Input
+						id="contactName"
+						required
+						placeholder="Marie Dupont"
+						bind:value={name}
+						class="border-line bg-base"
+					/>
 				</div>
 
-				<!-- Partie 2 : suivi -->
+				<div class="space-y-1.5">
+					<Label for="contactAddress">Adresse</Label>
+					<AddressInput bind:value={address} />
+				</div>
+
+				<div class="space-y-1.5">
+					<Label for="contactPhone">Téléphone</Label>
+					<Input
+						id="contactPhone"
+						type="tel"
+						placeholder="06 12 34 56 78"
+						value={formatPhone(phone)}
+						oninput={(e) => {
+							phone = formatPhone(e.currentTarget.value);
+							onPhoneInput(e);
+						}}
+						class="border-line bg-base"
+					/>
+				</div>
+
+				<div class="space-y-1.5">
+					<Label for="contactSource">Source</Label>
+					<Select type="single" bind:value={source}>
+						<SelectTrigger id="contactSource" class="w-full border-line bg-base">
+							<span data-slot="select-value">
+								{source ? source : 'Choisir une source'}
+							</span>
+						</SelectTrigger>
+						<SelectContent>
+							{#each contactSources as item}
+								<SelectItem value={item}>{item}</SelectItem>
+							{/each}
+						</SelectContent>
+					</Select>
+				</div>
+
+				<div class="space-y-1.5 md:col-span-2">
+					<Label for="contactProjet">Projet</Label>
+					<Select type="single" bind:value={projet}>
+						<SelectTrigger id="contactProjet" class="w-full border-line bg-base">
+							<span data-slot="select-value">
+								{projet ? projet : 'Choisir un projet'}
+							</span>
+						</SelectTrigger>
+						<SelectContent>
+							{#each FAMILLES as item}
+								<SelectItem value={item}>{item}</SelectItem>
+							{/each}
+						</SelectContent>
+					</Select>
+				</div>
+			</div>
+
+			{#snippet suiviBlock()}
 				<div class="space-y-2">
 					<Label>Suivi</Label>
 					<div
@@ -326,6 +357,23 @@
 						{/if}
 					</div>
 				</div>
+			{/snippet}
+
+			<!-- Prise de contact (RDV / rappel) -->
+			{@render suiviBlock()}
+
+			<QualificationQuestions bind:answers={qualif} />
+
+			<!-- Informations sur le contact : la note, sous le questionnaire -->
+			<div class="space-y-1.5">
+				<Label for="contactNote">Informations sur le contact</Label>
+				<Textarea
+					id="contactNote"
+					rows={5}
+					placeholder="Notes sur le contact…"
+					bind:value={note}
+					class="min-h-28 border-line bg-base"
+				/>
 			</div>
 
 			{#if error}

@@ -212,6 +212,9 @@ export function bilanSurPeriode(
 	for (const v of visites) {
 		if (v.visitedAt < start || v.visitedAt >= end) continue;
 		if (v.deletedAt != null) continue;
+		// Les visites GMS (source = 'gms') sont comptées dans le bilan GMS
+		// séparé, pas dans les portes sonnées (même règle que l'app mobile).
+		if (v.source === 'gms') continue;
 		b.portesSonnees++;
 		addStatus(b, v.status, v.revenueCents ?? 0);
 	}
@@ -232,6 +235,8 @@ export function detailParJour(
 	for (const v of visites) {
 		if (v.visitedAt < cursor || v.visitedAt >= end) continue;
 		if (v.deletedAt != null) continue;
+		// Même règle que le bilan : les visites GMS vont dans le bilan GMS.
+		if (v.source === 'gms') continue;
 		const day = new Date(v.visitedAt).getDate();
 		let stat = row.get(day);
 		if (!stat) {

@@ -20,6 +20,7 @@
 		SelectTrigger
 	} from '$lib/components/ui/select/index.js';
 	import { FAMILLES } from '$lib/data/catalogue';
+	import { dateInputToMs, msToDateInput } from '$lib/data/dates';
 
 	let {
 		open = $bindable(false),
@@ -35,6 +36,8 @@
 		initialVente?: {
 			produits: { produit: string; tva: number; montantHT: number }[];
 			vendeurId?: string | null;
+			// Date de la vente (ms) affichée dans le champ date.
+			date?: number | null;
 		} | null;
 	} = $props();
 
@@ -42,6 +45,9 @@
 	const updateVente = useMutation(api.ventes.updateVente);
 	const vendeurs = useQuery(api.employes.listVendeurs, () => (open ? {} : 'skip'));
 	let vendeurId = $state<string | undefined>();
+	// Date de la vente (AAAA-MM-JJ) : modifiable, elle place la vente dans les
+	// statistiques du mois correspondant.
+	let venteDate = $state(msToDateInput(Date.now()));
 
 	const isEdit = $derived(!!venteId);
 	const titre = $derived(isEdit ? 'Modifier la vente' : 'Ajouter une vente');
@@ -76,9 +82,11 @@
 					montantHT: String(p.montantHT).replace('.', ',')
 				}));
 				vendeurId = initialVente.vendeurId ?? undefined;
+				venteDate = msToDateInput(initialVente.date ?? Date.now());
 			} else {
 				lignes = [{ produit: FAMILLES[0] ?? '', tva: '20', montantHT: '' }];
 				vendeurId = undefined;
+				venteDate = msToDateInput(Date.now());
 			}
 			error = '';
 		}
@@ -124,6 +132,7 @@
 			error = 'Ajoute au moins un produit avec un montant HT valide.';
 			return;
 		}
+		const date = dateInputToMs(venteDate);
 		busy = true;
 		error = '';
 		try {
@@ -131,13 +140,15 @@
 				await updateVente({
 					venteId: venteId as Id<'ventes'>,
 					produits,
-					...(vendeurId ? { vendeurId: vendeurId as Id<'users'> } : {})
+					...(vendeurId ? { vendeurId: vendeurId as Id<'users'> } : {}),
+					...(date ? { date } : {})
 				});
 			} else {
 				await addVente({
 					contactId: contactId as Id<'contacts'>,
 					produits,
-					...(vendeurId ? { vendeurId: vendeurId as Id<'users'> } : {})
+					...(vendeurId ? { vendeurId: vendeurId as Id<'users'> } : {}),
+					...(date ? { date } : {})
 				});
 			}
 			lignes = [];
@@ -157,20 +168,28 @@
 		</DialogHeader>
 
 		<div class="space-y-3">
-			<div class="space-y-1">
-				<Label>Commercial accompagnateur</Label>
-				<Select type="single" bind:value={vendeurId}>
-					<SelectTrigger class="w-full border-line bg-base">
-						<span data-slot="select-value">
-							{vendeurs?.data?.find((v) => v._id === vendeurId)?.name ?? 'Choisir un commercial'}
-						</span>
-					</SelectTrigger>
-					<SelectContent>
-						{#each vendeurs?.data ?? [] as v}
-							<SelectItem value={v._id}>{v.name}{v.isMe ? ' (moi)' : ''}</SelectItem>
-						{/each}
-					</SelectContent>
-				</Select>
+			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+				<div class="space-y-1">
+					<Label>Commercial accompagnateur</Label>
+					<Select type="single" bind:value={vendeurId}>
+						<SelectTrigger class="w-full border-line bg-base">
+							<span data-slot="select-value">
+								{vendeurs?.data?.find((v) => v._id === vendeurId)?.name ??
+									'Choisir un commercial'}
+							</span>
+						</SelectTrigger>
+						<SelectContent>
+							{#each vendeurs?.data ?? [] as v}
+								<SelectItem value={v._id}>{v.name}{v.isMe ? ' (moi)' : ''}</SelectItem>
+							{/each}
+						</SelectContent>
+					</Select>
+				</div>
+
+				<div class="space-y-1">
+					<Label for="venteDate">Date de la vente</Label>
+					<Input id="venteDate" type="date" bind:value={venteDate} class="border-line bg-base" />
+				</div>
 			</div>
 
 			<div class="flex items-center justify-between text-[12px] font-medium text-muted-foreground">

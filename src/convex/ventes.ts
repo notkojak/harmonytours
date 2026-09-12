@@ -51,7 +51,10 @@ export const addVente = mutation({
 	args: {
 		contactId: v.id('contacts'),
 		produits: v.array(produitValidator),
-		vendeurId: v.optional(v.id('users'))
+		vendeurId: v.optional(v.id('users')),
+		// Date de la vente (ms) : par défaut maintenant, modifiable pour saisir
+		// une vente plus ancienne.
+		date: v.optional(v.number())
 	},
 	handler: async (ctx, args) => {
 		const user = await getCurrentUser(ctx);
@@ -86,7 +89,7 @@ export const addVente = mutation({
 			// Par défaut « en attente » : la vente n'est comptée dans le CA que
 			// lorsqu'elle passe en « valide » (validation du dossier).
 			statut: 'en attente',
-			date: Date.now(),
+			date: args.date ?? Date.now(),
 			produits: args.produits,
 			totalHT,
 			totalTVA,
@@ -298,7 +301,10 @@ export const updateVente = mutation({
 	args: {
 		venteId: v.id('ventes'),
 		produits: v.array(produitValidator),
-		vendeurId: v.optional(v.id('users'))
+		vendeurId: v.optional(v.id('users')),
+		// Date de la vente (ms) : corrigeable (la vente se déplace alors dans les
+		// statistiques du mois correspondant).
+		date: v.optional(v.number())
 	},
 	handler: async (ctx, args) => {
 		const user = await getCurrentUser(ctx);
@@ -329,7 +335,10 @@ export const updateVente = mutation({
 			totalTTC: number;
 			vendeurId?: Id<'users'>;
 			vendeurName?: string;
+			date?: number;
 		} = { produits: args.produits, totalHT, totalTVA, totalTTC };
+
+		if (args.date !== undefined) patch.date = args.date;
 
 		if (args.vendeurId && args.vendeurId !== vente.vendeurId) {
 			const vendeur = await ctx.db.get(args.vendeurId);

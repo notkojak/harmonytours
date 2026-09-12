@@ -27,12 +27,10 @@ export const navSections = [
 			{ label: 'Books', icon: 'library', href: '/books' }
 		]
 	},
-	// Caché pour le moment (le route /chiffrage existe toujours) :
-	// {
-	// 	label: 'Outils',
-	// 	items: [{ label: 'Chiffrage', icon: 'calculator', href: '/chiffrage' }]
-	// },
 	{
+		label: 'Outils',
+		items: [{ label: 'Chiffrage', icon: 'calculator', href: '/chiffrage' }]
+	},	{
 		label: 'Gestion',
 		items: [{ label: 'Administration', icon: 'shield', href: '/administration' }]
 	}
@@ -79,6 +77,9 @@ export type TeamMember = {
 	_id?: string;
 	firstName: string;
 	lastName: string;
+	// Rôle du membre : sert à écarter les superviseurs de zone (directeur de
+	// zone, animateur de zone) des objectifs et du total des commerciaux.
+	role?: string | null;
 	objectiveCa: number;
 	objectiveRdv: number;
 	rdvTap: number;
