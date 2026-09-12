@@ -354,7 +354,7 @@
 						colspan={13}
 						class="px-2.5 py-1 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase"
 					>
-						Autres — hors objectifs et hors total des commerciaux
+						Autres — animation
 					</TableCell>
 				</TableRow>
 				{#each ordered.autres as member (member._id ?? `${member.firstName} ${member.lastName}`)}
