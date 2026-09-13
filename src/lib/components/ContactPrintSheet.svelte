@@ -320,17 +320,11 @@
 				</div>
 			</section>
 
-			<!-- Moitié droite : informations sur le contact (la note) -->
+			<!-- Moitié droite : questions découverte puis informations sur le contact (la note) -->
 			<aside class="note-col">
 				<div class="project-card">
 					<div class="project-label">PROJET DU CONTACT</div>
 					<div class="project-value">{contact.projet?.trim() || 'Non renseigné'}</div>
-				</div>
-				<div class="section-heading">
-					<span class="blocks">▪▪▪</span> INFORMATIONS SUR LE CONTACT <span class="blocks">▪▪▪</span>
-				</div>
-				<div class="note-box">
-					<p class="note-text">{noteText || '—'}</p>
 				</div>
 
 				{#if qualifLines.length > 0}
@@ -343,6 +337,13 @@
 						{/each}
 					</div>
 				{/if}
+
+				<div class="section-heading note-heading">
+					<span class="blocks">▪▪▪</span> INFORMATIONS SUR LE CONTACT <span class="blocks">▪▪▪</span>
+				</div>
+				<div class="note-box">
+					<p class="note-text">{noteText || '—'}</p>
+				</div>
 			</aside>
 		</div>
 	</div>
@@ -692,6 +693,9 @@
 			overflow-wrap: break-word;
 		}
 		.qualif-heading {
+			margin-top: 0;
+		}
+		.note-heading {
 			margin-top: 3mm;
 		}
 		.qualif-box {
