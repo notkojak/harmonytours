@@ -289,7 +289,11 @@ export default defineSchema({
 		.index('by_doc_id', ['id'])
 		.index('by_user', ['userId'])
 		.index('by_user_status', ['userId', 'status'])
-		.index('by_agency', ['agencyId']),
+		.index('by_agency', ['agencyId'])
+		// Pull incrémental de l'app (§ coût Convex) : on ne lit que les lignes
+		// modifiées depuis `lastSyncAt` au lieu de toute l'agence.
+		.index('by_agency_updated', ['agencyId', 'updatedAt'])
+		.index('by_user_updated', ['userId', 'updatedAt']),
 
 	// Compteurs GMS quotidiens importés depuis l'app mobile (tablette BeastDoor) :
 	// salutations, flyers, questions, contacts et RDV par jour. Alimente le
@@ -311,7 +315,8 @@ export default defineSchema({
 	})
 		.index('by_doc_id', ['id'])
 		.index('by_user', ['userId'])
-		.index('by_user_date', ['userId', 'date']),
+		.index('by_user_date', ['userId', 'date'])
+		.index('by_user_updated', ['userId', 'updatedAt']),
 
 	// Passages (visites) sur les portes importées : chaque passage porte un
 	// statut (non présent, traité/refus, RDV, contact, étude…) et une date
@@ -339,7 +344,11 @@ export default defineSchema({
 		.index('by_doc_id', ['id'])
 		.index('by_user', ['userId'])
 		.index('by_user_visited', ['userId', 'visitedAt'])
-		.index('by_agency', ['agencyId']),
+		.index('by_agency', ['agencyId'])
+		.index('by_agency_updated', ['agencyId', 'updatedAt'])
+		.index('by_user_updated', ['userId', 'updatedAt'])
+		// Vérification « cette porte a-t-elle déjà un RDV ? » sans scan complet.
+		.index('by_address_status', ['addressId', 'status']),
 
 	// Contacts liés aux portes (tablette) : copie miroir du backend BeastDoor,
 	// liés à l'utilisateur. Chaque ligne est un upsert idempotent par `id`.
@@ -362,7 +371,9 @@ export default defineSchema({
 	})
 		.index('by_doc_id', ['id'])
 		.index('by_user', ['userId'])
-		.index('by_agency', ['agencyId']),
+		.index('by_agency', ['agencyId'])
+		.index('by_agency_updated', ['agencyId', 'updatedAt'])
+		.index('by_user_updated', ['userId', 'updatedAt']),
 
 	// RDV liés aux portes (tablette) : copie miroir du backend BeastDoor.
 	doorAppointmentsBeastdoor: defineTable({
@@ -386,7 +397,10 @@ export default defineSchema({
 	})
 		.index('by_doc_id', ['id'])
 		.index('by_user', ['userId'])
-		.index('by_agency', ['agencyId']),
+		.index('by_agency', ['agencyId'])
+		.index('by_agency_updated', ['agencyId', 'updatedAt'])
+		.index('by_user_updated', ['userId', 'updatedAt'])
+		.index('by_address', ['addressId']),
 
 	// Notes de calendrier (tablette) : copie miroir du backend BeastDoor.
 	calendarNotesBeastdoor: defineTable({
@@ -404,7 +418,8 @@ export default defineSchema({
 		userId: v.id('users')
 	})
 		.index('by_doc_id', ['id'])
-		.index('by_user', ['userId']),
+		.index('by_user', ['userId'])
+		.index('by_user_updated', ['userId', 'updatedAt']),
 
 	// Stats quotidiennes des portes (tablette) : refus / non présent par jour.
 	porteStatsBeastdoor: defineTable({
@@ -421,7 +436,8 @@ export default defineSchema({
 	})
 		.index('by_doc_id', ['id'])
 		.index('by_user', ['userId'])
-		.index('by_user_date', ['userId', 'date']),
+		.index('by_user_date', ['userId', 'date'])
+		.index('by_user_updated', ['userId', 'updatedAt']),
 
 	// Tables métier du projet.
 	stats: defineTable({

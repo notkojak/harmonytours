@@ -357,6 +357,10 @@ export type GmsStatRow = {
 	salutation: number;
 	flyer: number;
 	question: number;
+	// Compteurs « Contact » / « RDV » tapés sur l'écran GMS de l'app (une fois
+	// qu'une étude a donné un rappel ou un RDV).
+	contact?: number | null;
+	rdv?: number | null;
 	createdAt: number;
 	updatedAt: number;
 	deletedAt?: number | null;
@@ -377,8 +381,12 @@ export function emptyGms(): GmsBilan {
 }
 
 // Agrège les stats GMS de la période [startISO, endISOExclusive[. Les compteurs
-// quotidiens (salutation/flyer/question) sont sommés jour par jour ; catalogues
-// / contact / rdv sont comptés depuis les visites marquées source 'gms'.
+// quotidiens (salutation/flyer/question, ainsi que contact/rdv tapés sur l'écran
+// GMS de l'app) sont sommés jour par jour ; catalogues / contact / rdv
+// proviennent en plus des visites marquées source 'gms' (études menées sur la
+// carte, qui n'incrémentent pas les compteurs « Contact » / « RDV »).
+// Sans les compteurs, la ligne « RDV » du bilan GMS resterait à 0 alors que
+// l'écran GMS du téléphone en affiche.
 export function bilangmsSurPeriode(
 	gmsDaily: GmsStatRow[],
 	visites: VisiteRow[],
@@ -396,6 +404,8 @@ export function bilangmsSurPeriode(
 		b.salutation += g.salutation;
 		b.flyer += g.flyer;
 		b.question += g.question;
+		b.contact += g.contact ?? 0;
+		b.rdv += g.rdv ?? 0;
 	}
 	for (const v of visites) {
 		if (v.source !== 'gms') continue;

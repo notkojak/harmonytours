@@ -218,8 +218,19 @@ export const importPortes = action({
 // filtré côté front par rôle (managers → équipe, commercial → ses propres lignes).
 // Sans `personIds`, on cible la personne à qui les données sont importées (Pierre
 // Torres) — comportement historique de la page Bilan.
+//
+// COÛT : cette query est souscrite par la page Bilan, donc ré-exécutée à CHAQUE
+// écriture sur les tables de prospection. Sans `from`/`to`, elle relisait toute
+// la prospection (≈ 2 400 documents) à chaque fois — c'était l'essentiel de la
+// facture Convex (Database I/O). Avec la période affichée (`from` inclus,
+// `to` exclu, 'YYYY-MM-DD'), on ne lit que les visites de la période et les
+// portes touchées pendant celle-ci.
 export const list = query({
-	args: { personIds: v.optional(v.array(v.id('users'))) },
+	args: {
+		personIds: v.optional(v.array(v.id('users'))),
+		from: v.optional(v.string()),
+		to: v.optional(v.string())
+	},
 	handler: async (ctx, args) => {
 		// Connexion requise.
 		await getCurrentUser(ctx);
@@ -243,7 +254,34 @@ export const list = query({
 		const portes: Doc<'portesBeastdoor'>[] = [];
 		const visites: Doc<'visitesBeastdoor'>[] = [];
 		const gmsStats: Doc<'gmsStatsBeastdoor'>[] = [];
+		const fromISO = args.from;
+		const toISO = args.to;
+		const usePeriod = Boolean(fromISO && toISO);
+		const fromTs = usePeriod ? Date.parse(fromISO as string) : 0;
+		const toTs = usePeriod ? Date.parse(toISO as string) : 0;
 		for (const targetUserId of targetUserIds) {
+			if (usePeriod) {
+				// Visites de la période affichée uniquement (index userId+visitedAt).
+				visites.push(
+					...(await ctx.db
+						.query('visitesBeastdoor')
+						.withIndex('by_user_visited', (q) =>
+							q.eq('userId', targetUserId).gte('visitedAt', fromTs).lt('visitedAt', toTs)
+						)
+						.collect())
+				);
+				// Compteurs GMS de la période (index userId+date).
+				gmsStats.push(
+					...(await ctx.db
+						.query('gmsStatsBeastdoor')
+						.withIndex('by_user_date', (q) =>
+							q.eq('userId', targetUserId).gte('date', fromISO as string).lt('date', toISO as string)
+						)
+						.collect())
+				);
+				continue;
+			}
+			// Sans période (appel historique) : tout l'historique de la personne.
 			portes.push(
 				...(await ctx.db
 					.query('portesBeastdoor')
@@ -262,6 +300,22 @@ export const list = query({
 					.withIndex('by_user', (q) => q.eq('userId', targetUserId))
 					.collect())
 			);
+		}
+		if (usePeriod) {
+			// La carte et les compteurs ne s'appuient que sur les portes touchées
+			// pendant la période : on lit ces portes une par une par leur id
+			// (≈ 200 lectures) au lieu des 1 200 portes de l'agence.
+			const dejaLues = new Set<string>();
+			for (const visite of visites) {
+				const addressId = (visite as { addressId?: string }).addressId;
+				if (!addressId || dejaLues.has(addressId)) continue;
+				dejaLues.add(addressId);
+				const porte = await ctx.db
+					.query('portesBeastdoor')
+					.withIndex('by_doc_id', (q) => q.eq('id', addressId))
+					.first();
+				if (porte) portes.push(porte);
+			}
 		}
 		return { portes, visites, gmsStats };
 	}
@@ -283,6 +337,13 @@ const ENTITY_TABLE: Record<string, string> = {
 	gmsDailyStats: 'gmsStatsBeastdoor',
 	porteDailyStats: 'porteStatsBeastdoor'
 };
+
+// Compteurs quotidiens (GMS / portes) : la ligne est identifiée par le couple
+// (utilisateur, date), jamais par le seul `id` — l'app envoie `id = date` (une
+// journée = un id), donc deux collègues travaillant le même jour partageaient la
+// même ligne serveur : le dernier à synchroniser écrasait le compteur de l'autre
+// (bilan GMS à 0 pour tout le monde sauf lui).
+const DAILY_STAT_ENTITY_TYPES = new Set(['gmsDailyStats', 'porteDailyStats']);
 
 // Entités « carte » partagées au niveau de l'agence : tout membre de l'agence
 // voit les portes/contacts/visites/RDV de ses collègues (chacune garde son
@@ -386,10 +447,23 @@ export const upsertBeastdoorChange = mutation({
 		// Champs internes Convex de l'ancien backend : jamais stockés ici.
 		delete cleaned['_id'];
 		delete cleaned['_creationTime'];
-		const existing = await db
-			.query(table)
-			.withIndex('by_doc_id', (q: any) => q.eq('id', entityId))
-			.first();
+		// Compteurs quotidiens : clé métier (utilisateur, date). Sinon le `id`
+		// (égal à la date) ferait collision entre collègues.
+		const isDailyStat = DAILY_STAT_ENTITY_TYPES.has(entityType);
+		const statDate = isDailyStat
+			? (str(cleaned.date) ?? str(cleaned.id) ?? entityId)
+			: entityId;
+		const existing = isDailyStat
+			? await db
+					.query(table)
+					.withIndex('by_user_date', (q: any) =>
+						q.eq('userId', userId).eq('date', statDate)
+					)
+					.first()
+			: await db
+					.query(table)
+					.withIndex('by_doc_id', (q: any) => q.eq('id', entityId))
+					.first();
 		if (operation === 'delete') {
 			// Règle « qui a créé peut supprimer » : seule la personne qui a créé la
 			// porte / l'état peut la supprimer (les managers de la carte passent).
@@ -413,6 +487,9 @@ export const upsertBeastdoorChange = mutation({
 		const doc = toCamel(cleaned);
 		doc.id = entityId;
 		doc.userId = userId;
+		// Le `date` est la clé métier des compteurs quotidiens : on le garantit
+		// même si l'app n'envoie que son `id` (= la date).
+		if (isDailyStat) doc.date = statDate;
 		if (isShared) doc.agencyId = agencyId;
 		// Estampille `updatedAt` à l'heure du serveur (au moins celle de l'appareil) :
 		// garantit que la ligne progresse avec l'horloge serveur, donc que le pull
@@ -477,21 +554,23 @@ async function doorHasRdv(db: any, addressId: string): Promise<boolean> {
 		.withIndex('by_doc_id', (q: any) => q.eq('id', addressId))
 		.first();
 	const doorRdv = door && !door.deletedAt && door.status === 'rdv';
-	const appointment = await db
+	// COÛT : `.filter()` parcourait toute la table (1 000+ documents) à chaque
+	// refus d'un collègue ; l'index addressId (+ statut) ne lit plus que
+	// quelques lignes.
+	const appointments = await db
 		.query('doorAppointmentsBeastdoor')
-		.filter((q: any) => q.eq(q.field('addressId'), addressId))
-		.first();
-	const activeAppointment = appointment && !appointment.deletedAt;
-	const visit = await db
+		.withIndex('by_address', (q: any) => q.eq('addressId', addressId))
+		.take(8);
+	const activeAppointment = (appointments as { deletedAt?: number }[]).some(
+		(a) => !a.deletedAt
+	);
+	const visits = await db
 		.query('visitesBeastdoor')
-		.filter((q: any) =>
-			q.and(
-				q.eq(q.field('addressId'), addressId),
-				q.eq(q.field('status'), 'rdv')
-			)
+		.withIndex('by_address_status', (q: any) =>
+			q.eq('addressId', addressId).eq('status', 'rdv')
 		)
-		.first();
-	const activeRdvVisit = visit && !visit.deletedAt;
+		.take(8);
+	const activeRdvVisit = (visits as { deletedAt?: number }[]).some((v) => !v.deletedAt);
 	return Boolean(doorRdv || activeAppointment || activeRdvVisit);
 }
 
@@ -525,14 +604,22 @@ export const listBeastdoorChanges = query({
 			// pull renvoie les lignes de TOUS les membres de l'agence (chacune avec
 			// son `userId` = créateur). Compteurs et notes : par utilisateur.
 			const isShared = SHARED_ENTITY_TYPES.has(entityType);
+			// COÛT : on borne la lecture à ce qui a changé depuis `lastSyncAt`
+			// (index userId/agencyId + updatedAt). Avant, chaque synchro relisait
+			// TOUT le jeu de données de l'agence (≈ 2 400 documents, 1,8 Mo) pour
+			// n'en renvoyer qu'une poignée.
 			const docs = (isShared && agencyId
 				? await db
 						.query(table)
-						.withIndex('by_agency', (q: any) => q.eq('agencyId', agencyId))
+						.withIndex('by_agency_updated', (q: any) =>
+							q.eq('agencyId', agencyId).gte('updatedAt', lastSyncAt)
+						)
 						.collect()
 				: await db
 						.query(table)
-						.withIndex('by_user', (q: any) => q.eq('userId', userId))
+						.withIndex('by_user_updated', (q: any) =>
+							q.eq('userId', userId).gte('updatedAt', lastSyncAt)
+						)
 						.collect()) as RawChange[];
 			result[entityType] = docs
 				.filter((d) => (num(d.updatedAt) ?? 0) >= lastSyncAt)

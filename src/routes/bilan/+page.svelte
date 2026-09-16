@@ -59,21 +59,6 @@
 	// Onglet sélectionné : null = « Tous » (toute l'équipe), sinon l'id du membre.
 	let memberId = $state<Id<'users'> | null>(null);
 
-	// --- Données importées depuis BeastDoor (portes + visites) ---
-	// Admin / directeur de zone : « Tous » passe tous les ids de l'équipe, un
-	// onglet membre passe le sien ; les autres rôles ne passent rien (défaut).
-	const data = useQuery(api.beastdoor.list, () =>
-		authState.isAuthenticated
-			? isScopeAll
-				? {
-						personIds: memberId === null ? (people.data ?? []).map((p) => p._id) : [memberId]
-					}
-				: {}
-			: 'skip'
-	);
-	const portes = $derived(data.data?.portes ?? []);
-	const visites = $derived(data.data?.visites ?? []);
-
 	// --- Sélecteur de période (mois courant par défaut) ---
 	let viewISO = $state(firstDayOfMonth(new Date())); // 'YYYY-MM-DD' (1er du mois)
 	const monthLabel = $derived(
@@ -85,6 +70,39 @@
 
 	// Jour focusé (null = vue mois). Par défaut : vue jour (aujourd'hui).
 	let focusDay = $state<string | null>(isoOf(new Date()));
+
+	// Fin du mois (exclusive) : premier jour du mois suivant.
+	const monthEndExclusive = $derived(
+		(() => {
+			const d = new Date(viewISO + 'T12:00:00');
+			d.setMonth(d.getMonth() + 1);
+			return firstDayOfMonth(d);
+		})()
+	);
+
+	// Période affichée (mois ou jour focusé) — utilisée pour le bilan ET la carte.
+	const periodStart = $derived(focusDay ?? viewISO);
+	const periodEnd = $derived(focusDay ? dayAdd(focusDay, 1) : monthEndExclusive);
+
+	// --- Données importées depuis BeastDoor (portes + visites) ---
+	// Admin / directeur de zone : « Tous » passe tous les ids de l'équipe, un
+	// onglet membre passe le sien ; les autres rôles ne passent rien (défaut).
+	// `from`/`to` bornent la lecture côté Convex à la période affichée : cette
+	// query est ré-exécutée à CHAQUE écriture de la prospection, donc relire tout
+	// l'historique (≈ 2 400 documents) à chaque fois coûtait cher (Database I/O).
+	const data = useQuery(api.beastdoor.list, () =>
+		authState.isAuthenticated
+			? isScopeAll
+				? {
+						personIds: memberId === null ? (people.data ?? []).map((p) => p._id) : [memberId],
+						from: periodStart,
+						to: periodEnd
+					}
+				: { from: periodStart, to: periodEnd }
+			: 'skip'
+	);
+	const portes = $derived(data.data?.portes ?? []);
+	const visites = $derived(data.data?.visites ?? []);
 
 	// Libellé de la période affichée : le jour quand la vue « Jour » est active,
 	// sinon le mois.
@@ -123,15 +141,6 @@
 			focusDay = null;
 		}
 	}
-
-	// Fin du mois (exclusive) : premier jour du mois suivant.
-	const monthEndExclusive = $derived(
-		(() => {
-			const d = new Date(viewISO + 'T12:00:00');
-			d.setMonth(d.getMonth() + 1);
-			return firstDayOfMonth(d);
-		})()
-	);
 
 	// --- Agrégations ---
 	const bilanMois = $derived(bilanSurPeriode(visites, viewISO, monthEndExclusive));
@@ -181,10 +190,6 @@
 	let noToken = $state(false);
 
 	type PorteFeature = Feature<Point, { status?: string | null; label: string }>;
-
-	// Période affichée (mois ou jour focusé) — utilisée pour le bilan ET la carte.
-	const periodStart = $derived(focusDay ?? viewISO);
-	const periodEnd = $derived(focusDay ? dayAdd(focusDay, 1) : monthEndExclusive);
 
 	// Statut de la porte tel qu'observé dans la période (dernière visite).
 	// Utile pour colorer la carte sur le mois / jour affiché.

@@ -1,6 +1,11 @@
 import { action, internalMutation, internalQuery, mutation, query } from './_generated/server';
 import { v } from 'convex/values';
-import { createAccount, getAuthUserId, invalidateSessions } from '@convex-dev/auth/server';
+import {
+	createAccount,
+	getAuthUserId,
+	invalidateSessions,
+	modifyAccountCredentials
+} from '@convex-dev/auth/server';
 import { internal } from './_generated/api';
 import {
 	canManageAgency,
@@ -274,6 +279,47 @@ export const fire = action({
 			throw new Error('Non autorisé pour cette agence.');
 		}
 		await ctx.runMutation(internal.employes.fireDoc, { employeId });
+		await invalidateSessions(ctx, { userId: employeId });
+	}
+});
+
+// Réinitialisation du mot de passe d'un employé : réservée à l'administrateur
+// et au directeur d'agence (même permission que la création de compte). Les
+// sessions ouvertes de l'employé sont invalidées pour forcer une reconnexion.
+export const resetPassword = action({
+	args: {
+		employeId: v.id('users'),
+		password: v.string()
+	},
+	handler: async (ctx, { employeId, password }) => {
+		const userId = await getAuthUserId(ctx);
+		if (userId === null) {
+			throw new Error('Non connecté.');
+		}
+		const user = await ctx.runQuery(internal.employes.getUser, { id: userId });
+		if (!user || user.statut === 'viré') {
+			throw new Error('Accès bloqué.');
+		}
+		if (!canManageEmployes(user)) {
+			throw new Error('Non autorisé.');
+		}
+		if (password.length < 6) {
+			throw new Error('Le mot de passe doit contenir au moins 6 caractères.');
+		}
+		const target = await ctx.runQuery(internal.employes.getUser, { id: employeId });
+		if (!target?.email) {
+			throw new Error('Employé introuvable.');
+		}
+		const agence = target.agencyId
+			? await ctx.runQuery(internal.agences.get, { id: target.agencyId })
+			: null;
+		if (!canManageAgency(user, agence)) {
+			throw new Error('Non autorisé pour cette agence.');
+		}
+		await modifyAccountCredentials(ctx, {
+			provider: 'password',
+			account: { id: target.email, secret: password }
+		});
 		await invalidateSessions(ctx, { userId: employeId });
 	}
 });
