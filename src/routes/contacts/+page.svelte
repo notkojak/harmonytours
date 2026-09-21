@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Check, ContactRound, Pencil, Printer, Search } from '@lucide/svelte';
+	import { Check, ContactRound, Pencil, Printer, Search, Undo2 } from '@lucide/svelte';
 	import { tick, untrack } from 'svelte';
 	import { useMutation, useQuery } from 'convex-svelte';
 	import { api } from '../../convex/_generated/api.js';
@@ -84,6 +84,21 @@
 			});
 		}
 	}
+	// Annulation du marquage « traité » depuis la liste : le contact revient dans
+	// son onglet principal (RDV, rappel ou actif).
+	const markContactTreated = useMutation(api.contacts.markTreated);
+	async function untreatContact(contact: ContactRow, event?: MouseEvent) {
+		event?.stopPropagation();
+		try {
+			await markContactTreated({
+				contactId: contact._id as Id<'contacts'>,
+				treated: false
+			});
+		} catch (e) {
+			console.error(e);
+		}
+	}
+
 	let search = $state('');
 	// Onglets par état du RDV : « En attente » en premier et par défaut.
 	let tab = $state<'attente' | 'deballe' | 'annule' | 'rappel' | 'traite'>('attente');
@@ -379,6 +394,17 @@
 												Imprimer
 											{/if}
 										</button>
+										{#if contact.statut === 'traité'}
+											<button
+												type="button"
+												onclick={(event) => untreatContact(contact, event)}
+												class="inline-flex items-center gap-1.5 rounded-md border border-line px-2 py-1 text-[11.5px] font-medium text-muted-foreground transition-colors hover:bg-glass-1 hover:text-foreground"
+												title="Annuler le traitement — le contact retrouve son état principal"
+											>
+												<Undo2 class="size-3.5" strokeWidth={1.7} />
+												Annuler
+											</button>
+										{/if}
 										<Pencil class="size-3.5 text-muted-foreground" strokeWidth={1.7} />
 									</div>
 								</TableCell>

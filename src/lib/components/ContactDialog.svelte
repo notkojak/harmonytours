@@ -48,6 +48,7 @@
 		Plus,
 		Printer,
 		Trash2,
+		Undo2,
 		X
 	} from '@lucide/svelte';
 	import { CalendarDate, getLocalTimeZone, type DateValue } from '@internationalized/date';
@@ -550,11 +551,13 @@
 		}
 	}
 
-	async function handleMarkTreated() {
+	// treated = false : on annule le marquage, le contact revient dans son état
+	// principal (RDV, rappel ou actif) — son suivi est conservé tel quel.
+	async function handleMarkTreated(treated = true) {
 		if (!contact) return;
 		try {
-			await markContactTreated({ contactId: contact._id as Id<'contacts'> });
-			contact = { ...contact, statut: 'traité' };
+			await markContactTreated({ contactId: contact._id as Id<'contacts'>, treated });
+			contact = { ...contact, statut: treated ? 'traité' : 'actif' };
 		} catch {
 			// L'état sera rafraîchi par la requête.
 		}
@@ -2099,9 +2102,14 @@
 						Recontacter
 					</Button>
 					{#if contact?.statut !== 'traité'}
-						<Button variant="ghost" onclick={handleMarkTreated} class="gap-1.5">
+						<Button variant="ghost" onclick={() => handleMarkTreated()} class="gap-1.5">
 							<CheckCircle2 class="size-4" />
 							Marquer comme traité
+						</Button>
+					{:else}
+						<Button variant="ghost" onclick={() => handleMarkTreated(false)} class="gap-1.5">
+							<Undo2 class="size-4" />
+							Annuler le traitement
 						</Button>
 					{/if}
 				{/if}
