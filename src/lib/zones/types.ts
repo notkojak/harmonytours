@@ -10,4 +10,6 @@ export type Zone = {
 	color: string | null;
 	// Repasse la zone en vert une fois la dernière prospection vieille de 6 mois.
 	greenWhenOld: boolean;
+	// Commercial affecté à la zone (id Convex users), `null` si non affectée.
+	commercialId: string | null;
 };

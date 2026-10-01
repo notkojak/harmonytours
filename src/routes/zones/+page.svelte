@@ -3,6 +3,9 @@
 	import { env } from '$env/dynamic/public';
 	import {
 		Check,
+		Copy,
+		ListChecks,
+		LoaderCircle,
 		Lock,
 		Map as MapIcon,
 		Pencil,
@@ -15,6 +18,7 @@
 	} from '@lucide/svelte';
 	import { useQuery, useMutation } from 'convex-svelte';
 	import { api } from '../../convex/_generated/api.js';
+	import type { Id } from '../../convex/_generated/dataModel.js';
 	import { authState } from '$lib/auth-state.svelte';
 	import { canAccessAdministration } from '$lib/data/roles';
 	import type { Map as MapboxMap, MapMouseEvent, GeoJSONSource } from 'mapbox-gl';
@@ -52,6 +56,8 @@
 	import { getTheme } from '$lib/theme';
 	import { drawing, editing, selectedZoneId } from '$lib/zones/ui.js';
 	import { pointInPolygon } from '$lib/zones/geometry.js';
+	import { fetchVillagesByZone, formatPopulation, type Commune } from '$lib/zones/villages.js';
+	import Avatar from '$lib/components/Avatar.svelte';
 
 	import 'mapbox-gl/dist/mapbox-gl.css';
 	import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
@@ -75,6 +81,13 @@
 	const upsertZone = useMutation(api.zones.upsert);
 	const removeZone = useMutation(api.zones.remove);
 
+	// Employés (commerciaux) affectables à une zone, avec nom + photo.
+	const peopleQuery = useQuery(api.access.listPeople, () =>
+		authState.isAuthenticated ? {} : 'skip'
+	);
+	const people = $derived(peopleQuery.data ?? []);
+	const personById = (id: string | null) => people.find((p) => p._id === id) ?? null;
+
 	// Pins « GMS » (grandes surfaces en cours).
 	const gmsQuery = useQuery(api.gms.list, () => (authState.isAuthenticated ? {} : 'skip'));
 	const upsertGms = useMutation(api.gms.upsert);
@@ -89,7 +102,8 @@
 			createdAt: z.createdAt,
 			geometry: z.geometry,
 			color: z.color ?? null,
-			greenWhenOld: z.greenWhenOld ?? false
+			greenWhenOld: z.greenWhenOld ?? false,
+			commercialId: z.commercialId ?? null
 		}))
 	);
 	const zonesErrorMessage = $derived(zonesQuery.error?.message ?? actionError ?? '');
@@ -120,6 +134,7 @@
 	let zoneFormName = $state('');
 	let zoneFormColor = $state(DEFAULT_ZONE_COLOR);
 	let zoneFormGreenWhenOld = $state(true);
+	let zoneFormCommercialId = $state<string>('');
 	// Feature Mapbox Draw d'une nouvelle zone, en attente de validation (nom +
 	// couleur) avant enregistrement dans Convex.
 	let pendingDraw = $state<{ drawId: string; geometry: Zone['geometry'] } | null>(null);
@@ -297,6 +312,7 @@
 		zoneFormName = defaultZoneName();
 		zoneFormColor = DEFAULT_ZONE_COLOR;
 		zoneFormGreenWhenOld = true;
+		zoneFormCommercialId = '';
 		zoneDialogOpen = true;
 	}
 
@@ -313,7 +329,8 @@
 			createdAt: existing.createdAt,
 			geometry: f.geometry,
 			color: existing.color ?? undefined,
-			greenWhenOld: existing.greenWhenOld
+			greenWhenOld: existing.greenWhenOld,
+			commercialId: (existing.commercialId ?? undefined) as Id<'users'> | undefined
 		});
 		setTimeout(() => {
 			syncing = false;
@@ -327,6 +344,7 @@
 		zoneFormName = z.name;
 		zoneFormColor = z.color ?? DEFAULT_ZONE_COLOR;
 		zoneFormGreenWhenOld = z.greenWhenOld;
+		zoneFormCommercialId = z.commercialId ?? '';
 		zoneDialogOpen = true;
 	}
 
@@ -344,7 +362,8 @@
 					createdAt: z.createdAt,
 					geometry: z.geometry,
 					color: zoneFormColor,
-					greenWhenOld: zoneFormGreenWhenOld
+					greenWhenOld: zoneFormGreenWhenOld,
+					commercialId: (zoneFormCommercialId || undefined) as Id<'users'> | undefined
 				});
 			}
 		} else if (pendingDraw) {
@@ -370,7 +389,8 @@
 				createdAt: Date.now(),
 				geometry: pendingDraw.geometry,
 				color: zoneFormColor,
-				greenWhenOld: zoneFormGreenWhenOld
+				greenWhenOld: zoneFormGreenWhenOld,
+				commercialId: (zoneFormCommercialId || undefined) as Id<'users'> | undefined
 			});
 			pendingDraw = null;
 			setTimeout(() => {
@@ -383,6 +403,90 @@
 	// Annule le formulaire : la fermeture déclenche le nettoyage du tracé.
 	function cancelZoneForm() {
 		zoneDialogOpen = false;
+	}
+
+	// --- Liste copiable des zones « non rouges », groupées par commercial ---
+	type VillageGroup = {
+		commercialId: string | null;
+		zones: { zone: Zone; communes: Commune[] }[];
+	};
+	let villagesOpen = $state(false);
+	let villagesLoading = $state(false);
+	let villagesError = $state('');
+	let copied = $state(false);
+	let villageGroups = $state<VillageGroup[]>([]);
+
+	function personName(id: string | null): string {
+		if (!id) return 'Sans commercial';
+		const p = personById(id);
+		return p ? `${p.firstName} ${p.lastName}`.trim() : 'Commercial inconnu';
+	}
+
+	function personPhoto(id: string | null): string | null {
+		if (!id) return null;
+		return personById(id)?.photo ?? null;
+	}
+
+	async function openVillages() {
+		villagesOpen = true;
+		await computeVillages();
+	}
+
+	async function computeVillages() {
+		villagesError = '';
+		copied = false;
+		// Zones « non rouges » : leur couleur affichée n'est pas le rouge par défaut.
+		const target = zoneList.filter(
+			(z) => zoneDisplayColor(z).toLowerCase() !== DEFAULT_ZONE_COLOR.toLowerCase()
+		);
+		villagesLoading = true;
+		try {
+			const byZone = await fetchVillagesByZone(
+				target.map((z) => ({ id: z.id, geometry: z.geometry }))
+			);
+			const groups: VillageGroup[] = [];
+			for (const z of target) {
+				const key = z.commercialId ?? '__none__';
+				let g = groups.find((x) => (x.commercialId ?? '__none__') === key);
+				if (!g) {
+					g = { commercialId: z.commercialId, zones: [] };
+					groups.push(g);
+				}
+				g.zones.push({ zone: z, communes: byZone.get(z.id) ?? [] });
+			}
+			villageGroups = groups.sort((a, b) =>
+				personName(a.commercialId).localeCompare(personName(b.commercialId))
+			);
+		} catch {
+			villagesError = 'Impossible de récupérer les villages (API Géo indisponible).';
+			villageGroups = [];
+		} finally {
+			villagesLoading = false;
+		}
+	}
+
+	const villagesText = $derived.by(() => {
+		const lines: string[] = [];
+		for (const g of villageGroups) {
+			lines.push(personName(g.commercialId));
+			for (const { zone, communes } of g.zones) {
+				lines.push(`  ${zone.name}`);
+				if (!communes.length) lines.push('    (aucun village principal)');
+				for (const c of communes) lines.push(`    - ${c.nom} (${formatPopulation(c.population)})`);
+			}
+			lines.push('');
+		}
+		return lines.join('\n').trim();
+	});
+
+	async function copyVillages() {
+		try {
+			await navigator.clipboard.writeText(villagesText);
+			copied = true;
+			setTimeout(() => (copied = false), 2000);
+		} catch {
+			villagesError = 'Copie impossible dans ce navigateur.';
+		}
 	}
 
 	// --- Recherche de ville (géocodage Mapbox) et cadrage de la carte ---
@@ -933,6 +1037,11 @@
 			{/if}
 		</div>
 
+		<Button variant="outline" class="w-full justify-center gap-2" onclick={openVillages}>
+			<ListChecks class="size-4" strokeWidth={1.7} />
+			Villages par commercial
+		</Button>
+
 		{#if zonesErrorMessage}
 			<div
 				class="flex flex-col gap-1 rounded-lg border border-rose-500/60 bg-rose-500/10 p-2.5 text-[11.5px] leading-relaxed"
@@ -1038,7 +1147,20 @@
 					></span>
 					<div class="min-w-0 leading-tight">
 						<p class="truncate text-[13px] font-semibold text-foreground">{z.name}</p>
-						<p class="text-[11px] font-medium text-muted-foreground">Zone de prospection</p>
+						{#if z.commercialId}
+							<div class="flex items-center gap-1.5">
+								<Avatar
+									photo={personPhoto(z.commercialId)}
+									label={personName(z.commercialId)[0] ?? '·'}
+									class="size-4 border border-line text-[8px]"
+								/>
+								<p class="truncate text-[11px] font-medium text-muted-foreground">
+									{personName(z.commercialId)}
+								</p>
+							</div>
+						{:else}
+							<p class="text-[11px] font-medium text-muted-foreground">Zone de prospection</p>
+						{/if}
 					</div>
 				</div>
 				<div class="flex shrink-0 items-center gap-1">
@@ -1126,7 +1248,8 @@
 									createdAt: z.createdAt,
 									geometry: z.geometry,
 									color: z.color ?? undefined,
-									greenWhenOld: z.greenWhenOld
+									greenWhenOld: z.greenWhenOld,
+									commercialId: (z.commercialId ?? undefined) as Id<'users'> | undefined
 								})}
 							class="h-8 border-line bg-base text-[12px]"
 						/>
@@ -1291,6 +1414,20 @@
 				</div>
 			</div>
 
+			<div class="space-y-1.5">
+				<Label for="zone-commercial">Commercial</Label>
+				<select
+					id="zone-commercial"
+					bind:value={zoneFormCommercialId}
+					class="h-9 w-full rounded-lg border border-line bg-base px-2.5 text-[12px] text-foreground focus:border-line focus:outline-none"
+				>
+					<option value="">Aucun</option>
+					{#each people as p (p._id)}
+						<option value={p._id}>{`${p.firstName} ${p.lastName}`.trim()}</option>
+					{/each}
+				</select>
+			</div>
+
 			<label
 				class="flex cursor-pointer items-start gap-2.5 rounded-lg border border-line bg-card2 p-2.5"
 			>
@@ -1313,6 +1450,88 @@
 			<Button onclick={submitZoneForm}>
 				<Check class="size-4" strokeWidth={1.7} />
 				Enregistrer
+			</Button>
+		</DialogFooter>
+	</DialogContent>
+</Dialog>
+
+<!-- Liste copiable des villages par commercial (zones non rouges) -->
+<Dialog bind:open={villagesOpen}>
+	<DialogContent class="overflow-hidden rounded-xl border-line bg-card sm:max-w-2xl">
+		<DialogHeader>
+			<DialogTitle>Villages par commercial</DialogTitle>
+			<DialogDescription>
+				Zones non rouges avec leurs villages principaux (communes, hors lieux-dits).
+			</DialogDescription>
+		</DialogHeader>
+
+		<div class="max-h-[52vh] overflow-y-auto overscroll-contain pr-1">
+			{#if villagesLoading}
+				<div class="flex items-center gap-2 py-8 text-[12px] text-muted-foreground">
+					<LoaderCircle class="size-4 animate-spin" strokeWidth={1.7} />
+					Récupération des communes…
+				</div>
+			{:else if villagesError}
+				<p class="py-6 text-[12px] text-rose-400">{villagesError}</p>
+			{:else if !villageGroups.length}
+				<p class="py-6 text-[12px] text-muted-foreground">Aucune zone non rouge à lister.</p>
+			{:else}
+				<div class="flex flex-col gap-4">
+					{#each villageGroups as g (g.commercialId ?? '__none__')}
+						<div class="flex flex-col gap-2">
+							<div class="flex items-center gap-2">
+								<Avatar
+									photo={personPhoto(g.commercialId)}
+									label={personName(g.commercialId)[0] ?? '·'}
+									class="size-7 border border-line text-[11px]"
+								/>
+								<p class="text-[13px] font-semibold text-foreground">
+									{personName(g.commercialId)}
+								</p>
+							</div>
+							{#each g.zones as { zone, communes } (zone.id)}
+								<div class="rounded-lg border border-line bg-card2 p-2.5">
+									<p class="flex items-center gap-1.5 text-[12px] font-semibold text-foreground">
+										<span
+											class="size-2.5 shrink-0 rounded-full"
+											style={`background:${zoneColor(zone)}`}
+										></span>
+										{zone.name}
+									</p>
+									{#if communes.length}
+										<ul class="mt-1.5 flex flex-wrap gap-1.5">
+											{#each communes as c (c.code)}
+												<li
+													class="rounded-md border border-line bg-base px-2 py-0.5 text-[11px] text-muted-foreground"
+												>
+													{c.nom}
+												</li>
+											{/each}
+										</ul>
+									{:else}
+										<p class="mt-1 text-[11px] text-muted-foreground">Aucun village principal.</p>
+									{/if}
+								</div>
+							{/each}
+						</div>
+					{/each}
+				</div>
+			{/if}
+		</div>
+
+		<DialogFooter class="gap-2">
+			<Button variant="outline" onclick={() => (villagesOpen = false)}>
+				<X class="size-4" strokeWidth={1.7} />
+				Fermer
+			</Button>
+			<Button onclick={copyVillages} disabled={villagesLoading || !villageGroups.length}>
+				{#if copied}
+					<Check class="size-4" strokeWidth={1.7} />
+					Copié !
+				{:else}
+					<Copy class="size-4" strokeWidth={1.7} />
+					Copier la liste
+				{/if}
 			</Button>
 		</DialogFooter>
 	</DialogContent>
