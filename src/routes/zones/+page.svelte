@@ -8,6 +8,7 @@
 		LoaderCircle,
 		Lock,
 		Map as MapIcon,
+		Merge,
 		Pencil,
 		Plus,
 		Search,
@@ -59,6 +60,7 @@
 	import { drawing, editing, selectedZoneId } from '$lib/zones/ui.js';
 	import { pointInPolygon } from '$lib/zones/geometry.js';
 	import { fetchVillagesByZone, formatPopulation, type Commune } from '$lib/zones/villages.js';
+	import { unionZones } from '$lib/zones/merge.js';
 	import Avatar from '$lib/components/Avatar.svelte';
 
 	import 'mapbox-gl/dist/mapbox-gl.css';
@@ -415,6 +417,64 @@
 	// Annule le formulaire : la fermeture déclenche le nettoyage du tracé.
 	function cancelZoneForm() {
 		zoneDialogOpen = false;
+	}
+
+	// --- Fusion de zones : sélection multiple puis union géométrique ---
+	let mergeOpen = $state(false);
+	let mergeIds = $state<string[]>([]);
+	let mergeError = $state('');
+
+	function openMerge() {
+		mergeIds = [];
+		mergeError = '';
+		mergeOpen = true;
+	}
+
+	function toggleMerge(id: string) {
+		mergeIds = mergeIds.includes(id) ? mergeIds.filter((x) => x !== id) : [...mergeIds, id];
+	}
+
+	// Fusionne les zones sélectionnées : union des tracés, union des commerciaux,
+	// couleur rouge immédiate, puis suppression des zones d'origine.
+	function submitMerge() {
+		mergeError = '';
+		const zones: Zone[] = [];
+		for (const id of mergeIds) {
+			const z = zoneList.find((x) => x.id === id);
+			if (z) zones.push(z);
+		}
+		if (zones.length < 2) return;
+
+		const geometry = unionZones(zones.map((z) => z.geometry));
+		if (!geometry) {
+			mergeError = 'Impossible de fusionner ces zones (formes disjointes ou invalides).';
+			return;
+		}
+
+		const commercialIds = [...new Set(zones.flatMap((z) => z.commercialIds))] as Id<'users'>[];
+		const lastProspected =
+			zones
+				.map((z) => z.lastProspected)
+				.filter((d): d is string => !!d)
+				.sort()
+				.pop() ?? todayISO();
+		const id = crypto.randomUUID();
+
+		saveZone({
+			id,
+			name: zoneTitle(commercialIds),
+			lastProspected,
+			createdAt: Date.now(),
+			geometry,
+			// Rouge immédiatement après la fusion.
+			color: ZONE_RED,
+			greenWhenOld: true,
+			commercialIds
+		});
+		for (const z of zones) deleteZone(z.id);
+
+		selectedId = null;
+		mergeOpen = false;
 	}
 
 	// --- Liste copiable des zones « non rouges », groupées par commercial ---
@@ -1095,6 +1155,13 @@
 			</Button>
 		{/if}
 
+		{#if $editing}
+			<Button variant="outline" class="w-full justify-center gap-2" onclick={openMerge}>
+				<Merge class="size-4" strokeWidth={1.7} />
+				Fusionner des zones
+			</Button>
+		{/if}
+
 		{#if placingGms}
 			<div
 				class="rounded-lg border border-amber-500/50 bg-amber-500/10 p-2.5 text-[11.5px] leading-relaxed text-amber-400"
@@ -1560,6 +1627,66 @@
 					<Copy class="size-4" strokeWidth={1.7} />
 					Copier la liste
 				{/if}
+			</Button>
+		</DialogFooter>
+	</DialogContent>
+</Dialog>
+
+<!-- Fusion de zones : sélection multiple, union des tracés en rouge -->
+<Dialog bind:open={mergeOpen}>
+	<DialogContent class="overflow-hidden rounded-xl border-line bg-card sm:max-w-md">
+		<DialogHeader>
+			<DialogTitle>Fusionner des zones</DialogTitle>
+			<DialogDescription>
+				Choisis au moins deux zones : leurs tracés et leurs commerciaux seront réunis, et la zone
+				fusionnée passera en rouge.
+			</DialogDescription>
+		</DialogHeader>
+
+		<div class="max-h-[52vh] overflow-y-auto overscroll-contain pr-1">
+			{#if !zoneList.length}
+				<p class="py-6 text-[12px] text-muted-foreground">Aucune zone à fusionner.</p>
+			{:else}
+				<div class="flex flex-col gap-1">
+					{#each zoneList as z (z.id)}
+						{@const selected = mergeIds.includes(z.id)}
+						<button
+							type="button"
+							class="flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors hover:bg-glass-3"
+							class:bg-glass-3={selected}
+							onclick={() => toggleMerge(z.id)}
+						>
+							<span
+								class="size-3 shrink-0 rounded-full border border-white/40"
+								style={`background:${zoneColor(z)}`}
+							></span>
+							<span class="min-w-0 flex-1 truncate text-foreground">
+								{zoneTitle(z.commercialIds)}
+							</span>
+							<span class="shrink-0 text-[11px] text-muted-foreground">
+								{formatDate(z.lastProspected)}
+							</span>
+							{#if selected}
+								<Check class="size-4 shrink-0 text-emerald-500" strokeWidth={2.5} />
+							{/if}
+						</button>
+					{/each}
+				</div>
+			{/if}
+		</div>
+
+		{#if mergeError}
+			<p class="text-[12px] text-rose-400">{mergeError}</p>
+		{/if}
+
+		<DialogFooter class="gap-2">
+			<Button variant="outline" onclick={() => (mergeOpen = false)}>
+				<X class="size-4" strokeWidth={1.7} />
+				Annuler
+			</Button>
+			<Button onclick={submitMerge} disabled={mergeIds.length < 2}>
+				<Merge class="size-4" strokeWidth={1.7} />
+				Fusionner ({mergeIds.length})
 			</Button>
 		</DialogFooter>
 	</DialogContent>

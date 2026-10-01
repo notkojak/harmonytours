@@ -51,6 +51,7 @@
 		"@mapbox/mapbox-gl-draw": "^1.5.1",
 		"convex": "^1.45.0",
 		"convex-svelte": "^0.14.0",
-		"mapbox-gl": "^3.29.0"
+		"mapbox-gl": "^3.29.0",
+		"polygon-clipping": "^0.15.7"
 	}
 }
