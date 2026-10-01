@@ -1529,19 +1529,6 @@
 					{/each}
 				</div>
 			</div>
-
-			<label
-				class="flex cursor-pointer items-start gap-2.5 rounded-lg border border-line bg-card2 p-2.5"
-			>
-				<input
-					type="checkbox"
-					bind:checked={zoneFormGreenWhenOld}
-					class="mt-0.5 size-4 accent-emerald-500"
-				/>
-				<span class="text-[12px] leading-snug text-muted-foreground">
-					Repasser en vert après 6 mois sans prospection
-				</span>
-			</label>
 		</div>
 
 		<DialogFooter class="gap-2">
