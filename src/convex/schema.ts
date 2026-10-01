@@ -229,7 +229,9 @@ export default defineSchema({
 		// personnalisée et devient verte une fois la dernière prospection
 		// vieille de plus de 6 mois.
 		greenWhenOld: v.optional(v.boolean()),
-		// Commercial affecté à la zone (nom + photo affichés en titre côté web).
+		// Commerciaux affectés à la zone (nom + photo affichés en titre côté web).
+		commercialIds: v.optional(v.array(v.id('users'))),
+		// Ancien champ mono-commercial : conservé pour les zones déjà enregistrées.
 		commercialId: v.optional(v.id('users')),
 		// Agence propriétaire de la zone : chaque agence ne voit que ses zones.
 		agencyId: v.optional(v.id('agences')),

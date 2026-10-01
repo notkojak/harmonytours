@@ -33,7 +33,9 @@ export const upsert = mutation({
 		// Couleur personnalisée (hex) + option « vert automatique après 6 mois ».
 		color: v.optional(v.string()),
 		greenWhenOld: v.optional(v.boolean()),
-		// Commercial affecté à la zone.
+		// Commerciaux affectés à la zone (au moins un côté UI).
+		commercialIds: v.optional(v.array(v.id('users'))),
+		// Ancien champ mono-commercial : accepté mais vidé à l'enregistrement.
 		commercialId: v.optional(v.id('users'))
 	},
 	handler: async (ctx, args) => {
@@ -51,7 +53,9 @@ export const upsert = mutation({
 				geometry: args.geometry,
 				color: args.color,
 				greenWhenOld: args.greenWhenOld,
-				commercialId: args.commercialId
+				commercialIds: args.commercialIds,
+				// Nettoyage de l'ancien champ mono-commercial.
+				commercialId: undefined
 			});
 		} else {
 			// Création : la zone appartient à l'agence de l'utilisateur connecté.
@@ -62,7 +66,7 @@ export const upsert = mutation({
 				createdAt: args.createdAt,
 				color: args.color,
 				greenWhenOld: args.greenWhenOld,
-				commercialId: args.commercialId,
+				commercialIds: args.commercialIds,
 				agencyId: user.agencyId ?? undefined,
 				geometry: args.geometry
 			});

@@ -1,7 +1,11 @@
 import { isOlderThanSixMonths } from './dates.js';
 
-// Couleur par défaut d'une nouvelle zone (rouge « à prospecter »).
-export const DEFAULT_ZONE_COLOR = '#f43f5e';
+// Couleur par défaut d'une nouvelle zone (bleu).
+export const DEFAULT_ZONE_COLOR = '#3b82f6';
+
+// Rouge : une zone rouge affiche sur la carte le nombre de jours avant sa
+// re-prospection (au lieu du nom des commerciaux).
+export const ZONE_RED = '#f43f5e';
 
 // Vert appliqué automatiquement à une zone non re-prospectée depuis 6 mois.
 export const COLOR_OLD = '#22c55e';
@@ -39,4 +43,13 @@ export function zoneDisplayColor(z: {
 }): string {
 	if (z.greenWhenOld && isOlderThanSixMonths(z.lastProspected)) return COLOR_OLD;
 	return z.color ?? DEFAULT_ZONE_COLOR;
+}
+
+// Une zone est « rouge » quand sa couleur affichée est le rouge.
+export function isRedZone(z: {
+	color?: string | null;
+	greenWhenOld?: boolean | null;
+	lastProspected: string | null;
+}): boolean {
+	return zoneDisplayColor(z).toLowerCase() === ZONE_RED.toLowerCase();
 }
