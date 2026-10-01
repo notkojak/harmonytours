@@ -7,6 +7,7 @@
 		Map as MapIcon,
 		Pencil,
 		Plus,
+		Search,
 		Trash2,
 		TriangleAlert,
 		Unlock,
@@ -36,18 +37,17 @@
 		formatDate,
 		daysUntilReProspect,
 		nextProspectionDateISO,
-		isOlderThanSixMonths,
-		isInProspecting
+		isOlderThanSixMonths
 	} from '$lib/zones/dates.js';
 	import { getDrawStyles, getZoneFillExpression } from '$lib/zones/drawStyles.js';
 	import {
-		COLOR_RECENT,
 		COLOR_OLD,
-		COLOR_WARNING,
-		COLOR_PROSPECTING,
+		DEFAULT_ZONE_COLOR,
+		ZONE_PALETTE,
 		STYLE_URL,
 		LIGHT_STYLE_URL,
-		FILL_OPACITY
+		FILL_OPACITY,
+		zoneDisplayColor
 	} from '$lib/zones/colors.js';
 	import { getTheme } from '$lib/theme';
 	import { drawing, editing, selectedZoneId } from '$lib/zones/ui.js';
@@ -87,7 +87,9 @@
 			name: z.name,
 			lastProspected: z.lastProspected ?? null,
 			createdAt: z.createdAt,
-			geometry: z.geometry
+			geometry: z.geometry,
+			color: z.color ?? null,
+			greenWhenOld: z.greenWhenOld ?? false
 		}))
 	);
 	const zonesErrorMessage = $derived(zonesQuery.error?.message ?? actionError ?? '');
@@ -112,6 +114,25 @@
 	let gmsMarkers: any[] = [];
 	let mapboxglCtor: any = null;
 
+	// --- Création / édition d'une zone (nom + couleur + option « 6 mois ») ---
+	let zoneDialogOpen = $state(false);
+	let zoneFormId = $state<string | null>(null);
+	let zoneFormName = $state('');
+	let zoneFormColor = $state(DEFAULT_ZONE_COLOR);
+	let zoneFormGreenWhenOld = $state(true);
+	// Feature Mapbox Draw d'une nouvelle zone, en attente de validation (nom +
+	// couleur) avant enregistrement dans Convex.
+	let pendingDraw = $state<{ drawId: string; geometry: Zone['geometry'] } | null>(null);
+
+	// --- Recherche de ville (géocodage Mapbox) qui cadre la carte ---
+	let cityQuery = $state('');
+	let citySuggestions = $state<
+		{ label: string; center: [number, number]; bbox: [number, number, number, number] | null }[]
+	>([]);
+	let cityOpen = $state(false);
+	let cityTimer: ReturnType<typeof setTimeout> | undefined;
+	let citySearching = $state(false);
+
 	const gmsList = $derived(gmsQuery.data ?? []);
 	const zoneCount = $derived(zoneList.length);
 	const selectedZone = $derived(zoneList.find((z) => z.id === selectedId) ?? null);
@@ -134,11 +155,30 @@
 		if (map && mapboxglCtor) updateGmsMarkers();
 	});
 
+	// Si le formulaire se ferme sans enregistrement (croix, clic extérieur…), on
+	// supprime le tracé non validé pour ne pas laisser de polygone orphelin.
+	$effect(() => {
+		if (!zoneDialogOpen && pendingDraw) {
+			const { drawId } = pendingDraw;
+			pendingDraw = null;
+			syncing = true;
+			draw?.delete(drawId);
+			setTimeout(() => {
+				syncing = false;
+			}, 0);
+		}
+	});
+
 	function zoneToFeature(z: Zone): Feature {
 		return {
 			type: 'Feature',
 			id: z.id,
-			properties: { name: z.name, lastProspected: z.lastProspected },
+			properties: {
+				name: z.name,
+				lastProspected: z.lastProspected,
+				color: zoneDisplayColor(z),
+				greenWhenOld: z.greenWhenOld
+			},
 			geometry: z.geometry
 		};
 	}
@@ -202,30 +242,13 @@
 		const features: Feature[] = list
 			.filter((z) => z.geometry && z.geometry.type === 'Polygon')
 			.map((z): Feature => {
-				const days = daysUntilReProspect(z.lastProspected);
-				const inProgress = isInProspecting(z.lastProspected);
-				const color = inProgress
-					? COLOR_PROSPECTING
-					: days !== null && days <= 0
-						? COLOR_OLD
-						: days !== null && days < 32
-							? COLOR_WARNING
-							: COLOR_RECENT;
-				const countdown = inProgress
-					? 'En cours de prospection'
-					: days === null
-						? 'Date inconnue'
-						: days <= 0
-							? 'Re-prospection possible'
-							: `Re-prospection dans ${days} jour${days > 1 ? 's' : ''}`;
-				const label = inProgress
-					? 'En cours de prospection'
-					: `Dernière prospection : ${formatDate(z.lastProspected)}\n${countdown}`;
+				// Sur la carte, on n'affiche que le titre de la zone.
+				const label = z.name;
 				return {
 					type: 'Feature',
 					properties: {
 						label,
-						color,
+						color: zoneDisplayColor(z),
 						show: labelFits(z, label) ? 1 : 0
 					},
 					geometry: { type: 'Point', coordinates: centroidOf(z.geometry) }
@@ -267,25 +290,14 @@
 	function handleCreate(e: { features: any[] }) {
 		const f = e.features[0];
 		if (!f) return;
-		const id = crypto.randomUUID();
-		const date = todayISO();
-		const name = defaultZoneName();
-		const nf = { ...f, id };
-		syncing = true;
-		draw?.delete(f.id);
-		draw?.add(nf);
-		saveZone({
-			id,
-			name,
-			lastProspected: date,
-			createdAt: Date.now(),
-			geometry: nf.geometry
-		});
-		draw?.setFeatureProperty(id, 'lastProspected', date);
-		draw?.setFeatureProperty(id, 'name', name);
-		setTimeout(() => {
-			syncing = false;
-		}, 0);
+		// Le tracé est conservé en attente : on demande le nom et la couleur avant
+		// de créer la zone dans Convex.
+		pendingDraw = { drawId: String(f.id), geometry: f.geometry };
+		zoneFormId = null;
+		zoneFormName = defaultZoneName();
+		zoneFormColor = DEFAULT_ZONE_COLOR;
+		zoneFormGreenWhenOld = true;
+		zoneDialogOpen = true;
 	}
 
 	function handleUpdate(e: { features: any[] }) {
@@ -299,17 +311,147 @@
 			name: existing.name,
 			lastProspected: existing.lastProspected ?? undefined,
 			createdAt: existing.createdAt,
-			geometry: f.geometry
+			geometry: f.geometry,
+			color: existing.color ?? undefined,
+			greenWhenOld: existing.greenWhenOld
 		});
 		setTimeout(() => {
 			syncing = false;
 		}, 0);
 	}
 
+	// Ouvre le formulaire d'édition d'une zone existante (nom, couleur, option).
+	function openZoneEdit(z: Zone) {
+		pendingDraw = null;
+		zoneFormId = z.id;
+		zoneFormName = z.name;
+		zoneFormColor = z.color ?? DEFAULT_ZONE_COLOR;
+		zoneFormGreenWhenOld = z.greenWhenOld;
+		zoneDialogOpen = true;
+	}
+
+	// Valide le formulaire : crée la zone (tracé en attente) ou met à jour une
+	// zone existante (nom, couleur, option « 6 mois »).
+	function submitZoneForm() {
+		const name = zoneFormName.trim() || defaultZoneName();
+		if (zoneFormId) {
+			const z = zoneList.find((x) => x.id === zoneFormId);
+			if (z) {
+				saveZone({
+					id: z.id,
+					name,
+					lastProspected: z.lastProspected ?? undefined,
+					createdAt: z.createdAt,
+					geometry: z.geometry,
+					color: zoneFormColor,
+					greenWhenOld: zoneFormGreenWhenOld
+				});
+			}
+		} else if (pendingDraw) {
+			const id = crypto.randomUUID();
+			const date = todayISO();
+			syncing = true;
+			draw?.delete(pendingDraw.drawId);
+			draw?.add({
+				type: 'Feature',
+				id,
+				properties: {
+					name,
+					lastProspected: date,
+					color: zoneFormColor,
+					greenWhenOld: zoneFormGreenWhenOld
+				},
+				geometry: pendingDraw.geometry
+			} as Feature);
+			saveZone({
+				id,
+				name,
+				lastProspected: date,
+				createdAt: Date.now(),
+				geometry: pendingDraw.geometry,
+				color: zoneFormColor,
+				greenWhenOld: zoneFormGreenWhenOld
+			});
+			pendingDraw = null;
+			setTimeout(() => {
+				syncing = false;
+			}, 0);
+		}
+		zoneDialogOpen = false;
+	}
+
+	// Annule le formulaire : la fermeture déclenche le nettoyage du tracé.
+	function cancelZoneForm() {
+		zoneDialogOpen = false;
+	}
+
+	// --- Recherche de ville (géocodage Mapbox) et cadrage de la carte ---
+	async function fetchCitySuggestions(query: string) {
+		if (!env.PUBLIC_MAPBOX_TOKEN) return;
+		citySearching = true;
+		try {
+			const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(
+				query
+			)}.json?types=place&country=fr&limit=5&language=fr&access_token=${env.PUBLIC_MAPBOX_TOKEN}`;
+			const res = await fetch(url);
+			if (!res.ok) throw new Error('geocoding failed');
+			const data = (await res.json()) as {
+				features?: { place_name?: string; center?: [number, number]; bbox?: number[] }[];
+			};
+			citySuggestions = (data.features ?? [])
+				.filter((f) => f.center)
+				.map((f) => ({
+					label: (f.place_name ?? '').replace(/, France$/, ''),
+					center: f.center as [number, number],
+					bbox: f.bbox && f.bbox.length === 4 ? (f.bbox as [number, number, number, number]) : null
+				}));
+			cityOpen = citySuggestions.length > 0;
+		} catch {
+			citySuggestions = [];
+			cityOpen = false;
+		} finally {
+			citySearching = false;
+		}
+	}
+
+	function onCityInput(e: Event) {
+		cityQuery = (e.currentTarget as HTMLInputElement).value;
+		clearTimeout(cityTimer);
+		citySuggestions = [];
+		cityOpen = false;
+		const q = cityQuery.trim();
+		if (q.length < 2) return;
+		cityTimer = setTimeout(() => fetchCitySuggestions(q), 300);
+	}
+
+	// Centre la carte sur la ville choisie (zoom adapté à sa taille).
+	function pickCity(s: {
+		center: [number, number];
+		bbox: [number, number, number, number] | null;
+	}) {
+		if (!map) return;
+		if (s.bbox) {
+			map.fitBounds(
+				[
+					[s.bbox[0], s.bbox[1]],
+					[s.bbox[2], s.bbox[3]]
+				],
+				{ padding: 60, duration: 900, maxZoom: 13 }
+			);
+		} else {
+			map.flyTo({ center: s.center, zoom: 11, duration: 900 });
+		}
+		citySuggestions = [];
+		cityOpen = false;
+		cityQuery = '';
+	}
+
 	function handleDelete(e: { features: any[] }) {
 		syncing = true;
 		for (const f of e.features) {
-			deleteZone(String(f.id));
+			const id = String(f.id);
+			// On ignore le tracé en attente de validation (pas encore créé).
+			if (zoneList.some((z) => z.id === id)) deleteZone(id);
 			if (selectedId === f.id) selectedId = null;
 		}
 		setTimeout(() => {
@@ -342,6 +484,13 @@
 			if (f.properties.name !== z.name) {
 				draw.setFeatureProperty(z.id, 'name', z.name);
 			}
+			const displayColor = zoneDisplayColor(z);
+			if (f.properties.color !== displayColor) {
+				draw.setFeatureProperty(z.id, 'color', displayColor);
+			}
+			if (f.properties.greenWhenOld !== z.greenWhenOld) {
+				draw.setFeatureProperty(z.id, 'greenWhenOld', z.greenWhenOld);
+			}
 		}
 		for (const [id] of inDraw) {
 			if (!list.some((z) => z.id === id)) draw.delete(id);
@@ -359,7 +508,13 @@
 						.map((z): Feature => ({
 							type: 'Feature',
 							id: z.id,
-							properties: { id: z.id, lastProspected: z.lastProspected },
+							properties: {
+								id: z.id,
+								name: z.name,
+								lastProspected: z.lastProspected,
+								color: zoneDisplayColor(z),
+								greenWhenOld: z.greenWhenOld
+							},
 							geometry: z.geometry
 						}))
 				)
@@ -421,16 +576,19 @@
 	}
 
 	function zoneColor(z: Zone): string {
-		if (isInProspecting(z.lastProspected)) return COLOR_PROSPECTING;
-		const days = daysUntilReProspect(z.lastProspected);
-		if (days !== null && days <= 0) return COLOR_OLD;
-		if (days !== null && days < 32) return COLOR_WARNING;
-		return COLOR_RECENT;
+		return zoneDisplayColor(z);
 	}
 
+	// Statut d'une zone : plus de notion de « prospection en cours » (< 7 j).
+	// Tant que la zone garde sa couleur (rouge ou perso), on indique simplement
+	// quand elle redeviendra re-prospectable ; repassée en vert, elle l'est.
 	function zoneStatus(z: Zone): string {
-		if (isInProspecting(z.lastProspected)) return 'En cours de prospection';
-		return isOlderThanSixMonths(z.lastProspected) ? 'À re-prospecter' : 'À éviter';
+		if (z.greenWhenOld && isOlderThanSixMonths(z.lastProspected)) return 'Re-prospectable';
+		const days = daysUntilReProspect(z.lastProspected);
+		if (days === null) return 'Date inconnue';
+		return days <= 0
+			? 'Re-prospectable'
+			: `Re-prospectable dans ${days} jour${days > 1 ? 's' : ''}`;
 	}
 
 	function deleteSelected() {
@@ -741,6 +899,40 @@
 			</div>
 		</header>
 
+		<!-- Recherche d'une ville : la carte se cale dessus -->
+		<div class="relative">
+			<Search
+				class="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground"
+				strokeWidth={1.7}
+			/>
+			<input
+				type="search"
+				value={cityQuery}
+				oninput={onCityInput}
+				onfocus={() => (cityOpen = citySuggestions.length > 0)}
+				placeholder="Chercher une ville…"
+				class="h-9 w-full rounded-lg border border-line bg-base pr-2.5 pl-8 text-[12px] text-foreground placeholder:text-muted-foreground focus:border-line focus:outline-none"
+			/>
+			{#if citySearching}
+				<p class="px-0.5 pt-1 text-[11px] text-muted-foreground">Recherche…</p>
+			{/if}
+			{#if cityOpen}
+				<div
+					class="absolute z-20 mt-1 flex w-full flex-col overflow-hidden rounded-lg border border-line bg-card shadow-lg"
+				>
+					{#each citySuggestions as s (s.label)}
+						<button
+							type="button"
+							class="truncate px-3 py-2 text-left text-[12px] text-foreground transition-colors hover:bg-glass-3"
+							onclick={() => pickCity(s)}
+						>
+							{s.label}
+						</button>
+					{/each}
+				</div>
+			{/if}
+		</div>
+
 		{#if zonesErrorMessage}
 			<div
 				class="flex flex-col gap-1 rounded-lg border border-rose-500/60 bg-rose-500/10 p-2.5 text-[11.5px] leading-relaxed"
@@ -790,21 +982,13 @@
 			class="hidden flex-col gap-1.5 rounded-lg border border-line bg-card2 p-2.5 text-[11.5px] sm:flex"
 		>
 			<div class="flex items-center gap-2 text-muted-foreground">
-				<span class="size-2.5 shrink-0 rounded-full" style={`background:${COLOR_PROSPECTING}`}
+				<span class="size-2.5 shrink-0 rounded-full" style={`background:${DEFAULT_ZONE_COLOR}`}
 				></span>
-				En cours de prospection
-			</div>
-			<div class="flex items-center gap-2 text-muted-foreground">
-				<span class="size-2.5 shrink-0 rounded-full" style={`background:${COLOR_RECENT}`}></span>
-				Moins de 6 mois
-			</div>
-			<div class="flex items-center gap-2 text-muted-foreground">
-				<span class="size-2.5 shrink-0 rounded-full" style={`background:${COLOR_WARNING}`}></span>
-				Re-prospection dans - de 1 mois
+				Couleur personnalisée de la zone
 			</div>
 			<div class="flex items-center gap-2 text-muted-foreground">
 				<span class="size-2.5 shrink-0 rounded-full" style={`background:${COLOR_OLD}`}></span>
-				Plus de 6 mois
+				Repassée en vert après 6 mois
 			</div>
 		</div>
 
@@ -847,18 +1031,36 @@
 			class="absolute top-4 left-4 z-10 flex w-72 max-w-[calc(100%-2rem)] flex-col gap-2.5 rounded-xl border border-line bg-surface/85 p-4 shadow-lg backdrop-blur"
 		>
 			<div class="flex items-start justify-between gap-2">
-				<div class="min-w-0 leading-tight">
-					<p class="truncate text-[13px] font-semibold text-foreground">{z.name}</p>
-					<p class="text-[11px] font-medium text-muted-foreground">Zone de prospection</p>
+				<div class="flex min-w-0 items-center gap-2">
+					<span
+						class="size-3 shrink-0 rounded-full border border-white/40"
+						style={`background:${zoneColor(z)}`}
+					></span>
+					<div class="min-w-0 leading-tight">
+						<p class="truncate text-[13px] font-semibold text-foreground">{z.name}</p>
+						<p class="text-[11px] font-medium text-muted-foreground">Zone de prospection</p>
+					</div>
 				</div>
-				<button
-					type="button"
-					class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-glass-3 hover:text-foreground"
-					title="Fermer"
-					onclick={() => (selectedId = null)}
-				>
-					<X class="size-3.5" />
-				</button>
+				<div class="flex shrink-0 items-center gap-1">
+					{#if $editing}
+						<button
+							type="button"
+							class="grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-glass-3 hover:text-foreground"
+							title="Modifier le nom et la couleur"
+							onclick={() => openZoneEdit(z)}
+						>
+							<Pencil class="size-3.5" strokeWidth={1.7} />
+						</button>
+					{/if}
+					<button
+						type="button"
+						class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-glass-3 hover:text-foreground"
+						title="Fermer"
+						onclick={() => (selectedId = null)}
+					>
+						<X class="size-3.5" />
+					</button>
+				</div>
 			</div>
 
 			<div class="space-y-1.5 text-[12px]">
@@ -922,7 +1124,9 @@
 									name: z.name,
 									lastProspected: e.currentTarget.value,
 									createdAt: z.createdAt,
-									geometry: z.geometry
+									geometry: z.geometry,
+									color: z.color ?? undefined,
+									greenWhenOld: z.greenWhenOld
 								})}
 							class="h-8 border-line bg-base text-[12px]"
 						/>
@@ -1037,6 +1241,76 @@
 				Annuler
 			</Button>
 			<Button onclick={saveGms} disabled={!gmsLabel.trim()}>
+				<Check class="size-4" strokeWidth={1.7} />
+				Enregistrer
+			</Button>
+		</DialogFooter>
+	</DialogContent>
+</Dialog>
+
+<!-- Création / édition d'une zone : nom + couleur + option « 6 mois » -->
+<Dialog bind:open={zoneDialogOpen}>
+	<DialogContent class="rounded-xl border-line bg-card sm:max-w-sm">
+		<DialogHeader>
+			<DialogTitle>{zoneFormId ? 'Modifier la zone' : 'Nouvelle zone'}</DialogTitle>
+			<DialogDescription>Donne un nom à la zone et choisis sa couleur.</DialogDescription>
+		</DialogHeader>
+
+		<div class="space-y-3">
+			<div class="space-y-1.5">
+				<Label for="zone-name">Nom de la zone</Label>
+				<Input
+					id="zone-name"
+					bind:value={zoneFormName}
+					placeholder="Ex. Tours Nord"
+					class="border-line bg-base"
+					onkeydown={(e) => {
+						if (e.key === 'Enter') submitZoneForm();
+					}}
+				/>
+			</div>
+
+			<div class="space-y-1.5">
+				<Label>Couleur</Label>
+				<div class="flex flex-wrap gap-2">
+					{#each ZONE_PALETTE as c (c)}
+						<button
+							type="button"
+							class="grid size-7 place-items-center rounded-full border-2 transition-transform hover:scale-110"
+							class:border-white={zoneFormColor === c}
+							class:border-transparent={zoneFormColor !== c}
+							style={`background:${c}`}
+							title={c}
+							onclick={() => (zoneFormColor = c)}
+						>
+							{#if zoneFormColor === c}
+								<Check class="size-3.5 text-white" strokeWidth={3} />
+							{/if}
+						</button>
+					{/each}
+				</div>
+			</div>
+
+			<label
+				class="flex cursor-pointer items-start gap-2.5 rounded-lg border border-line bg-card2 p-2.5"
+			>
+				<input
+					type="checkbox"
+					bind:checked={zoneFormGreenWhenOld}
+					class="mt-0.5 size-4 accent-emerald-500"
+				/>
+				<span class="text-[12px] leading-snug text-muted-foreground">
+					Repasser en vert après 6 mois sans prospection
+				</span>
+			</label>
+		</div>
+
+		<DialogFooter class="gap-2">
+			<Button variant="outline" onclick={cancelZoneForm}>
+				<X class="size-4" strokeWidth={1.7} />
+				Annuler
+			</Button>
+			<Button onclick={submitZoneForm}>
 				<Check class="size-4" strokeWidth={1.7} />
 				Enregistrer
 			</Button>

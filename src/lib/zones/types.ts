@@ -6,4 +6,8 @@ export type Zone = {
 	lastProspected: string | null;
 	createdAt: number;
 	geometry: ZoneGeometry;
+	// Couleur personnalisée du polygone (hex). `null` = couleur par défaut.
+	color: string | null;
+	// Repasse la zone en vert une fois la dernière prospection vieille de 6 mois.
+	greenWhenOld: boolean;
 };

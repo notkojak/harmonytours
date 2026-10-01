@@ -1,33 +1,17 @@
 import type { ExpressionSpecification } from 'mapbox-gl';
-import { todayISO, sixMonthsAgoISO, addDaysISO } from './dates.js';
 import {
-	COLOR_RECENT,
-	COLOR_OLD,
-	COLOR_WARNING,
-	COLOR_PROSPECTING,
+	DEFAULT_ZONE_COLOR,
 	COLOR_OUTLINE,
 	FILL_OPACITY,
 	FILL_OPACITY_ACTIVE,
 	OUTLINE_WIDTH
 } from './colors.js';
 
-// Expression Mapbox : couleur de remplissage selon l'ancienneté de la
-// dernière prospection (prospection en cours < 7 j, plus de 6 mois, etc.).
+// Chaque feature de zone porte désormais sa propre couleur dans la propriété
+// `color` (couleur personnalisée, ou vert automatique après 6 mois). La couche
+// se contente de la lire, avec un repli sur la couleur par défaut.
 export function getZoneFillExpression(): ExpressionSpecification {
-	const prospectingThreshold = addDaysISO(todayISO(), -7);
-	const oldThreshold = sixMonthsAgoISO();
-	const warningThreshold = addDaysISO(oldThreshold, 32);
-	const last = ['coalesce', ['get', 'user_lastProspected'], ['get', 'lastProspected']];
-	return [
-		'case',
-		['>', last, prospectingThreshold],
-		COLOR_PROSPECTING,
-		['<', last, oldThreshold],
-		COLOR_OLD,
-		['<', last, warningThreshold],
-		COLOR_WARNING,
-		COLOR_RECENT
-	] as unknown as ExpressionSpecification;
+	return ['coalesce', ['get', 'color'], DEFAULT_ZONE_COLOR] as unknown as ExpressionSpecification;
 }
 
 export function getDrawStyles() {
@@ -78,7 +62,7 @@ export function getDrawStyles() {
 			filter: ['all', ['==', '$type', 'Point'], ['==', 'meta', 'feature']],
 			paint: {
 				'circle-radius': ['case', ['==', ['get', 'active'], 'true'], 5, 3],
-				'circle-color': ['case', ['==', ['get', 'active'], 'true'], '#fbb03b', '#f43f5e']
+				'circle-color': ['case', ['==', ['get', 'active'], 'true'], '#fbb03b', DEFAULT_ZONE_COLOR]
 			}
 		},
 		{

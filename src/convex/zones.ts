@@ -29,7 +29,10 @@ export const upsert = mutation({
 		name: v.string(),
 		lastProspected: v.optional(v.string()),
 		createdAt: v.number(),
-		geometry: v.any()
+		geometry: v.any(),
+		// Couleur personnalisée (hex) + option « vert automatique après 6 mois ».
+		color: v.optional(v.string()),
+		greenWhenOld: v.optional(v.boolean())
 	},
 	handler: async (ctx, args) => {
 		const user = await getCurrentUser(ctx);
@@ -43,7 +46,9 @@ export const upsert = mutation({
 				name: args.name,
 				lastProspected: args.lastProspected,
 				createdAt: args.createdAt,
-				geometry: args.geometry
+				geometry: args.geometry,
+				color: args.color,
+				greenWhenOld: args.greenWhenOld
 			});
 		} else {
 			// Création : la zone appartient à l'agence de l'utilisateur connecté.
@@ -52,6 +57,8 @@ export const upsert = mutation({
 				name: args.name,
 				lastProspected: args.lastProspected,
 				createdAt: args.createdAt,
+				color: args.color,
+				greenWhenOld: args.greenWhenOld,
 				agencyId: user.agencyId ?? undefined,
 				geometry: args.geometry
 			});

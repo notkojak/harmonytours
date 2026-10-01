@@ -9,7 +9,7 @@
 	import { authState } from '$lib/auth-state.svelte';
 	import { isInProspecting } from '$lib/zones/dates.js';
 	import { getZoneFillExpression } from '$lib/zones/drawStyles.js';
-	import { STYLE_URL, LIGHT_STYLE_URL, FILL_OPACITY } from '$lib/zones/colors.js';
+	import { STYLE_URL, LIGHT_STYLE_URL, FILL_OPACITY, zoneDisplayColor } from '$lib/zones/colors.js';
 	import { getTheme } from '$lib/theme';
 
 	import 'mapbox-gl/dist/mapbox-gl.css';
@@ -54,7 +54,14 @@
 			type: 'FeatureCollection',
 			features: zones.map((z) => ({
 				type: 'Feature',
-				properties: { lastProspected: z.lastProspected },
+				properties: {
+					lastProspected: z.lastProspected,
+					color: zoneDisplayColor({
+						color: z.color ?? null,
+						greenWhenOld: z.greenWhenOld ?? false,
+						lastProspected: z.lastProspected ?? null
+					})
+				},
 				geometry: z.geometry
 			}))
 		});

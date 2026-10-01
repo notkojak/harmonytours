@@ -75,9 +75,7 @@ const contacts = defineTable({
 	name: v.string(),
 	// Civilité du contact pour la fiche contact imprimable : choix multiple
 	// possible (un couple = « M. » + « Mme »).
-	civilites: v.optional(
-		v.array(v.union(v.literal('M.'), v.literal('Mme'), v.literal('Melle')))
-	),
+	civilites: v.optional(v.array(v.union(v.literal('M.'), v.literal('Mme'), v.literal('Melle')))),
 	// Ancien champ mono-valeur : conservé pour les données déjà saisies.
 	civilite: v.optional(v.union(v.literal('M.'), v.literal('Mme'), v.literal('Melle'))),
 	address: v.optional(v.string()),
@@ -224,6 +222,13 @@ export default defineSchema({
 		name: v.string(),
 		lastProspected: v.optional(v.string()),
 		createdAt: v.number(),
+		// Couleur personnalisée du polygone (hex). Optionnel : les zones créées
+		// avant l'ajout utilisent la couleur par défaut côté client.
+		color: v.optional(v.string()),
+		// Option « repasser en vert après 6 mois » : la zone perd sa couleur
+		// personnalisée et devient verte une fois la dernière prospection
+		// vieille de plus de 6 mois.
+		greenWhenOld: v.optional(v.boolean()),
 		// Agence propriétaire de la zone : chaque agence ne voit que ses zones.
 		agencyId: v.optional(v.id('agences')),
 		geometry: v.any()
