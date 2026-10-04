@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
+	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import { env } from '$env/dynamic/public';
 	import {
+		Camera,
 		Check,
-		Copy,
-		ListChecks,
-		LoaderCircle,
 		Lock,
 		Map as MapIcon,
-		Merge,
+		Maximize,
+		Minimize,
 		Pencil,
 		Plus,
 		Search,
@@ -22,7 +22,7 @@
 	import type { Id } from '../../convex/_generated/dataModel.js';
 	import { authState } from '$lib/auth-state.svelte';
 	import { canAccessAdministration } from '$lib/data/roles';
-	import type { Map as MapboxMap, MapMouseEvent, GeoJSONSource } from 'mapbox-gl';
+	import type { Map as MapboxMap, MapMouseEvent, GeoJSONSource, Marker } from 'mapbox-gl';
 	import type MapboxDraw from '@mapbox/mapbox-gl-draw';
 	import type { Feature, FeatureCollection } from 'geojson';
 	import { Button } from '$lib/components/ui/button/index.js';
@@ -59,8 +59,6 @@
 	import { getTheme } from '$lib/theme';
 	import { drawing, editing, selectedZoneId } from '$lib/zones/ui.js';
 	import { pointInPolygon } from '$lib/zones/geometry.js';
-	import { fetchVillagesByZone, formatPopulation, type Commune } from '$lib/zones/villages.js';
-	import { unionZones } from '$lib/zones/merge.js';
 	import Avatar from '$lib/components/Avatar.svelte';
 
 	import 'mapbox-gl/dist/mapbox-gl.css';
@@ -114,6 +112,7 @@
 	const zonesErrorMessage = $derived(zonesQuery.error?.message ?? actionError ?? '');
 
 	let container: HTMLDivElement | undefined = $state();
+	let wrapper: HTMLDivElement | undefined = $state();
 	let map = $state<MapboxMap | null>(null);
 	let draw: MapboxDraw | null = null;
 	let drawReady = $state(false);
@@ -123,6 +122,14 @@
 	let modalOpen = $state(false);
 	let code = $state('');
 	let codeError = $state(false);
+
+	// --- Mode capture : carte seule en plein écran, pour photographier les
+	// zones sans aucun élément d'interface par-dessus ---
+	let captureMode = $state(false);
+	let captureUiVisible = $state(true);
+	let captureUiTimer: ReturnType<typeof setTimeout> | undefined;
+	// Pendant l'export PNG, une seconde capture est ignorée.
+	let exporting = false;
 
 	// État des pins GMS.
 	let placingGms = $state(false);
@@ -206,20 +213,123 @@
 		return { type: 'FeatureCollection', features };
 	}
 
-	function centroidOf(geometry: Zone['geometry']): [number, number] {
-		const ring = geometry.coordinates[0];
-		let x = 0;
-		let y = 0;
-		for (const point of ring) {
-			x += point[0];
-			y += point[1];
-		}
-		return [x / ring.length, y / ring.length];
+	// --- Ancrage d'une zone ---
+	// Le milieu d'un tracé n'est pas la moyenne de ses sommets : un côté
+	// densément pointé (côte, tracé à main levée, reprise au lasso) attire la
+	// moyenne et décentre le tag. On prend donc le vrai centre de gravité du
+	// polygone (formule de l'aire) et, s'il tombe hors d'un tracé concave, le
+	// point le plus « profond » à l'intérieur du tracé.
+	// Cache volontairement non réactif : ce n'est pas un état d'interface, il ne
+	// doit jamais déclencher de re-rendu (d'où le Map natif et non SvelteMap).
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity
+	const anchorCache = new Map<string, { geometry: Zone['geometry']; point: [number, number] }>();
+
+	function zoneAnchor(z: Zone): [number, number] {
+		const cached = anchorCache.get(z.id);
+		if (cached && cached.geometry === z.geometry) return cached.point;
+		const point = computeZoneAnchor(z.geometry);
+		anchorCache.set(z.id, { geometry: z.geometry, point });
+		return point;
 	}
 
-	const CHAR_W = 7.6;
-	const LINE_H = 14 * 1.4;
-	const LABEL_MARGIN = 16;
+	function computeZoneAnchor(geometry: Zone['geometry']): [number, number] {
+		const ring = geometry.coordinates[0];
+		if (!ring || ring.length < 3) return [0, 0];
+		const centroid = ringCentroid(ring);
+		if (centroid && pointInPolygon(centroid[0], centroid[1], geometry)) return centroid;
+		return deepestPoint(geometry, ring);
+	}
+
+	// Centre de gravité d'un anneau (formule du lacet).
+	function ringCentroid(ring: number[][]): [number, number] | null {
+		let twiceArea = 0;
+		let x = 0;
+		let y = 0;
+		for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+			const [x0, y0] = ring[j];
+			const [x1, y1] = ring[i];
+			const cross = x0 * y1 - x1 * y0;
+			twiceArea += cross;
+			x += (x0 + x1) * cross;
+			y += (y0 + y1) * cross;
+		}
+		if (Math.abs(twiceArea) < 1e-12) return null;
+		return [x / (3 * twiceArea), y / (3 * twiceArea)];
+	}
+
+	// Distance d'un point au segment [a, b].
+	function distanceToSegment(point: number[], a: number[], b: number[]): number {
+		const dx = b[0] - a[0];
+		const dy = b[1] - a[1];
+		const lengthSq = dx * dx + dy * dy;
+		let t = lengthSq === 0 ? 0 : ((point[0] - a[0]) * dx + (point[1] - a[1]) * dy) / lengthSq;
+		t = clampNumber(t, 0, 1);
+		return Math.hypot(point[0] - (a[0] + t * dx), point[1] - (a[1] + t * dy));
+	}
+
+	function distanceToRing(point: number[], ring: number[][]): number {
+		let best = Infinity;
+		for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+			const distance = distanceToSegment(point, ring[j], ring[i]);
+			if (distance < best) best = distance;
+		}
+		return best;
+	}
+
+	// Point le plus éloigné des bords (approximation par grille resserrée) :
+	// l'ancre reste ainsi à l'intérieur même pour un tracé concave.
+	function deepestPoint(geometry: Zone['geometry'], ring: number[][]): [number, number] {
+		let minX = Infinity;
+		let minY = Infinity;
+		let maxX = -Infinity;
+		let maxY = -Infinity;
+		for (const [x, y] of ring) {
+			if (x < minX) minX = x;
+			if (x > maxX) maxX = x;
+			if (y < minY) minY = y;
+			if (y > maxY) maxY = y;
+		}
+		let centerX = (minX + maxX) / 2;
+		let centerY = (minY + maxY) / 2;
+		// Centre du cadre : départage plusieurs points à égale distance des bords
+		// (forme en « C » par exemple) pour rester au milieu de la zone.
+		const midX = centerX;
+		const midY = centerY;
+		let halfWidth = Math.max((maxX - minX) / 2, 1e-9);
+		let halfHeight = Math.max((maxY - minY) / 2, 1e-9);
+		let best: [number, number] = [centerX, centerY];
+		let bestDistance = -1;
+		let bestCenterDistance = Infinity;
+		for (let iteration = 0; iteration < 5; iteration++) {
+			const stepX = halfWidth / 4;
+			const stepY = halfHeight / 4;
+			for (let ix = -4; ix <= 4; ix++) {
+				for (let iy = -4; iy <= 4; iy++) {
+					const candidate: [number, number] = [centerX + ix * stepX, centerY + iy * stepY];
+					if (!pointInPolygon(candidate[0], candidate[1], geometry)) continue;
+					const distance = distanceToRing(candidate, ring);
+					const centerDistance = Math.hypot(candidate[0] - midX, candidate[1] - midY);
+					const better =
+						distance > bestDistance + 1e-12 ||
+						(Math.abs(distance - bestDistance) <= 1e-12 && centerDistance < bestCenterDistance);
+					if (better) {
+						bestDistance = distance;
+						bestCenterDistance = centerDistance;
+						best = candidate;
+					}
+				}
+			}
+			centerX = best[0];
+			centerY = best[1];
+			halfWidth = stepX;
+			halfHeight = stepY;
+		}
+		return best;
+	}
+
+	function clampNumber(value: number, min: number, max: number) {
+		return Math.min(max, Math.max(min, value));
+	}
 
 	function zoneScreenBounds(z: Zone) {
 		if (!map) return { width: 0, height: 0 };
@@ -239,52 +349,130 @@
 		return { width: maxX - minX, height: maxY - minY };
 	}
 
-	function textPixelSize(label: string) {
-		const lines = label.split('\n');
-		const width = Math.max(...lines.map((l) => l.length * CHAR_W));
-		const height = lines.length * LINE_H;
-		return { width, height };
-	}
+	// En dessous de cette largeur/hauteur à l'écran, la zone est trop petite pour
+	// porter un tag : on le masque plutôt que de le faire déborder sur les zones
+	// voisines.
+	const TAG_MIN_ZONE_PX = 34;
 
-	function labelFits(z: Zone, label: string): boolean {
+	function zoneTagVisible(bounds: { width: number; height: number }): boolean {
 		if (!map) return true;
-		const { width, height } = zoneScreenBounds(z);
-		const { width: tw, height: th } = textPixelSize(label);
-		return tw + LABEL_MARGIN <= width && th + LABEL_MARGIN <= height;
+		return Math.max(bounds.width, bounds.height) >= TAG_MIN_ZONE_PX;
 	}
 
-	function buildLabels(list: Zone[]): FeatureCollection {
-		const features: Feature[] = list
-			.filter((z) => z.geometry && z.geometry.type === 'Polygon')
-			.map((z): Feature => {
-				// Zone rouge : on annonce les jours avant re-prospection. Sinon on
-				// affiche le nom des commerciaux affectés à la zone.
-				const days = daysUntilReProspect(z.lastProspected);
-				const label = isRedZone(z)
-					? days === null
-						? 'Date inconnue'
-						: days <= 0
-							? 'Re-prospectable'
-							: `Re-prospectable dans ${days} j`
-					: zoneTitle(z.commercialIds);
-				return {
-					type: 'Feature',
-					properties: {
-						label,
-						color: zoneDisplayColor(z),
-						show: labelFits(z, label) ? 1 : 0
-					},
-					geometry: { type: 'Point', coordinates: centroidOf(z.geometry) }
-				};
-			});
-		return toFeatureCollection(features);
+	// --- Tags de zone ---
+	// Un badge HTML (photo + nom du commercial, ou « X J » pour les zones
+	// rouges) posé au centre du tracé, avec un contour épais de la couleur de
+	// la zone. Les tags suivent la carte tout seuls : on ne les reconstruit que
+	// quand l'ensemble des zones visibles ou leur contenu change.
+	// Registre interne des tags posés sur la carte (non réactif : la carte les
+	// gère elle-même, on ne veut pas de re-rendu Svelte à chaque déplacement).
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity
+	let zoneMarkers = new Map<string, { marker: Marker; signature: string }>();
+
+	function makeZoneTagElement(z: Zone): HTMLElement {
+		const el = document.createElement('div');
+		el.className = 'zone-tag';
+		el.style.setProperty('--zone-tag-color', zoneDisplayColor(z));
+
+		// Zone rouge : uniquement le nombre de jours avant re-prospection.
+		if (isRedZone(z)) {
+			el.classList.add('zone-tag--days');
+			const days = daysUntilReProspect(z.lastProspected);
+			const value = days === null ? '?' : String(Math.max(0, days));
+			const span = document.createElement('span');
+			span.className = 'zone-tag__days';
+			span.textContent = `${value} J`;
+			el.append(span);
+			return el;
+		}
+
+		// Sinon : photo + nom de chaque commercial affecté à la zone.
+		const ids: (string | null)[] = z.commercialIds.length ? z.commercialIds : [null];
+		for (const id of ids) {
+			const row = document.createElement('span');
+			row.className = 'zone-tag__row';
+
+			const photo = personPhoto(id);
+			const initial = (personName(id)[0] ?? '·').toUpperCase();
+			if (photo) {
+				const img = document.createElement('img');
+				img.className = 'zone-tag__photo';
+				img.src = photo;
+				img.alt = '';
+				img.decoding = 'async';
+				// Retenue pour l'export PNG : si la photo ne peut pas être
+				// récupérée par le canvas, c'est cette initiale qui est dessinée.
+				img.dataset.initial = initial;
+				// Photo indisponible : on retombe sur l'initiale plutôt que sur
+				// l'icône d'image cassée du navigateur.
+				img.addEventListener('error', () => {
+					const fallback = document.createElement('span');
+					fallback.className = 'zone-tag__photo zone-tag__photo--fallback';
+					fallback.textContent = initial;
+					img.replaceWith(fallback);
+				});
+				row.append(img);
+			} else {
+				const fallback = document.createElement('span');
+				fallback.className = 'zone-tag__photo zone-tag__photo--fallback';
+				fallback.textContent = initial;
+				row.append(fallback);
+			}
+
+			const name = document.createElement('span');
+			name.className = 'zone-tag__name';
+			name.textContent = personName(id);
+			row.append(name);
+			el.append(row);
+		}
+		return el;
 	}
 
-	function refreshLabels() {
-		if (!map) return;
-		const src = map.getSource('zone-labels') as GeoJSONSource | undefined;
-		if (!src) return;
-		src.setData(buildLabels(zoneList));
+	// Signature d'un tag : identifie tout ce qui change son contenu (couleur,
+	// commerciaux, photos, jours restants) pour ne reconstruire que si besoin.
+	function zoneTagSignature(z: Zone): string {
+		if (isRedZone(z)) {
+			const days = daysUntilReProspect(z.lastProspected);
+			return `${z.id}:${zoneDisplayColor(z)}:${days === null ? '?' : Math.max(0, days)}`;
+		}
+		const ids: (string | null)[] = z.commercialIds.length ? z.commercialIds : [null];
+		const peopleKey = ids.map((id) => `${id}@${personPhoto(id) ?? ''}`).join(',');
+		return `${z.id}:${zoneDisplayColor(z)}:${peopleKey}`;
+	}
+
+	function updateZoneMarkers() {
+		if (!map || !mapboxglCtor) return;
+		// Purge les ancres des zones supprimées depuis le dernier rendu.
+		if (anchorCache.size > zoneList.length) {
+			const known = new Set(zoneList.map((z) => z.id));
+			for (const id of anchorCache.keys()) {
+				if (!known.has(id)) anchorCache.delete(id);
+			}
+		}
+		const visible = zoneList.filter(
+			(z) => z.geometry && z.geometry.type === 'Polygon' && zoneTagVisible(zoneScreenBounds(z))
+		);
+
+		// Retire les tags sortis de l'écran ou dont le contenu a changé (jours,
+		// couleur, commerciaux, photo) : les autres sont conservés tels quels,
+		// ce qui évite de recharger les photos à chaque déplacement.
+		const wanted = new Map(visible.map((z) => [z.id, zoneTagSignature(z)]));
+		for (const [id, entry] of [...zoneMarkers]) {
+			if (wanted.get(id) === entry.signature) continue;
+			entry.marker.remove();
+			zoneMarkers.delete(id);
+		}
+
+		for (const z of visible) {
+			if (zoneMarkers.has(z.id)) continue;
+			const marker = new mapboxglCtor.Marker({
+				element: makeZoneTagElement(z),
+				anchor: 'center'
+			})
+				.setLngLat(zoneAnchor(z))
+				.addTo(map);
+			zoneMarkers.set(z.id, { marker, signature: wanted.get(z.id) ?? '' });
+		}
 	}
 
 	let visibilityTimer: ReturnType<typeof setTimeout> | undefined;
@@ -292,7 +480,7 @@
 		if (visibilityTimer) return;
 		visibilityTimer = setTimeout(() => {
 			visibilityTimer = undefined;
-			refreshLabels();
+			updateZoneMarkers();
 		}, 120);
 	}
 
@@ -419,76 +607,7 @@
 		zoneDialogOpen = false;
 	}
 
-	// --- Fusion de zones : sélection multiple puis union géométrique ---
-	let mergeOpen = $state(false);
-	let mergeIds = $state<string[]>([]);
-	let mergeError = $state('');
-
-	function openMerge() {
-		mergeIds = [];
-		mergeError = '';
-		mergeOpen = true;
-	}
-
-	function toggleMerge(id: string) {
-		mergeIds = mergeIds.includes(id) ? mergeIds.filter((x) => x !== id) : [...mergeIds, id];
-	}
-
-	// Fusionne les zones sélectionnées : union des tracés, union des commerciaux,
-	// couleur rouge immédiate, puis suppression des zones d'origine.
-	function submitMerge() {
-		mergeError = '';
-		const zones: Zone[] = [];
-		for (const id of mergeIds) {
-			const z = zoneList.find((x) => x.id === id);
-			if (z) zones.push(z);
-		}
-		if (zones.length < 2) return;
-
-		const geometry = unionZones(zones.map((z) => z.geometry));
-		if (!geometry) {
-			mergeError = 'Impossible de fusionner ces zones (formes disjointes ou invalides).';
-			return;
-		}
-
-		const commercialIds = [...new Set(zones.flatMap((z) => z.commercialIds))] as Id<'users'>[];
-		const lastProspected =
-			zones
-				.map((z) => z.lastProspected)
-				.filter((d): d is string => !!d)
-				.sort()
-				.pop() ?? todayISO();
-		const id = crypto.randomUUID();
-
-		saveZone({
-			id,
-			name: zoneTitle(commercialIds),
-			lastProspected,
-			createdAt: Date.now(),
-			geometry,
-			// Rouge immédiatement après la fusion.
-			color: ZONE_RED,
-			greenWhenOld: true,
-			commercialIds
-		});
-		for (const z of zones) deleteZone(z.id);
-
-		selectedId = null;
-		mergeOpen = false;
-	}
-
-	// --- Liste copiable des zones « non rouges », groupées par commercial ---
-	type VillageGroup = {
-		commercialId: string | null;
-		zoneCount: number;
-		communes: Commune[];
-	};
-	let villagesOpen = $state(false);
-	let villagesLoading = $state(false);
-	let villagesError = $state('');
-	let copied = $state(false);
-	let villageGroups = $state<VillageGroup[]>([]);
-
+	// --- Nom affiché d'une zone ---
 	function personName(id: string | null): string {
 		if (!id) return 'Sans commercial';
 		const p = personById(id);
@@ -504,73 +623,6 @@
 	function personPhoto(id: string | null): string | null {
 		if (!id) return null;
 		return personById(id)?.photo ?? null;
-	}
-
-	async function openVillages() {
-		villagesOpen = true;
-		await computeVillages();
-	}
-
-	async function computeVillages() {
-		villagesError = '';
-		copied = false;
-		// Zones « non rouges » : leur couleur affichée n'est pas le rouge.
-		const target = zoneList.filter((z) => !isRedZone(z));
-		villagesLoading = true;
-		try {
-			const byZone = await fetchVillagesByZone(
-				target.map((z) => ({ id: z.id, geometry: z.geometry }))
-			);
-			const groups: VillageGroup[] = [];
-			for (const z of target) {
-				// Une zone peut être affectée à plusieurs commerciaux : elle apparaît
-				// alors dans le groupe de chacun.
-				const ids = z.commercialIds.length ? z.commercialIds : ['__none__'];
-				for (const cid of ids) {
-					let g = groups.find((x) => (x.commercialId ?? '__none__') === cid);
-					if (!g) {
-						g = { commercialId: cid === '__none__' ? null : cid, zoneCount: 0, communes: [] };
-						groups.push(g);
-					}
-					g.zoneCount += 1;
-					// Villages dédupliqués par code commune (plusieurs zones d'un même
-					// commercial peuvent contenir la même commune).
-					for (const c of byZone.get(z.id) ?? []) {
-						if (!g.communes.some((x) => x.code === c.code)) g.communes.push(c);
-					}
-				}
-			}
-			for (const g of groups) g.communes.sort((a, b) => b.population - a.population);
-			villageGroups = groups.sort((a, b) =>
-				personName(a.commercialId).localeCompare(personName(b.commercialId))
-			);
-		} catch {
-			villagesError = 'Impossible de récupérer les villages (API Géo indisponible).';
-			villageGroups = [];
-		} finally {
-			villagesLoading = false;
-		}
-	}
-
-	const villagesText = $derived.by(() => {
-		const lines: string[] = [];
-		for (const g of villageGroups) {
-			lines.push(personName(g.commercialId));
-			if (!g.communes.length) lines.push('  (aucun village principal)');
-			for (const c of g.communes) lines.push(`  - ${c.nom} (${formatPopulation(c.population)})`);
-			lines.push('');
-		}
-		return lines.join('\n').trim();
-	});
-
-	async function copyVillages() {
-		try {
-			await navigator.clipboard.writeText(villagesText);
-			copied = true;
-			setTimeout(() => (copied = false), 2000);
-		} catch {
-			villagesError = 'Copie impossible dans ce navigateur.';
-		}
 	}
 
 	// --- Recherche de ville (géocodage Mapbox) et cadrage de la carte ---
@@ -708,14 +760,7 @@
 				)
 			);
 		}
-		const labelsSrc = map.getSource('zone-labels') as GeoJSONSource | undefined;
-		if (labelsSrc) {
-			try {
-				labelsSrc.setData(buildLabels(list));
-			} catch (err) {
-				console.error('zone-labels update failed', err);
-			}
-		}
+		updateZoneMarkers();
 	}
 
 	function ensureDraw(isEditing: boolean) {
@@ -727,7 +772,6 @@
 				if (zoneList.length) {
 					draw.add(toFeatureCollection(zoneList.map(zoneToFeature)));
 				}
-				if (map.getLayer('zone-labels')) map.moveLayer('zone-labels');
 			}
 			draw.changeMode('simple_select');
 		} else {
@@ -880,6 +924,380 @@
 		modalOpen = false;
 	}
 
+	// --- Mode capture : carte seule, en plein écran, pour photographier les
+	// zones proprement (aucun panneau, aucun contrôle par-dessus) ---
+
+	// La barre d'outils du mode capture s'efface après quelques secondes sans
+	// souris : l'écran reste alors parfaitement net pour une capture d'écran.
+	let captureUiStamp = 0;
+	function revealCaptureUi() {
+		if (!captureMode) return;
+		const now = Date.now();
+		// Réarmer le minuteur au plus toutes les 400 ms : on évite de créer un
+		// timer à chaque événement mousemove tout en gardant la barre affichée
+		// tant que la souris bouge.
+		if (captureUiVisible && now - captureUiStamp < 400) return;
+		captureUiStamp = now;
+		captureUiVisible = true;
+		clearTimeout(captureUiTimer);
+		captureUiTimer = setTimeout(() => {
+			captureUiVisible = false;
+		}, 3500);
+	}
+
+	function resizeMapSoon(delay = 80) {
+		setTimeout(() => {
+			map?.resize();
+			updateZoneMarkers();
+		}, delay);
+	}
+
+	function enterCaptureMode() {
+		captureMode = true;
+		captureUiVisible = true;
+		captureUiStamp = Date.now();
+		selectedId = null;
+		placingGms = false;
+		if (map) map.getCanvas().style.cursor = '';
+		// Le plein écran natif (qui masque aussi la barre du navigateur) est
+		// demandé immédiatement : il exige l'activation utilisateur du clic.
+		// S'il est refusé (iOS par ex.), la superposition CSS fixed inset-0 suffit.
+		try {
+			const request = wrapper?.requestFullscreen?.();
+			if (request && typeof request.catch === 'function') request.catch(() => {});
+		} catch {
+			// ignore : le mode capture CSS prend le relais
+		}
+		tick().then(() => {
+			revealCaptureUi();
+			resizeMapSoon();
+		});
+	}
+
+	async function exitCaptureMode() {
+		captureMode = false;
+		clearTimeout(captureUiTimer);
+		if (document.fullscreenElement) {
+			try {
+				await document.exitFullscreen();
+			} catch {
+				// ignore
+			}
+		}
+		resizeMapSoon();
+	}
+
+	function handleFullscreenChange() {
+		// Sortie du plein écran natif (Échap, geste système…) : on quitte aussi
+		// le mode capture pour retrouver l'interface.
+		if (!document.fullscreenElement && captureMode) {
+			void exitCaptureMode();
+			return;
+		}
+		resizeMapSoon(60);
+	}
+
+	// --- Export PNG ---
+	// Les tags (et les pins GMS) sont des éléments HTML, donc absents du canvas
+	// Mapbox. On compose donc l'image : la carte, puis chaque tag redessiné
+	// dans le canvas à partir de sa position et de son style réels à l'écran.
+	// C'est ce qui garantit un export identique à ce qui est affiché.
+
+	function roundedRectPath(
+		ctx: CanvasRenderingContext2D,
+		x: number,
+		y: number,
+		w: number,
+		h: number,
+		radius: number
+	) {
+		const r = Math.max(0, Math.min(radius, w / 2, h / 2));
+		ctx.beginPath();
+		ctx.moveTo(x + r, y);
+		ctx.arcTo(x + w, y, x + w, y + h, r);
+		ctx.arcTo(x + w, y + h, x, y + h, r);
+		ctx.arcTo(x, y + h, x, y, r);
+		ctx.arcTo(x, y, x + w, y, r);
+		ctx.closePath();
+	}
+
+	// Récupère les photos des commerciaux sous forme d'images « propres » pour le
+	// canvas (via fetch CORS) : dessiner directement une <img> distante
+	// « souillerait » le canvas et interdirait l'export. Si une photo n'est pas
+	// récupérable, l'initiale est dessinée à la place.
+	async function loadTagPhotos(root: HTMLElement): Promise<{
+		photos: Map<string, HTMLImageElement>;
+		objectUrls: string[];
+	}> {
+		const urls = new SvelteSet<string>();
+		for (const img of root.querySelectorAll<HTMLImageElement>('img.zone-tag__photo')) {
+			if (img.src) urls.add(img.src);
+		}
+		const photos = new SvelteMap<string, HTMLImageElement>();
+		const objectUrls: string[] = [];
+		await Promise.all(
+			[...urls].map(async (url) => {
+				try {
+					const response = await fetch(url, { mode: 'cors' });
+					if (!response.ok) return;
+					const objectUrl = URL.createObjectURL(await response.blob());
+					const image = new Image();
+					await new Promise<void>((resolve, reject) => {
+						image.onload = () => resolve();
+						image.onerror = () => reject(new Error('photo illisible'));
+						image.src = objectUrl;
+					});
+					objectUrls.push(objectUrl);
+					photos.set(url, image);
+				} catch {
+					// Photo non récupérable : l'initiale sera dessinée.
+				}
+			})
+		);
+		return { photos, objectUrls };
+	}
+
+	type ExportScale = { ratio: number; rect: DOMRect };
+
+	function toCanvasX(scale: ExportScale, clientX: number) {
+		return (clientX - scale.rect.left) * scale.ratio;
+	}
+
+	function toCanvasY(scale: ExportScale, clientY: number) {
+		return (clientY - scale.rect.top) * scale.ratio;
+	}
+
+	function drawTagText(
+		ctx: CanvasRenderingContext2D,
+		node: HTMLElement | null,
+		scale: ExportScale
+	) {
+		const text = node?.textContent ?? '';
+		if (!node || !text) return;
+		const rect = node.getBoundingClientRect();
+		const style = getComputedStyle(node);
+		// La taille de police doit suivre le ratio de l'écran (canvas en pixels
+		// physiques, DOM en pixels CSS) : sinon le texte sort deux fois trop
+		// petit sur un écran Retina.
+		const fontSize = (parseFloat(style.fontSize) || 13) * scale.ratio;
+		ctx.save();
+		ctx.font = `${style.fontWeight} ${fontSize}px ${style.fontFamily}`;
+		ctx.fillStyle = style.color;
+		ctx.textAlign = 'left';
+		ctx.textBaseline = 'middle';
+		ctx.shadowColor = 'rgba(0, 0, 0, 0.85)';
+		ctx.shadowBlur = 3 * scale.ratio;
+		ctx.shadowOffsetY = 1 * scale.ratio;
+		ctx.fillText(text, toCanvasX(scale, rect.left), toCanvasY(scale, rect.top + rect.height / 2));
+		ctx.restore();
+	}
+
+	function drawTagPhoto(
+		ctx: CanvasRenderingContext2D,
+		row: HTMLElement,
+		scale: ExportScale,
+		photos: Map<string, HTMLImageElement>
+	) {
+		const image = row.querySelector<HTMLImageElement>('img.zone-tag__photo');
+		const fallback = row.querySelector<HTMLElement>('.zone-tag__photo--fallback');
+		const node = image ?? fallback;
+		if (!node) return;
+
+		const rect = node.getBoundingClientRect();
+		const size = rect.width * scale.ratio;
+		if (size <= 0) return;
+		const centerX = toCanvasX(scale, rect.left + rect.width / 2);
+		const centerY = toCanvasY(scale, rect.top + rect.height / 2);
+		const radius = size / 2;
+		const bitmap = image ? photos.get(image.src) : null;
+		// Une image cassée ferait échouer drawImage : on vérifie qu'elle est
+		// réellement exploitable, sinon on dessine l'initiale.
+		const usable = bitmap && bitmap.complete && bitmap.naturalWidth > 0;
+
+		ctx.save();
+		ctx.beginPath();
+		ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+		ctx.closePath();
+		ctx.clip();
+		if (usable) {
+			ctx.drawImage(bitmap, toCanvasX(scale, rect.left), toCanvasY(scale, rect.top), size, size);
+		} else {
+			ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+			ctx.fillRect(toCanvasX(scale, rect.left), toCanvasY(scale, rect.top), size, size);
+			ctx.fillStyle = '#ffffff';
+			ctx.font = `800 ${(size * 0.44).toFixed(1)}px ${getComputedStyle(node).fontFamily}`;
+			ctx.textAlign = 'center';
+			ctx.textBaseline = 'middle';
+			ctx.fillText(image?.dataset.initial ?? node.textContent ?? '·', centerX, centerY);
+		}
+		ctx.restore();
+
+		// Anneau blanc autour de la photo (la bordure CSS est interne).
+		const ring = Math.max(1, size * 0.065);
+		ctx.save();
+		ctx.beginPath();
+		ctx.arc(centerX, centerY, radius - ring / 2, 0, Math.PI * 2);
+		ctx.lineWidth = ring;
+		ctx.strokeStyle = 'rgba(255, 255, 255, 0.92)';
+		ctx.stroke();
+		ctx.restore();
+	}
+
+	function drawZoneTag(
+		ctx: CanvasRenderingContext2D,
+		el: HTMLElement,
+		scale: ExportScale,
+		photos: Map<string, HTMLImageElement>
+	) {
+		const rect = el.getBoundingClientRect();
+		if (rect.width <= 0 || rect.height <= 0) return;
+		const x = toCanvasX(scale, rect.left);
+		const y = toCanvasY(scale, rect.top);
+		const w = rect.width * scale.ratio;
+		const h = rect.height * scale.ratio;
+		const style = getComputedStyle(el);
+		const border = (parseFloat(style.borderTopWidth) || 0) * scale.ratio;
+		const radius = (parseFloat(style.borderTopLeftRadius) || 0) * scale.ratio;
+
+		// Ombre portée puis fond.
+		ctx.save();
+		ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
+		ctx.shadowBlur = 9 * scale.ratio;
+		ctx.shadowOffsetY = 2 * scale.ratio;
+		roundedRectPath(ctx, x, y, w, h, radius);
+		ctx.fillStyle = style.backgroundColor;
+		ctx.fill();
+		ctx.restore();
+
+		// Liseré clair extérieur (box-shadow 0 0 0 1.5px).
+		ctx.save();
+		const ring = 1.5 * scale.ratio;
+		ctx.lineWidth = ring;
+		ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+		roundedRectPath(ctx, x - ring / 2, y - ring / 2, w + ring, h + ring, radius + ring / 2);
+		ctx.stroke();
+		ctx.restore();
+
+		// Contour épais de la couleur de la zone.
+		if (border > 0) {
+			ctx.save();
+			ctx.lineWidth = border;
+			ctx.strokeStyle = style.borderTopColor;
+			roundedRectPath(
+				ctx,
+				x + border / 2,
+				y + border / 2,
+				w - border,
+				h - border,
+				Math.max(0, radius - border / 2)
+			);
+			ctx.stroke();
+			ctx.restore();
+		}
+
+		// Contenu : une ligne photo + nom par commercial, ou « X J ».
+		for (const row of el.querySelectorAll<HTMLElement>('.zone-tag__row')) {
+			drawTagPhoto(ctx, row, scale, photos);
+			drawTagText(ctx, row.querySelector<HTMLElement>('.zone-tag__name'), scale);
+		}
+		drawTagText(ctx, el.querySelector<HTMLElement>('.zone-tag__days'), scale);
+	}
+
+	// Pin GMS 🏪 : pastille ambre avec sa pointe et l'émoji.
+	const GMS_EMOJI_FONT = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
+
+	function drawGmsPin(ctx: CanvasRenderingContext2D, el: HTMLElement, scale: ExportScale) {
+		const rect = el.getBoundingClientRect();
+		if (rect.width <= 0) return;
+		const size = rect.width * scale.ratio;
+		const centerX = toCanvasX(scale, rect.left + rect.width / 2);
+		const centerY = toCanvasY(scale, rect.top + rect.height / 2);
+		const radius = size / 2;
+
+		ctx.save();
+		ctx.translate(centerX, centerY + radius * 0.55);
+		ctx.rotate(Math.PI / 4);
+		ctx.fillStyle = '#f59e0b';
+		ctx.fillRect(-size * 0.15, -size * 0.15, size * 0.3, size * 0.3);
+		ctx.restore();
+
+		ctx.save();
+		ctx.beginPath();
+		ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+		ctx.fillStyle = '#f59e0b';
+		ctx.fill();
+		ctx.lineWidth = Math.max(1, size * 0.06);
+		ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
+		ctx.stroke();
+		ctx.font = `${(size * 0.5).toFixed(1)}px ${GMS_EMOJI_FONT}`;
+		ctx.textAlign = 'center';
+		ctx.textBaseline = 'middle';
+		ctx.fillText(el.textContent ?? '🏪', centerX, centerY);
+		ctx.restore();
+	}
+
+	// Compose l'image finale : carte + tags + pins.
+	async function renderMapImage(canvasMap: MapboxMap): Promise<HTMLCanvasElement> {
+		const source = canvasMap.getCanvas();
+		const container = canvasMap.getContainer();
+		const output = document.createElement('canvas');
+		output.width = source.width;
+		output.height = source.height;
+		const ctx = output.getContext('2d');
+		if (!ctx) throw new Error('canvas 2D indisponible');
+		ctx.drawImage(source, 0, 0);
+
+		const containerRect = container.getBoundingClientRect();
+		const scale: ExportScale = {
+			ratio: containerRect.width > 0 ? source.width / containerRect.width : 1,
+			rect: containerRect
+		};
+
+		const { photos, objectUrls } = await loadTagPhotos(container);
+		try {
+			// Un tag récalcitrant ne doit pas faire échouer tout l'export.
+			for (const el of container.querySelectorAll<HTMLElement>('.zone-tag')) {
+				try {
+					drawZoneTag(ctx, el, scale, photos);
+				} catch (err) {
+					console.error('zone tag export failed', err);
+				}
+			}
+			for (const el of container.querySelectorAll<HTMLElement>('.gms-pin')) {
+				try {
+					drawGmsPin(ctx, el, scale);
+				} catch (err) {
+					console.error('gms pin export failed', err);
+				}
+			}
+		} finally {
+			for (const url of objectUrls) URL.revokeObjectURL(url);
+		}
+		return output;
+	}
+
+	// Télécharge la carte (tags et pins compris) en PNG.
+	async function downloadMapImage() {
+		revealCaptureUi();
+		if (!map || exporting) return;
+		const canvasMap = map;
+		exporting = true;
+		try {
+			// Garantit que toutes les zones visibles ont bien leur tag à l'écran.
+			updateZoneMarkers();
+			const image = await renderMapImage(canvasMap);
+			if (map !== canvasMap) return;
+			const link = document.createElement('a');
+			link.href = image.toDataURL('image/png');
+			link.download = `zones-${todayISO()}.png`;
+			link.click();
+		} catch {
+			actionError = "Impossible d'enregistrer l'image de la carte.";
+		} finally {
+			exporting = false;
+		}
+	}
+
 	onMount(() => {
 		let disposed = false;
 		// Modules Mapbox chargés une seule fois (réutilisés à chaque remontage de
@@ -892,6 +1310,18 @@
 		// courante ; un seul abonnement survit aux remontages de la carte.
 		editing.subscribe(ensureDraw);
 
+		// Sortie du plein écran natif (touche Échap, geste système…) : on
+		// resynchronise le mode capture et la taille de la carte.
+		document.addEventListener('fullscreenchange', handleFullscreenChange);
+
+		// En mode capture, tout mouvement de souris fait réapparaître la barre
+		// d'outils ; elle s'efface ensuite toute seule.
+		const wrapperEl = wrapper;
+		const onWrapperMouseMove = () => {
+			if (captureMode) revealCaptureUi();
+		};
+		wrapperEl?.addEventListener('mousemove', onWrapperMouseMove);
+
 		// Monte la carte Mapbox (fond + draw + couches) et renvoie l'instance.
 		// Rejouée à chaque changement de thème pour appliquer le style clair / sombre.
 		function mountMap(): MapboxMap | null {
@@ -901,9 +1331,14 @@
 				container,
 				style: getTheme() === 'light' ? LIGHT_STYLE_URL : STYLE_URL,
 				center: [0.6886, 47.3941],
-				zoom: isMobile ? 7 : 9
+				zoom: isMobile ? 7 : 9,
+				// Nécessaire pour pouvoir exporter la carte en PNG (toDataURL).
+				preserveDrawingBuffer: true
 			});
 			map = m;
+			// La carte est recréée (thème) : les anciens tags HTML ont disparu
+			// avec elle, on force leur reconstruction au prochain rendu.
+			zoneMarkers.clear();
 
 			m.on('load', () => {
 				const d = new mapboxDrawMod({
@@ -921,7 +1356,7 @@
 				m.on('draw.modechange', handleModeChange);
 				m.on('draw.selectionchange', handleSelection);
 				m.on('move', onMapMove);
-				m.on('moveend', refreshLabels);
+				m.on('moveend', updateZoneMarkers);
 				m.on('click', handleMapClick);
 
 				ensureDraw($editing);
@@ -950,32 +1385,6 @@
 						paint: {
 							'line-color': '#ffffff',
 							'line-width': 2
-						}
-					});
-
-					m.addSource('zone-labels', {
-						type: 'geojson',
-						data: { type: 'FeatureCollection', features: [] }
-					});
-					m.addLayer({
-						id: 'zone-labels',
-						type: 'symbol',
-						source: 'zone-labels',
-						filter: ['==', ['get', 'show'], 1],
-						layout: {
-							'text-field': ['get', 'label'],
-							'text-size': 14,
-							'text-line-height': 1.4,
-							'text-anchor': 'center',
-							'text-font': ['Open Sans Semibold', 'Open Sans Regular'],
-							'text-allow-overlap': true,
-							'text-ignore-placement': true,
-							'text-optional': true
-						},
-						paint: {
-							'text-color': '#ffffff',
-							'text-halo-color': '#000000',
-							'text-halo-width': 3
 						}
 					});
 				} catch (err) {
@@ -1036,6 +1445,8 @@
 
 		return () => {
 			disposed = true;
+			document.removeEventListener('fullscreenchange', handleFullscreenChange);
+			wrapperEl?.removeEventListener('mousemove', onWrapperMouseMove);
 			themeObserver?.disconnect();
 			map?.remove();
 			map = null;
@@ -1045,7 +1456,16 @@
 	});
 </script>
 
-<div class="relative h-full min-h-[560px] overflow-hidden rounded-xl border border-line bg-card">
+<div
+	bind:this={wrapper}
+	class="relative h-full min-h-[560px] overflow-hidden rounded-xl border border-line bg-card"
+	class:capture-mode={captureMode}
+	class:fixed={captureMode}
+	class:inset-0={captureMode}
+	class:z-50={captureMode}
+	class:rounded-none={captureMode}
+	class:border-0={captureMode}
+>
 	{#if noToken}
 		<div
 			class="absolute top-4 left-1/2 z-20 w-[min(92%,420px)] -translate-x-1/2 rounded-xl border border-line bg-card2 p-4 text-center shadow-lg"
@@ -1067,293 +1487,322 @@
 		<div class="h-full w-full" bind:this={container}></div>
 	</div>
 
-	<!-- Panneau latéral : actions + légende -->
-	<aside
-		class="absolute top-4 right-4 z-10 flex max-h-[calc(100%-2rem)] w-72 max-w-[calc(100%-2rem)] flex-col gap-3 overflow-y-auto overscroll-contain rounded-xl border border-line bg-surface/85 p-4 shadow-lg backdrop-blur"
-	>
-		<header class="flex items-center justify-between gap-2">
-			<div class="flex min-w-0 items-center gap-2.5">
-				<span
-					class="grid size-8 shrink-0 place-items-center rounded-lg border border-line bg-card2 text-muted-foreground"
-				>
-					<MapIcon class="size-4" strokeWidth={1.7} />
-				</span>
-				<div class="min-w-0 leading-tight">
-					<p class="truncate text-[13px] font-semibold text-foreground">Zones de prospection</p>
-					<p class="text-[11px] font-medium text-muted-foreground">
-						{zoneCount} zone{zoneCount > 1 ? 's' : ''}
-					</p>
-				</div>
-			</div>
-		</header>
-
-		<!-- Recherche d'une ville : la carte se cale dessus -->
-		<div class="relative">
-			<Search
-				class="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground"
-				strokeWidth={1.7}
-			/>
-			<input
-				type="search"
-				value={cityQuery}
-				oninput={onCityInput}
-				onfocus={() => (cityOpen = citySuggestions.length > 0)}
-				placeholder="Chercher une ville…"
-				class="h-9 w-full rounded-lg border border-line bg-base pr-2.5 pl-8 text-[12px] text-foreground placeholder:text-muted-foreground focus:border-line focus:outline-none"
-			/>
-			{#if citySearching}
-				<p class="px-0.5 pt-1 text-[11px] text-muted-foreground">Recherche…</p>
-			{/if}
-			{#if cityOpen}
-				<div
-					class="absolute z-20 mt-1 flex w-full flex-col overflow-hidden rounded-lg border border-line bg-card shadow-lg"
-				>
-					{#each citySuggestions as s (s.label)}
-						<button
-							type="button"
-							class="truncate px-3 py-2 text-left text-[12px] text-foreground transition-colors hover:bg-glass-3"
-							onclick={() => pickCity(s)}
-						>
-							{s.label}
-						</button>
-					{/each}
-				</div>
-			{/if}
-		</div>
-
-		<Button variant="outline" class="w-full justify-center gap-2" onclick={openVillages}>
-			<ListChecks class="size-4" strokeWidth={1.7} />
-			Villages par commercial
-		</Button>
-
-		{#if zonesErrorMessage}
-			<div
-				class="flex flex-col gap-1 rounded-lg border border-rose-500/60 bg-rose-500/10 p-2.5 text-[11.5px] leading-relaxed"
-			>
-				<p class="flex items-center gap-1.5 font-semibold text-rose-400">
-					<TriangleAlert class="size-3.5" strokeWidth={1.7} />
-					Erreur
-				</p>
-				<p class="text-muted-foreground">{zonesErrorMessage}</p>
-			</div>
-		{/if}
-
-		{#if $editing}
-			<Button
-				class="w-full bg-primary text-primary-foreground hover:bg-primary/80"
-				onclick={startDrawing}
-			>
-				<Plus class="size-4" strokeWidth={2} />
-				Nouvelle zone
-			</Button>
-		{/if}
-
-		{#if $editing}
-			<Button variant="outline" class="w-full" onclick={startPlacingGms}>
-				<span class="text-[14px] leading-none">🏪</span>
-				Ajouter une GMS
-			</Button>
-		{/if}
-
-		{#if $editing}
-			<Button variant="outline" class="w-full justify-center gap-2" onclick={openMerge}>
-				<Merge class="size-4" strokeWidth={1.7} />
-				Fusionner des zones
-			</Button>
-		{/if}
-
-		{#if placingGms}
-			<div
-				class="rounded-lg border border-amber-500/50 bg-amber-500/10 p-2.5 text-[11.5px] leading-relaxed text-amber-400"
-			>
-				Clique sur la carte à l'emplacement de la GMS pour poser le pin 🏪.
-			</div>
-		{/if}
-
-		{#if $drawing}
-			<div
-				class="rounded-lg border border-amber-500/50 bg-amber-500/10 p-2.5 text-[11.5px] leading-relaxed text-amber-400"
-			>
-				Clique sur la carte pour poser les points, puis double-clic pour fermer la zone.
-			</div>
-		{/if}
-
+	<!-- Barre d'outils du mode capture : discrète et masquée automatiquement
+	     après quelques secondes, pour laisser la carte totalement dégagée. -->
+	{#if captureMode}
 		<div
-			class="hidden flex-col gap-1.5 rounded-lg border border-line bg-card2 p-2.5 text-[11.5px] sm:flex"
+			class="absolute top-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-full border border-white/15 bg-black/60 p-1 shadow-lg backdrop-blur transition-opacity duration-300"
+			class:pointer-events-none={!captureUiVisible}
+			class:opacity-0={!captureUiVisible}
+			class:opacity-100={captureUiVisible}
 		>
-			<div class="flex items-center gap-2 text-muted-foreground">
-				<span class="size-2.5 shrink-0 rounded-full" style={`background:${ZONE_RED}`}></span>
-				Rouge : jours avant re-prospection
-			</div>
-			<div class="flex items-center gap-2 text-muted-foreground">
-				<span class="size-2.5 shrink-0 rounded-full" style={`background:${DEFAULT_ZONE_COLOR}`}
-				></span>
-				Autres zones : nom des commerciaux
-			</div>
-			<div class="flex items-center gap-2 text-muted-foreground">
-				<span class="size-2.5 shrink-0 rounded-full" style={`background:${COLOR_OLD}`}></span>
-				Repassée en vert après 6 mois
-			</div>
+			<button
+				type="button"
+				class="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold text-white transition-colors hover:bg-white/15"
+				title="Télécharger un PNG de la carte (zones et titres inclus)"
+				onclick={downloadMapImage}
+			>
+				<Camera class="size-4" strokeWidth={1.8} />
+				Télécharger l'image
+			</button>
+			<span class="h-4 w-px bg-white/20"></span>
+			<button
+				type="button"
+				class="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold text-white/80 transition-colors hover:bg-white/15 hover:text-white"
+				title="Quitter le plein écran (Échap)"
+				onclick={exitCaptureMode}
+			>
+				<Minimize class="size-4" strokeWidth={1.8} />
+				Quitter
+			</button>
 		</div>
+	{/if}
 
-		<!-- GMS en cours : pins 🏪 avec leur intitulé -->
-		{#if gmsList.length}
-			<div class="flex flex-col gap-1.5 rounded-lg border border-line bg-card2 p-2.5">
-				<p class="text-[10.5px] font-semibold tracking-wider text-muted-foreground uppercase">
-					GMS en cours ({gmsList.length})
-				</p>
-				<div class="flex max-h-40 flex-col gap-1 overflow-y-auto pr-0.5">
-					{#each gmsList as g (g.externalId)}
-						<div class="flex items-center justify-between gap-2 rounded-md bg-base px-2 py-1">
-							<span
-								class="flex min-w-0 items-center gap-1.5 text-[12px] font-medium text-foreground"
-							>
-								<span class="shrink-0 text-[12px]">🏪</span>
-								<span class="truncate">{g.label}</span>
-							</span>
-							{#if $editing}
-								<button
-									type="button"
-									class="grid size-5.5 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-glass-3 hover:text-foreground"
-									title="Modifier l'intitulé"
-									onclick={() => openGmsEdit(g.externalId)}
-								>
-									<Pencil class="size-3.5" strokeWidth={1.7} />
-								</button>
-							{/if}
-						</div>
-					{/each}
-				</div>
-			</div>
-		{/if}
-	</aside>
-
-	<!-- Fiche de la zone sélectionnée -->
-	{#if selectedZone}
-		{@const z = selectedZone}
-		<div
-			class="absolute top-4 left-4 z-10 flex w-72 max-w-[calc(100%-2rem)] flex-col gap-2.5 rounded-xl border border-line bg-surface/85 p-4 shadow-lg backdrop-blur"
+	{#if !captureMode}
+		<!-- Panneau latéral : actions + légende -->
+		<aside
+			class="absolute top-4 right-4 z-10 flex max-h-[calc(100%-2rem)] w-72 max-w-[calc(100%-2rem)] flex-col gap-3 overflow-y-auto overscroll-contain rounded-xl border border-line bg-surface/85 p-4 shadow-lg backdrop-blur"
 		>
-			<div class="flex items-start justify-between gap-2">
-				<div class="flex min-w-0 items-center gap-2">
+			<header class="flex items-center justify-between gap-2">
+				<div class="flex min-w-0 items-center gap-2.5">
 					<span
-						class="size-3 shrink-0 rounded-full border border-white/40"
-						style={`background:${zoneColor(z)}`}
-					></span>
+						class="grid size-8 shrink-0 place-items-center rounded-lg border border-line bg-card2 text-muted-foreground"
+					>
+						<MapIcon class="size-4" strokeWidth={1.7} />
+					</span>
 					<div class="min-w-0 leading-tight">
-						<p class="truncate text-[13px] font-semibold text-foreground">
-							{zoneTitle(z.commercialIds)}
+						<p class="truncate text-[13px] font-semibold text-foreground">Zones de prospection</p>
+						<p class="text-[11px] font-medium text-muted-foreground">
+							{zoneCount} zone{zoneCount > 1 ? 's' : ''}
 						</p>
-						<div class="mt-0.5 flex items-center gap-1">
-							{#each z.commercialIds as cid (cid)}
-								<Avatar
-									photo={personPhoto(cid)}
-									label={personName(cid)[0] ?? '·'}
-									class="size-4 border border-line text-[8px]"
-								/>
-							{/each}
-							<p class="text-[11px] font-medium text-muted-foreground">Zone de prospection</p>
-						</div>
 					</div>
 				</div>
-				<div class="flex shrink-0 items-center gap-1">
-					{#if $editing}
-						<button
-							type="button"
-							class="grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-glass-3 hover:text-foreground"
-							title="Modifier le nom et la couleur"
-							onclick={() => openZoneEdit(z)}
-						>
-							<Pencil class="size-3.5" strokeWidth={1.7} />
-						</button>
-					{/if}
-					<button
-						type="button"
-						class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-glass-3 hover:text-foreground"
-						title="Fermer"
-						onclick={() => (selectedId = null)}
+			</header>
+
+			<!-- Recherche d'une ville : la carte se cale dessus -->
+			<div class="relative">
+				<Search
+					class="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground"
+					strokeWidth={1.7}
+				/>
+				<input
+					type="search"
+					value={cityQuery}
+					oninput={onCityInput}
+					onfocus={() => (cityOpen = citySuggestions.length > 0)}
+					placeholder="Chercher une ville…"
+					class="h-9 w-full rounded-lg border border-line bg-base pr-2.5 pl-8 text-[12px] text-foreground placeholder:text-muted-foreground focus:border-line focus:outline-none"
+				/>
+				{#if citySearching}
+					<p class="px-0.5 pt-1 text-[11px] text-muted-foreground">Recherche…</p>
+				{/if}
+				{#if cityOpen}
+					<div
+						class="absolute z-20 mt-1 flex w-full flex-col overflow-hidden rounded-lg border border-line bg-card shadow-lg"
 					>
-						<X class="size-3.5" />
-					</button>
-				</div>
-			</div>
-
-			<div class="space-y-1.5 text-[12px]">
-				<div class="flex items-center justify-between gap-3">
-					<span class="text-muted-foreground">Dernière prospection</span>
-					<span class="font-semibold text-foreground">{formatDate(z.lastProspected)}</span>
-				</div>
-				<div class="flex items-center justify-between gap-3">
-					<span class="text-muted-foreground">Prochaine prospection</span>
-					<span class="font-semibold text-foreground">
-						{z.lastProspected ? formatDate(nextProspectionDateISO(z.lastProspected)) : '—'}
-					</span>
-				</div>
-				<div class="flex items-center justify-between gap-3">
-					<span class="text-muted-foreground">Statut</span>
-					<span class="font-semibold" style={`color:${zoneColor(z)}`}>{zoneStatus(z)}</span>
-				</div>
-			</div>
-
-			{#if selectedZoneGms.length}
-				<div class="space-y-1.5 border-t border-line pt-2.5">
-					<p class="text-[10.5px] font-semibold tracking-wider text-muted-foreground uppercase">
-						GMS en cours ({selectedZoneGms.length})
-					</p>
-					{#each selectedZoneGms as g (g.externalId)}
-						<div
-							class="flex items-center justify-between gap-2 rounded-lg border border-line bg-card2 px-2.5 py-1.5"
-						>
-							<span
-								class="flex min-w-0 items-center gap-1.5 text-[12px] font-medium text-foreground"
+						{#each citySuggestions as s (s.label)}
+							<button
+								type="button"
+								class="truncate px-3 py-2 text-left text-[12px] text-foreground transition-colors hover:bg-glass-3"
+								onclick={() => pickCity(s)}
 							>
-								<span class="shrink-0 text-[13px]">🏪</span>
-								<span class="truncate">{g.label}</span>
-							</span>
-							{#if $editing}
-								<button
-									type="button"
-									class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-glass-3 hover:text-foreground"
-									title="Modifier l'intitulé"
-									onclick={() => openGmsEdit(g.externalId)}
-								>
-									<Pencil class="size-3.5" strokeWidth={1.7} />
-								</button>
-							{/if}
-						</div>
-					{/each}
+								{s.label}
+							</button>
+						{/each}
+					</div>
+				{/if}
+			</div>
+
+			<Button variant="outline" class="w-full justify-center gap-2" onclick={enterCaptureMode}>
+				<Maximize class="size-4" strokeWidth={1.7} />
+				Plein écran
+			</Button>
+
+			{#if zonesErrorMessage}
+				<div
+					class="flex flex-col gap-1 rounded-lg border border-rose-500/60 bg-rose-500/10 p-2.5 text-[11.5px] leading-relaxed"
+				>
+					<p class="flex items-center gap-1.5 font-semibold text-rose-400">
+						<TriangleAlert class="size-3.5" strokeWidth={1.7} />
+						Erreur
+					</p>
+					<p class="text-muted-foreground">{zonesErrorMessage}</p>
 				</div>
 			{/if}
 
 			{#if $editing}
-				<div class="space-y-2 border-t border-line pt-2.5">
-					<div class="space-y-1">
-						<Label class="text-[11px] font-medium text-muted-foreground">Dernière prospection</Label
-						>
-						<Input
-							type="date"
-							value={z.lastProspected ?? ''}
-							oninput={(e) =>
-								saveZone({
-									id: z.id,
-									name: z.name,
-									lastProspected: e.currentTarget.value,
-									createdAt: z.createdAt,
-									geometry: z.geometry,
-									color: z.color ?? undefined,
-									greenWhenOld: z.greenWhenOld,
-									commercialIds: z.commercialIds as Id<'users'>[]
-								})}
-							class="h-8 border-line bg-base text-[12px]"
-						/>
-					</div>
-					<Button class="h-8 w-full bg-rose-600 hover:bg-rose-500" onclick={deleteSelected}>
-						<Trash2 class="size-3.5" strokeWidth={1.7} />
-						Supprimer le secteur
-					</Button>
+				<Button
+					class="w-full bg-primary text-primary-foreground hover:bg-primary/80"
+					onclick={startDrawing}
+				>
+					<Plus class="size-4" strokeWidth={2} />
+					Nouvelle zone
+				</Button>
+			{/if}
+
+			{#if $editing}
+				<Button variant="outline" class="w-full" onclick={startPlacingGms}>
+					<span class="text-[14px] leading-none">🏪</span>
+					Ajouter une GMS
+				</Button>
+			{/if}
+
+			{#if placingGms}
+				<div
+					class="rounded-lg border border-amber-500/50 bg-amber-500/10 p-2.5 text-[11.5px] leading-relaxed text-amber-400"
+				>
+					Clique sur la carte à l'emplacement de la GMS pour poser le pin 🏪.
 				</div>
 			{/if}
-		</div>
+
+			{#if $drawing}
+				<div
+					class="rounded-lg border border-amber-500/50 bg-amber-500/10 p-2.5 text-[11.5px] leading-relaxed text-amber-400"
+				>
+					Clique sur la carte pour poser les points, puis double-clic pour fermer la zone.
+				</div>
+			{/if}
+
+			<div
+				class="hidden flex-col gap-1.5 rounded-lg border border-line bg-card2 p-2.5 text-[11.5px] sm:flex"
+			>
+				<div class="flex items-center gap-2 text-muted-foreground">
+					<span class="size-2.5 shrink-0 rounded-full" style={`background:${ZONE_RED}`}></span>
+					Rouge : jours avant re-prospection
+				</div>
+				<div class="flex items-center gap-2 text-muted-foreground">
+					<span class="size-2.5 shrink-0 rounded-full" style={`background:${DEFAULT_ZONE_COLOR}`}
+					></span>
+					Autres zones : nom des commerciaux
+				</div>
+				<div class="flex items-center gap-2 text-muted-foreground">
+					<span class="size-2.5 shrink-0 rounded-full" style={`background:${COLOR_OLD}`}></span>
+					Repassée en vert après 6 mois
+				</div>
+			</div>
+
+			<!-- GMS en cours : pins 🏪 avec leur intitulé -->
+			{#if gmsList.length}
+				<div class="flex flex-col gap-1.5 rounded-lg border border-line bg-card2 p-2.5">
+					<p class="text-[10.5px] font-semibold tracking-wider text-muted-foreground uppercase">
+						GMS en cours ({gmsList.length})
+					</p>
+					<div class="flex max-h-40 flex-col gap-1 overflow-y-auto pr-0.5">
+						{#each gmsList as g (g.externalId)}
+							<div class="flex items-center justify-between gap-2 rounded-md bg-base px-2 py-1">
+								<span
+									class="flex min-w-0 items-center gap-1.5 text-[12px] font-medium text-foreground"
+								>
+									<span class="shrink-0 text-[12px]">🏪</span>
+									<span class="truncate">{g.label}</span>
+								</span>
+								{#if $editing}
+									<button
+										type="button"
+										class="grid size-5.5 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-glass-3 hover:text-foreground"
+										title="Modifier l'intitulé"
+										onclick={() => openGmsEdit(g.externalId)}
+									>
+										<Pencil class="size-3.5" strokeWidth={1.7} />
+									</button>
+								{/if}
+							</div>
+						{/each}
+					</div>
+				</div>
+			{/if}
+		</aside>
+
+		<!-- Fiche de la zone sélectionnée -->
+		{#if selectedZone}
+			{@const z = selectedZone}
+			<div
+				class="absolute top-4 left-4 z-10 flex w-72 max-w-[calc(100%-2rem)] flex-col gap-2.5 rounded-xl border border-line bg-surface/85 p-4 shadow-lg backdrop-blur"
+			>
+				<div class="flex items-start justify-between gap-2">
+					<div class="flex min-w-0 items-center gap-2">
+						<span
+							class="size-3.5 shrink-0 rounded-full border border-white/40"
+							style={`background:${zoneColor(z)}`}
+						></span>
+						<div class="min-w-0 leading-tight">
+							<p
+								class="line-clamp-2 text-[15px] leading-snug font-semibold tracking-tight text-foreground"
+							>
+								{zoneTitle(z.commercialIds)}
+							</p>
+							<div class="mt-0.5 flex items-center gap-1">
+								{#each z.commercialIds as cid (cid)}
+									<Avatar
+										photo={personPhoto(cid)}
+										label={personName(cid)[0] ?? '·'}
+										class="size-4 border border-line text-[8px]"
+									/>
+								{/each}
+								<p class="text-[11px] font-medium text-muted-foreground">Zone de prospection</p>
+							</div>
+						</div>
+					</div>
+					<div class="flex shrink-0 items-center gap-1">
+						{#if $editing}
+							<button
+								type="button"
+								class="grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-glass-3 hover:text-foreground"
+								title="Modifier le nom et la couleur"
+								onclick={() => openZoneEdit(z)}
+							>
+								<Pencil class="size-3.5" strokeWidth={1.7} />
+							</button>
+						{/if}
+						<button
+							type="button"
+							class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-glass-3 hover:text-foreground"
+							title="Fermer"
+							onclick={() => (selectedId = null)}
+						>
+							<X class="size-3.5" />
+						</button>
+					</div>
+				</div>
+
+				<div class="space-y-1.5 text-[12px]">
+					<div class="flex items-center justify-between gap-3">
+						<span class="text-muted-foreground">Dernière prospection</span>
+						<span class="font-semibold text-foreground">{formatDate(z.lastProspected)}</span>
+					</div>
+					<div class="flex items-center justify-between gap-3">
+						<span class="text-muted-foreground">Prochaine prospection</span>
+						<span class="font-semibold text-foreground">
+							{z.lastProspected ? formatDate(nextProspectionDateISO(z.lastProspected)) : '—'}
+						</span>
+					</div>
+					<div class="flex items-center justify-between gap-3">
+						<span class="text-muted-foreground">Statut</span>
+						<span class="font-semibold" style={`color:${zoneColor(z)}`}>{zoneStatus(z)}</span>
+					</div>
+				</div>
+
+				{#if selectedZoneGms.length}
+					<div class="space-y-1.5 border-t border-line pt-2.5">
+						<p class="text-[10.5px] font-semibold tracking-wider text-muted-foreground uppercase">
+							GMS en cours ({selectedZoneGms.length})
+						</p>
+						{#each selectedZoneGms as g (g.externalId)}
+							<div
+								class="flex items-center justify-between gap-2 rounded-lg border border-line bg-card2 px-2.5 py-1.5"
+							>
+								<span
+									class="flex min-w-0 items-center gap-1.5 text-[12px] font-medium text-foreground"
+								>
+									<span class="shrink-0 text-[13px]">🏪</span>
+									<span class="truncate">{g.label}</span>
+								</span>
+								{#if $editing}
+									<button
+										type="button"
+										class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-glass-3 hover:text-foreground"
+										title="Modifier l'intitulé"
+										onclick={() => openGmsEdit(g.externalId)}
+									>
+										<Pencil class="size-3.5" strokeWidth={1.7} />
+									</button>
+								{/if}
+							</div>
+						{/each}
+					</div>
+				{/if}
+
+				{#if $editing}
+					<div class="space-y-2 border-t border-line pt-2.5">
+						<div class="space-y-1">
+							<Label class="text-[11px] font-medium text-muted-foreground"
+								>Dernière prospection</Label
+							>
+							<Input
+								type="date"
+								value={z.lastProspected ?? ''}
+								oninput={(e) =>
+									saveZone({
+										id: z.id,
+										name: z.name,
+										lastProspected: e.currentTarget.value,
+										createdAt: z.createdAt,
+										geometry: z.geometry,
+										color: z.color ?? undefined,
+										greenWhenOld: z.greenWhenOld,
+										commercialIds: z.commercialIds as Id<'users'>[]
+									})}
+								class="h-8 border-line bg-base text-[12px]"
+							/>
+						</div>
+						<Button class="h-8 w-full bg-rose-600 hover:bg-rose-500" onclick={deleteSelected}>
+							<Trash2 class="size-3.5" strokeWidth={1.7} />
+							Supprimer le secteur
+						</Button>
+					</div>
+				{/if}
+			</div>
+		{/if}
 	{/if}
 </div>
 
@@ -1544,141 +1993,6 @@
 	</DialogContent>
 </Dialog>
 
-<!-- Liste copiable des villages par commercial (zones non rouges) -->
-<Dialog bind:open={villagesOpen}>
-	<DialogContent class="overflow-hidden rounded-xl border-line bg-card sm:max-w-2xl">
-		<DialogHeader>
-			<DialogTitle>Villages par commercial</DialogTitle>
-			<DialogDescription>
-				Zones non rouges avec leurs villages principaux (communes, hors lieux-dits).
-			</DialogDescription>
-		</DialogHeader>
-
-		<div class="max-h-[52vh] overflow-y-auto overscroll-contain pr-1">
-			{#if villagesLoading}
-				<div class="flex items-center gap-2 py-8 text-[12px] text-muted-foreground">
-					<LoaderCircle class="size-4 animate-spin" strokeWidth={1.7} />
-					Récupération des communes…
-				</div>
-			{:else if villagesError}
-				<p class="py-6 text-[12px] text-rose-400">{villagesError}</p>
-			{:else if !villageGroups.length}
-				<p class="py-6 text-[12px] text-muted-foreground">Aucune zone non rouge à lister.</p>
-			{:else}
-				<div class="flex flex-col gap-4">
-					{#each villageGroups as g (g.commercialId ?? '__none__')}
-						<div class="flex flex-col gap-2 rounded-lg border border-line bg-card2 p-2.5">
-							<div class="flex items-center gap-2">
-								<Avatar
-									photo={personPhoto(g.commercialId)}
-									label={personName(g.commercialId)[0] ?? '·'}
-									class="size-7 border border-line text-[11px]"
-								/>
-								<p class="text-[13px] font-semibold text-foreground">
-									{personName(g.commercialId)}
-								</p>
-								<span class="text-[11px] text-muted-foreground">
-									{g.zoneCount} zone{g.zoneCount > 1 ? 's' : ''}
-								</span>
-							</div>
-							{#if g.communes.length}
-								<ul class="flex flex-wrap gap-1.5">
-									{#each g.communes as c (c.code)}
-										<li
-											class="rounded-md border border-line bg-base px-2 py-0.5 text-[11px] text-muted-foreground"
-											style={`border-color:${COLOR_OLD}40`}
-										>
-											{c.nom}
-										</li>
-									{/each}
-								</ul>
-							{:else}
-								<p class="text-[11px] text-muted-foreground">Aucun village principal.</p>
-							{/if}
-						</div>
-					{/each}
-				</div>
-			{/if}
-		</div>
-
-		<DialogFooter class="gap-2">
-			<Button variant="outline" onclick={() => (villagesOpen = false)}>
-				<X class="size-4" strokeWidth={1.7} />
-				Fermer
-			</Button>
-			<Button onclick={copyVillages} disabled={villagesLoading || !villageGroups.length}>
-				{#if copied}
-					<Check class="size-4" strokeWidth={1.7} />
-					Copié !
-				{:else}
-					<Copy class="size-4" strokeWidth={1.7} />
-					Copier la liste
-				{/if}
-			</Button>
-		</DialogFooter>
-	</DialogContent>
-</Dialog>
-
-<!-- Fusion de zones : sélection multiple, union des tracés en rouge -->
-<Dialog bind:open={mergeOpen}>
-	<DialogContent class="overflow-hidden rounded-xl border-line bg-card sm:max-w-md">
-		<DialogHeader>
-			<DialogTitle>Fusionner des zones</DialogTitle>
-			<DialogDescription>
-				Choisis au moins deux zones : leurs tracés et leurs commerciaux seront réunis, et la zone
-				fusionnée passera en rouge.
-			</DialogDescription>
-		</DialogHeader>
-
-		<div class="max-h-[52vh] overflow-y-auto overscroll-contain pr-1">
-			{#if !zoneList.length}
-				<p class="py-6 text-[12px] text-muted-foreground">Aucune zone à fusionner.</p>
-			{:else}
-				<div class="flex flex-col gap-1">
-					{#each zoneList as z (z.id)}
-						{@const selected = mergeIds.includes(z.id)}
-						<button
-							type="button"
-							class="flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors hover:bg-glass-3"
-							class:bg-glass-3={selected}
-							onclick={() => toggleMerge(z.id)}
-						>
-							<span
-								class="size-3 shrink-0 rounded-full border border-white/40"
-								style={`background:${zoneColor(z)}`}
-							></span>
-							<span class="min-w-0 flex-1 truncate text-foreground">
-								{zoneTitle(z.commercialIds)}
-							</span>
-							<span class="shrink-0 text-[11px] text-muted-foreground">
-								{formatDate(z.lastProspected)}
-							</span>
-							{#if selected}
-								<Check class="size-4 shrink-0 text-emerald-500" strokeWidth={2.5} />
-							{/if}
-						</button>
-					{/each}
-				</div>
-			{/if}
-		</div>
-
-		{#if mergeError}
-			<p class="text-[12px] text-rose-400">{mergeError}</p>
-		{/if}
-
-		<DialogFooter class="gap-2">
-			<Button variant="outline" onclick={() => (mergeOpen = false)}>
-				<X class="size-4" strokeWidth={1.7} />
-				Annuler
-			</Button>
-			<Button onclick={submitMerge} disabled={mergeIds.length < 2}>
-				<Merge class="size-4" strokeWidth={1.7} />
-				Fusionner ({mergeIds.length})
-			</Button>
-		</DialogFooter>
-	</DialogContent>
-</Dialog>
-
 <style>
 	/* Contrôles mapbox assortis au thème sombre Harmony */
 	:global(.mapboxgl-ctrl-group) {
@@ -1707,6 +2021,73 @@
 	}
 	:global(.mapboxgl-canvas) {
 		outline: none;
+	}
+	/* Mode capture : plus aucun contrôle Mapbox à l'écran (dessin, zoom…),
+	     la carte et les titres de zones restent seuls. */
+	:global(.capture-mode .mapboxgl-ctrl-top-left),
+	:global(.capture-mode .mapboxgl-ctrl-top-right),
+	:global(.capture-mode .mapboxgl-ctrl-bottom-left),
+	:global(.capture-mode .mapboxgl-ctrl-bottom-right) {
+		display: none !important;
+	}
+	/* Tag d'une zone : photo + nom du commercial (ou « X J » pour une zone
+	   rouge), avec un contour épais de la couleur de la zone. */
+	:global(.zone-tag) {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		padding: 3px 11px 3px 4px;
+		background: rgba(9, 9, 11, 0.9);
+		border: 3px solid var(--zone-tag-color, #ffffff);
+		border-radius: 11px;
+		/* Liseré clair extérieur : le tag se détache aussi du fond de carte
+		   sombre (thème par défaut), en plus de son contour coloré. */
+		box-shadow:
+			0 0 0 1.5px rgba(255, 255, 255, 0.9),
+			0 2px 9px rgba(0, 0, 0, 0.55);
+		color: #ffffff;
+		font-size: 13px;
+		font-weight: 800;
+		line-height: 1.15;
+		letter-spacing: 0.01em;
+		white-space: nowrap;
+		pointer-events: none;
+		user-select: none;
+	}
+	:global(.zone-tag__row) {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+	:global(.zone-tag__photo) {
+		display: block;
+		width: 23px;
+		height: 23px;
+		flex-shrink: 0;
+		border: 1.5px solid rgba(255, 255, 255, 0.92);
+		border-radius: 50%;
+		object-fit: cover;
+	}
+	:global(.zone-tag__photo--fallback) {
+		display: grid;
+		place-items: center;
+		background: rgba(255, 255, 255, 0.2);
+		font-size: 10px;
+		font-weight: 800;
+	}
+	:global(.zone-tag__name) {
+		padding-right: 3px;
+		text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+	}
+	:global(.zone-tag--days) {
+		padding: 3px 12px;
+		border-radius: 999px;
+	}
+	:global(.zone-tag__days) {
+		font-size: 14px;
+		font-weight: 800;
+		letter-spacing: 0.03em;
+		text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
 	}
 	/* Pin GMS 🏪 : bulle avec pointe posée sur la carte */
 	:global(.gms-pin) {
