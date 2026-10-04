@@ -498,20 +498,29 @@ export const listTeamMembers = query({
 		};
 
 		// RDV : suivi courant de type RDV, contacts non traités. Les compteurs
-		// RDV TAP / GMS / total sont rattachés à la DATE DE PLANIFICATION du RDV
-		// (fu.date). Le RDV compte 1 pour le créateur du contact uniquement (son
-		// pipeline). Le RDV traité (déballé / vendu) est partagé : 0,5 pour le
-		// créateur et 0,5 pour le commercial du RDV / vendeur de la vente
-		// (binôme). Les ventes et le CA sont partagés dans la boucle ventes
-		// ci-dessous.
+		// RDV TAP / GMS / total sont rattachés à la DATE DE PRISE du RDV
+		// (dernière entrée de `rdvHistory`, posée par la fiche contact), et non
+		// plus à sa date de planification : un RDV pris le 30 pour le mois
+		// suivant compte le 30. Un RDV reporté ne compte qu'une fois, seul le
+		// RDV en cours du contact étant compté.
+		// Le RDV compte 1 pour le créateur du contact uniquement (son pipeline).
+		// Le RDV traité (déballé / vendu) reste rattaché à la date PLANIFIÉE du
+		// RDV (fu.date) et est partagé : 0,5 pour le créateur et 0,5 pour le
+		// commercial du RDV / vendeur de la vente (binôme). Les ventes et le CA
+		// sont partagés dans la boucle ventes ci-dessous.
 		for (const c of contacts) {
 			const fu = c.followUp;
 			if (!fu || fu.type !== 'rdv' || c.statut === 'traité') continue;
 			const treated = fu.status === 'vendu' || fu.status === 'déballé';
+			// Date de prise : dernière prise de RDV enregistrée. Repli sur la date
+			// du contact pour les RDV antérieurs à la mise en place de l'historique.
+			const lastRdv = c.rdvHistory?.[c.rdvHistory.length - 1];
+			const takenAt = lastRdv?.at ?? c.dateContact ?? c._creationTime;
+			const takenInPeriod = takenAt >= startTs && takenAt < endTs;
 			const plannedInPeriod = fu.date >= startISO && fu.date < endISO;
 
-			// RDV complet : 1 pour le créateur du contact, à la date de planification.
-			if (plannedInPeriod && c.createdBy && visibleIds.has(c.createdBy)) {
+			// RDV complet : 1 pour le créateur du contact, à la date de prise.
+			if (takenInPeriod && c.createdBy && visibleIds.has(c.createdBy)) {
 				const s = get(c.createdBy);
 				if (c.source === 'TAP') s.rdvTap += 1;
 				else if (c.source === 'GMS') s.rdvGms += 1;
