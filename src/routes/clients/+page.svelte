@@ -191,7 +191,11 @@
 									onclick={() => openFiche(client)}
 								>
 									<TableCell class="px-4 py-3">
-										<Badge class="bg-brand/15 text-brand">Client</Badge>
+										<span
+											class="inline-flex items-center rounded-sm bg-brand/12 px-2 py-0.5 text-[11.5px] font-semibold text-brand"
+										>
+											Client
+										</span>
 									</TableCell>
 									<TableCell class="px-4 py-3">
 										{#if client.contact.followUp}

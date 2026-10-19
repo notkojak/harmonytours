@@ -376,8 +376,9 @@ export const listVendeurs = query({
 	}
 });
 
-// Membres visibles dans le tableau : actifs + virés jusqu'à la fin du mois de
-// leur licenciement (ensuite ils disparaissent du tableau de chiffre).
+// Membres visibles dans le tableau : les actifs, plus les virés pour les
+// périodes entièrement antérieures à leur licenciement (phénomène de "fin de
+// mois" : le tableau d'octobre ne montre pas quelqu'un parti en octobre).
 // Statistiques réelles : objectifs fixes (CA 30 000 €, 40 RDV), RDV par source,
 // RDV traités (vendu + déballé), ventes et CA (HT) de la période sélectionnée
 // (jour / semaine / mois autour de la date), plus le CA total de la période.
@@ -437,18 +438,12 @@ export const listTeamMembers = query({
 		const visible = users.filter((u) => {
 			if (!u.agencyId) return false;
 			if (u.statut === 'viré') {
-				// Un employé viré reste affiché jusqu'à la fin du mois de son
-				// licenciement : dès le mois suivant, il sort du tableau de chiffre.
-				// (Une semaine ou un jour à cheval sur la fin du mois le montre
-				// encore, puisque la période commence dans le mois du licenciement.)
+				// Un employé viré ne figure plus dans le tableau dès que la période
+				// touche son licenciement : il reste visible pour les périodes
+				// entièrement antérieures (l'historique ne bouge pas), mais le mois
+				// où il est parti — et les suivants — ne le montrent plus.
 				if (u.firedAt == null) return false;
-				const licencie = new Date(u.firedAt);
-				const debutMoisSuivant = new Date(
-					licencie.getFullYear(),
-					licencie.getMonth() + 1,
-					1
-				).getTime();
-				return startTs < debutMoisSuivant;
+				return endTs <= u.firedAt;
 			}
 			return true;
 		});

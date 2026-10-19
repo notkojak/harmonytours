@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
-	import { ChevronRight, MapPin, RotateCcw, Search, Sparkles, TriangleAlert } from '@lucide/svelte';
+	import { ChevronRight, MapPin, Search, Sparkles, TriangleAlert } from '@lucide/svelte';
 	import { Dialog, DialogContent } from '$lib/components/ui/dialog/index.js';
 	import { env } from '$env/dynamic/public';
 	import {
@@ -179,12 +179,6 @@
 				visibles += 1;
 			}, 420);
 		}, 420);
-	}
-
-	function revoirAnimation() {
-		stopper();
-		enAnimation = false;
-		demarrerAnimation();
 	}
 
 	/** Conditions validées → on demande l'adresse, qui sert à situer la maison. */
@@ -553,9 +547,15 @@
 								{allumes.length}/{programmes.length}
 							</span>
 						</div>
-						<div class="mt-2 h-1.5 overflow-hidden rounded-full bg-glass-3">
+						<div
+							class="mt-2 h-2 overflow-hidden rounded-full bg-glass-3 ring-1 ring-inset {enCours
+								? 'ring-transparent'
+								: 'ring-destructive/25'}"
+						>
 							<div
-								class="h-full rounded-full bg-brand transition-all duration-500"
+								class="h-full rounded-full transition-all duration-500 {enCours
+									? 'bg-brand'
+									: 'bg-destructive'}"
 								style="width:{programmes.length ? (allumes.length / programmes.length) * 100 : 0}%"
 							></div>
 						</div>
@@ -587,21 +587,34 @@
 						</div>
 					</div>
 
-					<!-- Conclusion : le temps fort, une fois la carte remplie -->
+					<!-- Conclusion : le temps fort, une fois la carte remplie. Le constat
+					     doit sauter aux yeux : bandeau rouge plein, titre en capitales. -->
 					{#if !enCours}
 						<div
-							class="animate-in rounded-2xl border {CARTE_ALERTE} px-4 py-3.5 fade-in slide-in-from-bottom-2"
+							class="animate-in overflow-hidden rounded-2xl border-2 border-destructive/45 shadow-lg shadow-destructive/10 fade-in slide-in-from-bottom-2"
 						>
-							<p class="flex items-center gap-2 text-[13.5px] font-extrabold {TEXTE_ALERTE}">
-								<span class="grid size-6 place-items-center rounded-full bg-destructive text-white">
-									<TriangleAlert class="size-3.5" strokeWidth={2.6} />
+							<div class="flex items-center gap-2.5 bg-destructive px-4 py-3 text-white">
+								<span class="grid size-7 shrink-0 place-items-center rounded-full bg-white/20">
+									<TriangleAlert class="size-4" strokeWidth={2.8} />
 								</span>
-								5/5 sur le prochain regroupement
-							</p>
-							<p class="mt-1.5 text-[12px] leading-snug text-ink-soft">
-								Les 5 places du prochain regroupement sont déjà prises : il n’y a plus de place pour
-								votre demande. Contactez la supervision pour étudier votre dossier.
-							</p>
+								<div class="min-w-0">
+									<p class="text-[14px] leading-tight font-black tracking-[0.04em] uppercase">
+										Plus de place
+									</p>
+									<p class="text-[11px] font-semibold text-white/85">
+										{programmes.length}/{programmes.length} sur le prochain regroupement
+									</p>
+								</div>
+							</div>
+							<div class="bg-destructive/8 px-4 py-3">
+								<p class="text-[12.5px] leading-snug font-semibold {TEXTE_ALERTE}">
+									Les {programmes.length} places du prochain regroupement sont déjà prises : votre demande
+									ne peut pas être acceptée.
+								</p>
+								<p class="mt-1 text-[11.5px] leading-snug text-ink-soft">
+									Contactez la supervision pour étudier votre dossier.
+								</p>
+							</div>
 						</div>
 					{:else}
 						<p class="flex items-center gap-2 px-1 text-[11.5px] text-ink-soft">
@@ -636,16 +649,10 @@
 					</Button>
 				</div>
 			{:else}
-				<div class="flex items-center justify-between gap-2">
-					<Button variant="outline" onclick={revoirAnimation}>
-						<RotateCcw class="size-4" strokeWidth={2} />
-						Revoir l’animation
-					</Button>
-					<Button onclick={terminer}>
-						Terminer
-						<ChevronRight class="size-4" strokeWidth={2.4} />
-					</Button>
-				</div>
+				<Button class="w-full" onclick={terminer}>
+					Terminer
+					<ChevronRight class="size-4" strokeWidth={2.4} />
+				</Button>
 			{/if}
 		</footer>
 	</DialogContent>
