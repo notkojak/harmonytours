@@ -237,8 +237,22 @@ export const markTreated = mutation({
 		if (!contact) {
 			throw new Error('Contact introuvable.');
 		}
-		if (contact.createdBy !== user._id) {
-			throw new Error('Non autorisé.');
+		// Même périmètre que le reste de la fiche : le créateur, le commercial
+		// rattaché au RDV, ou un manager CRM de l'agence peuvent clore ou
+		// rouvrir le dossier.
+		const myName = `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim().toLowerCase();
+		const isLinked =
+			!!contact.followUp?.commercial && contact.followUp.commercial.trim().toLowerCase() === myName;
+		if (contact.createdBy !== user._id && !isLinked) {
+			if (!canViewAllCrm(user)) {
+				throw new Error('Non autorisé.');
+			}
+			if (contact.agencyId) {
+				const scopeIds = await visibleAgencyIds(ctx, user);
+				if (scopeIds !== null && !scopeIds.has(contact.agencyId as Id<'agences'>)) {
+					throw new Error('Non autorisé pour cette agence.');
+				}
+			}
 		}
 		if (treated === false) {
 			// La date et la raison restent en base : un nouveau marquage les remplace.

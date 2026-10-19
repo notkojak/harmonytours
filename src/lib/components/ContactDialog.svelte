@@ -152,16 +152,6 @@
 	const ventes = useQuery(api.ventes.getVentes, () =>
 		contact?._id && open ? { contactId: contact._id as Id<'contacts'> } : 'skip'
 	);
-	// MOCK TEMPORAIRE
-	Object.defineProperty(ventes, 'data', {
-		get: () => [
-			{ _id: 'v1', date: Date.parse('2026-09-11'), vendeurName: 'Jordan Brunot', vendeurDisplay: 'Jordan Brunot et Pierre Torres', statut: 'valide', produits: [{ produit: 'PAC air / eau', tva: 5.5, montantHT: 20853.08 }], totalTTC: 21999.9994 },
-			{ _id: 'v2', date: Date.parse('2026-08-02'), vendeurName: 'Edgar Veiller', vendeurDisplay: 'Edgar Veiller', statut: 'en attente', produits: [{ produit: 'Photovoltaïque', tva: 8.5, montantHT: 15000 }], tvaDetail: [{ taux: 5.5, montant: 275 }, { taux: 10, montant: 1000 }], totalTTC: 16275 },
-			{ _id: 'v3', date: Date.parse('2026-07-15'), vendeurName: 'Edgar Veiller', vendeurDisplay: 'Edgar Veiller', statut: 'erreur', produits: [{ produit: 'Batterie', tva: 20, montantHT: 3000 }], totalTTC: 3600, erreur: { par: 'Pierre Torres', manquants: ['Bon de commande', 'Justificatif'], note: 'Il manque la signature du client.' } }
-		] as never[],
-		configurable: true
-	});
-
 	// Commerciaux liés au client : le créateur du contact + les vendeurs des
 	// ventes (le binôme), sans doublons.
 	const commerciauxLies = $derived.by(() => {
@@ -575,10 +565,13 @@
 	// treated = false : on annule le marquage, le contact revient dans son état
 	// principal (RDV, rappel ou actif) — son suivi est conservé tel quel.
 	// La raison du traitement est conservée sur le contact pour l'historique.
-	async function handleMarkTreated(treated = true, reason?: string) {
-		if (!contact) return;
+	// Renvoie false quand le serveur refuse : l'erreur est affichée, on ne masque
+	// plus un refus (sinon le clic semble sans effet).
+	async function handleMarkTreated(treated = true, reason?: string): Promise<boolean> {
+		if (!contact) return false;
 		const at = Date.now();
 		const motif = reason?.trim() || contact.treatedReason || null;
+		traiteError = '';
 		try {
 			await markContactTreated({
 				contactId: contact._id as Id<'contacts'>,
@@ -591,20 +584,27 @@
 				treatedAt: treated ? at : (contact.treatedAt ?? null),
 				treatedReason: motif
 			};
-		} catch {
-			// L'état sera rafraîchi par la requête.
+			return true;
+		} catch (e) {
+			traiteError = e instanceof Error ? e.message : 'Marquage impossible.';
+			return false;
 		}
 	}
 
 	// Popup de saisie de la raison du traitement (marquage « traité »).
 	function openTraiteDialog() {
 		traiteReason = contact?.treatedReason ?? '';
+		traiteError = '';
 		traiteOpen = true;
 	}
 
 	async function confirmTraite() {
+		quickBusy = true;
+		const ok = await handleMarkTreated(true, traiteReason.trim());
+		quickBusy = false;
+		// En cas de refus, la popup reste ouverte avec le message du serveur.
+		if (!ok) return;
 		traiteOpen = false;
-		await handleMarkTreated(true, traiteReason.trim());
 		traiteReason = '';
 	}
 
@@ -617,6 +617,8 @@
 	// Popup de saisie de la raison du marquage « traité ».
 	let traiteOpen = $state(false);
 	let traiteReason = $state('');
+	// Message du serveur quand le marquage « traité » est refusé.
+	let traiteError = $state('');
 	// Popup de saisie de la raison d'annulation (statut « annulé »).
 	let annulationOpen = $state(false);
 	let annulationReason = $state('');
@@ -2293,6 +2295,12 @@
 
 		<!-- Barre d'actions : l'action utile maintenant, le reste rangé dans « Plus ».
 		     Trois éléments au lieu de six, et rien qui déborde de la fenêtre. -->
+		<!-- Refus du serveur (ex. marquage « traité » non autorisé) : visible au pied de la fiche. -->
+		{#if traiteError && !traiteOpen}
+			<p class="rounded-md bg-destructive/10 px-2.5 py-2 text-[12px] font-medium text-destructive">
+				{traiteError}
+			</p>
+		{/if}
 		<DialogFooter class="flex flex-col gap-2 sm:flex-row sm:items-center">
 			{#if mode === 'view'}
 				<Popover bind:open={actionsOuvertes}>
@@ -2603,6 +2611,14 @@
 					Pourquoi ce contact est-il traité ?
 				</DialogTitle>
 			</DialogHeader>
+
+			{#if traiteError}
+				<p
+					class="rounded-md bg-destructive/10 px-2.5 py-2 text-[12px] font-medium text-destructive"
+				>
+					{traiteError}
+				</p>
+			{/if}
 
 			<div class="space-y-1.5">
 				<Label for="traiteReason">Raison du traitement</Label>
