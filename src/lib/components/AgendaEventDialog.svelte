@@ -18,6 +18,7 @@
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Popover, PopoverContent, PopoverTrigger } from '$lib/components/ui/popover/index.js';
+	import { EVENT_STYLE } from '$lib/agenda-style';
 
 	export type MembreRow = { _id: string; firstName: string; lastName: string };
 
@@ -33,31 +34,13 @@
 		membres?: string[] | null;
 		sections?: { nom?: string | null; secteur: string; membres: string[] }[] | null;
 	};
+	// Couleurs reprises de la palette partagée de l'agenda (src/lib/agenda-style.ts) :
+	// un type d'événement a le même aspect ici et dans les calendriers.
 	const TYPES = [
-		{
-			value: 'réunion',
-			label: 'Réunion',
-			emoji: '👨‍🏫',
-			cls: 'border-violet-500/60 bg-violet-500/15 text-violet-300'
-		},
-		{
-			value: 'formation',
-			label: 'Formation',
-			emoji: '🎓',
-			cls: 'border-yellow-500/60 bg-yellow-500/15 text-yellow-300'
-		},
-		{
-			value: 'prospection',
-			label: 'Prospection',
-			emoji: '🔎',
-			cls: 'border-rose-500/60 bg-rose-500/15 text-rose-300'
-		},
-		{
-			value: 'gestion',
-			label: 'Gestion dossier',
-			emoji: '📁',
-			cls: 'border-violet-500/60 bg-violet-500/15 text-violet-300'
-		}
+		{ value: 'réunion', label: 'Réunion', emoji: '👨‍🏫' },
+		{ value: 'formation', label: 'Formation', emoji: '🎓' },
+		{ value: 'prospection', label: 'Prospection', emoji: '🔎' },
+		{ value: 'gestion', label: 'Gestion dossier', emoji: '📁' }
 	] as const;
 
 	type EventType = (typeof TYPES)[number]['value'];
@@ -136,22 +119,22 @@
 					const [y, m, d] = editing.date.split('-').map(Number);
 					if (y && m && d) pickerDate = new CalendarDate(y, m, d);
 				}
-			start = editing.start || '09:00';
-			end = editing.end || addHour(editing.start || '09:00');
-			if (editing.sections && editing.sections.length > 0) {
-				sections = editing.sections.map((s) => ({
-					nom: s.nom ?? '',
-					secteur: s.secteur ?? '',
-					membres: (s.membres ?? []).slice()
-				}));
+				start = editing.start || '09:00';
+				end = editing.end || addHour(editing.start || '09:00');
+				if (editing.sections && editing.sections.length > 0) {
+					sections = editing.sections.map((s) => ({
+						nom: s.nom ?? '',
+						secteur: s.secteur ?? '',
+						membres: (s.membres ?? []).slice()
+					}));
+				} else {
+					// Rétro-compatibilité : un événement sans sections = une seule
+					// section à partir de secteur/membres.
+					sections = [
+						{ nom: '', secteur: editing.secteur ?? '', membres: (editing.membres ?? []).slice() }
+					];
+				}
 			} else {
-				// Rétro-compatibilité : un événement sans sections = une seule
-				// section à partir de secteur/membres.
-				sections = [
-					{ nom: '', secteur: editing.secteur ?? '', membres: (editing.membres ?? []).slice() }
-				];
-			}
-		} else {
 				// Mode création : valeurs par défaut (date/heure pré-remplies).
 				type = 'réunion';
 				titre = DEFAULT_TITRES.réunion;
@@ -160,11 +143,11 @@
 					const [y, m, d] = initialDate.split('-').map(Number);
 					if (y && m && d) pickerDate = new CalendarDate(y, m, d);
 				}
-			start = initialStart || '09:00';
-			end = initialEnd || addHour(initialStart || '09:00');
-			sections = [{ nom: '', secteur: '', membres: [] }];
-		}
-		error = '';
+				start = initialStart || '09:00';
+				end = initialEnd || addHour(initialStart || '09:00');
+				sections = [{ nom: '', secteur: '', membres: [] }];
+			}
+			error = '';
 		}
 	});
 
@@ -186,9 +169,7 @@
 			i === idx
 				? {
 						...s,
-						membres: s.membres.includes(id)
-							? s.membres.filter((m) => m !== id)
-							: [...s.membres, id]
+						membres: s.membres.includes(id) ? s.membres.filter((m) => m !== id) : [...s.membres, id]
 					}
 				: s
 		);
@@ -325,10 +306,7 @@
 </script>
 
 <Dialog bind:open>
-	<DialogContent
-		class="max-h-[88svh] overflow-y-auto rounded-xl border-line bg-card sm:max-w-md"
-	>
-
+	<DialogContent class="max-h-[88svh] overflow-y-auto rounded-xl border-line bg-card sm:max-w-md">
 		<DialogHeader>
 			<DialogTitle>{isEditing ? "Modifier l'événement" : 'Nouvel événement'}</DialogTitle>
 			<DialogDescription>
@@ -349,8 +327,8 @@
 							class={[
 								'flex items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-[12px] font-medium transition-colors',
 								type === t.value
-									? t.cls
-									: 'border-line bg-base text-muted-foreground hover:text-foreground'
+									? `${EVENT_STYLE[t.value]} ring-1 ring-brand/40`
+									: 'border-input bg-base text-muted-foreground hover:text-foreground'
 							].join(' ')}
 						>
 							<span class="text-[13px] leading-none">{t.emoji}</span>
@@ -366,7 +344,7 @@
 					id="event-titre"
 					bind:value={titre}
 					placeholder="Intitulé de l'événement"
-					class="border-line bg-base"
+					class="border-input bg-base"
 				/>
 			</div>
 			<div class="grid grid-cols-2 gap-2">
@@ -396,7 +374,7 @@
 							id="event-start"
 							type="time"
 							bind:value={start}
-							class="h-9 border-line bg-base text-[12px]"
+							class="h-9 border-input bg-base text-[12px]"
 						/>
 					</div>
 					<div class="space-y-1.5">
@@ -405,7 +383,7 @@
 							id="event-end"
 							type="time"
 							bind:value={end}
-							class="h-9 border-line bg-base text-[12px]"
+							class="h-9 border-input bg-base text-[12px]"
 						/>
 					</div>
 				</div>
@@ -429,7 +407,7 @@
 						<div class="space-y-2 rounded-lg border border-line bg-base p-2.5">
 							<div class="flex items-center justify-between gap-2">
 								<span
-									class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
+									class="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase"
 								>
 									Section {si + 1}
 								</span>
@@ -448,9 +426,8 @@
 								<Label class="text-[11.5px]">Nom de l'équipe</Label>
 								<Input
 									placeholder="Équipe A, Équipe 2…"
-									class="h-8 border-line bg-base text-[12.5px]"
-									oninput={(e) =>
-										(sections[si].nom = (e.currentTarget as HTMLInputElement).value)}
+									class="h-8 border-input bg-base text-[12.5px]"
+									oninput={(e) => (sections[si].nom = (e.currentTarget as HTMLInputElement).value)}
 								/>
 							</div>
 
@@ -460,7 +437,7 @@
 									<Input
 										value={sections[si].secteur}
 										placeholder="Ex. : Tours Nord, Châtellerault…"
-										class="border-line bg-base"
+										class="border-input bg-base"
 										oninput={(e) => onSecteurInput(e, si)}
 										onblur={() => setTimeout(() => (showSuggestions = false), 150)}
 									/>
@@ -501,7 +478,7 @@
 													type="checkbox"
 													checked={sections[si].membres.includes(membre._id)}
 													onchange={() => toggleSectionMembre(si, membre._id)}
-													class="size-3.5 accent-violet-500"
+													class="size-3.5 accent-brand"
 												/>
 												<span class="text-foreground">
 													{membre.firstName}
@@ -516,7 +493,6 @@
 					{/each}
 				</div>
 			{/if}
-
 
 			{#if error}
 				<p class="text-[12px] font-medium text-destructive">{error}</p>

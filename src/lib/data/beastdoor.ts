@@ -58,38 +58,50 @@ const STATUS_LABELS: Record<string, string> = {
 	vente_echouee: 'Vente annulée'
 };
 
+// Teintes des statuts, alignées sur la charte bravaux.fr : une seule teinte, le
+// bleu de marque, du plus pâle (on frappe à la porte) au plus dense (la vente
+// est signée), le gris pour ce qui est neutre (personne) et le rouge de la
+// charte pour ce qui ne donnera rien. Avant, chaque statut avait sa couleur
+// propre — bleu, émeraude, ambre, violet, vert, rose — et l'écran parlait huit
+// langues à la fois ; ici c'est le libellé qui dit l'étape, la couleur dit
+// seulement « neutre / ça avance / c'est gagné / c'est perdu ».
 const STATUS_COLORS: Record<string, { dot: string; badge: string }> = {
-	refus: { dot: 'bg-red-400', badge: 'bg-red-500/15 text-red-400' },
-	non_present: { dot: 'bg-blue-400', badge: 'bg-blue-500/15 text-blue-400' },
-	etude: { dot: 'bg-emerald-400', badge: 'bg-emerald-500/15 text-emerald-400' },
-	deballe: { dot: 'bg-amber-400', badge: 'bg-amber-500/15 text-amber-400' },
-	rdv: { dot: 'bg-sky-400', badge: 'bg-sky-500/15 text-sky-400' },
-	contact: { dot: 'bg-fuchsia-400', badge: 'bg-fuchsia-500/15 text-fuchsia-400' },
-	vente: { dot: 'bg-green-400', badge: 'bg-green-500/15 text-green-400' },
-	vente_echouee: { dot: 'bg-rose-400', badge: 'bg-rose-500/15 text-rose-400' }
+	refus: { dot: 'bg-destructive', badge: 'bg-destructive/15 text-destructive' },
+	non_present: { dot: 'bg-ink-mute', badge: 'bg-glass-3 text-ink-mute' },
+	etude: { dot: 'bg-brand/40', badge: 'bg-brand/10 text-brand' },
+	deballe: { dot: 'bg-brand/60', badge: 'bg-brand/12 text-brand' },
+	rdv: { dot: 'bg-brand', badge: 'bg-brand/15 text-brand' },
+	contact: { dot: 'bg-brand/75', badge: 'bg-brand/15 text-brand' },
+	vente: { dot: 'bg-brand', badge: 'bg-brand text-white' },
+	vente_echouee: {
+		dot: 'bg-destructive/55',
+		badge: 'bg-destructive/10 text-destructive/80'
+	}
 };
 
-// Couleur de la pastille (marqueur Mapbox) sur la carte du bilan.
+// Couleur de la pastille (marqueur Mapbox) sur la carte du bilan : les mêmes
+// tons, du bleu de marque le plus pâle au plus profond, avec le rouge et le
+// gris. Le gris reste lisible sur le fond sombre comme sur le fond clair.
 const STATUS_PIN: Record<string, string> = {
-	refus: '#ef4444', // rouge
-	non_present: '#60a5fa', // bleu
-	etude: '#34d399', // émeraude
-	deballe: '#fbbf24', // ambre
-	rdv: '#38bdf8', // sky
-	contact: '#e879f9', // fuchsia
-	vente: '#4ade80', // vert
-	vente_echouee: '#fb7185' // rose
+	refus: '#cf2e2e', // rouge de la charte
+	non_present: '#8a8a8a', // gris
+	etude: '#9ad8e0', // bleu très pâle
+	deballe: '#5cbfcc', // bleu clair
+	rdv: '#24a2b3', // bleu de marque
+	contact: '#1a7f8d', // bleu dense
+	vente: '#0f5f6b', // bleu profond : la vente est signée
+	vente_echouee: '#e08585' // rouge pâle
 };
 
 const STATUS_RGB: Record<string, string> = {
-	refus: 'rgba(239,68,68,0.85)',
-	non_present: 'rgba(96,165,250,0.85)',
-	etude: 'rgba(52,211,153,0.85)',
-	deballe: 'rgba(251,191,36,0.9)',
-	rdv: 'rgba(56,189,248,0.85)',
-	contact: 'rgba(232,121,249,0.9)',
-	vente: 'rgba(74,222,128,0.9)',
-	vente_echouee: 'rgba(251,113,133,0.9)'
+	refus: 'rgba(207,46,46,0.85)',
+	non_present: 'rgba(138,138,138,0.85)',
+	etude: 'rgba(154,216,224,0.85)',
+	deballe: 'rgba(92,191,204,0.9)',
+	rdv: 'rgba(36,162,179,0.85)',
+	contact: 'rgba(26,127,141,0.9)',
+	vente: 'rgba(15,95,107,0.9)',
+	vente_echouee: 'rgba(224,133,133,0.9)'
 };
 
 export function doorStatusLabel(status: string | null | undefined): string {
@@ -108,13 +120,13 @@ export function doorStatusBadge(status: string | null | undefined): string {
 }
 
 export function doorStatusPin(status: string | null | undefined): string {
-	if (!status) return '#94a3b8';
-	return STATUS_PIN[status] ?? '#94a3b8';
+	if (!status) return '#8a8a8a';
+	return STATUS_PIN[status] ?? '#8a8a8a';
 }
 
 export function doorStatusRgb(status: string | null | undefined): string {
-	if (!status) return 'rgba(148,163,184,0.85)';
-	return STATUS_RGB[status] ?? 'rgba(148,163,184,0.85)';
+	if (!status) return 'rgba(138,138,138,0.85)';
+	return STATUS_RGB[status] ?? 'rgba(138,138,138,0.85)';
 }
 
 // Ordre d'affichage des lignes du bilan tap (même logique que le mobile).

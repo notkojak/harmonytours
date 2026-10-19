@@ -6,6 +6,13 @@
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card/index.js';
 	import { formatPhone } from '$lib/data/phone';
 	import { authState } from '$lib/auth-state.svelte';
+	import {
+		EVENT_EMOJI,
+		EVENT_STYLE,
+		EVENT_TYPE_LABEL,
+		rdvStatusClass,
+		rdvStatusLabel
+	} from '$lib/agenda-style';
 	import ContactDialog, { type ContactRow } from '$lib/components/ContactDialog.svelte';
 
 	// includeClients : les RDV des clients (vendu) restent visibles dans le planning du jour.
@@ -59,15 +66,13 @@
 		return dow === 1 || dow === 5;
 	});
 
-	// Couleurs / libellés / emojis des événements (mêmes que la page Agenda).
-	const EVENT_META: Record<string, { label: string; emoji: string; chip: string }> = {
-		réunion: { label: 'Réunion', emoji: '👨‍🏫', chip: 'bg-violet-500/15 text-violet-400' },
-		formation: { label: 'Formation', emoji: '🎓', chip: 'bg-yellow-500/15 text-yellow-400' },
-		prospection: { label: 'Prospection', emoji: '🔎', chip: 'bg-rose-500/15 text-rose-400' },
-		gestion: { label: 'Gestion dossier', emoji: '📁', chip: 'bg-violet-500/15 text-violet-400' }
-	};
-	const eventMeta = (type: string) =>
-		EVENT_META[type] ?? { label: 'Réunion', emoji: '👨‍🏫', chip: 'bg-violet-500/15 text-violet-400' };
+	// Libellé / emoji / couleur d'un type d'événement, repris de la palette
+	// partagée de l'agenda (un type inconnu tombe sur « Réunion »).
+	const eventMeta = (type: string) => ({
+		label: EVENT_TYPE_LABEL[type] ?? EVENT_TYPE_LABEL.réunion,
+		emoji: EVENT_EMOJI[type] ?? EVENT_EMOJI.réunion,
+		chip: EVENT_STYLE[type] ?? EVENT_STYLE.réunion
+	});
 
 	// Lignes du planning : RDV + événements mélangés et triés par heure.
 	type DayItem =
@@ -118,32 +123,6 @@
 					month: 'short'
 				})}`
 	);
-
-	// Couleur du RDV selon son statut : bleu (en attente), violet (déballé),
-	// rouge (annulé), vert (vendu). Un RDV « Confortation » ou « Gestion dossier »
-	// encore programmé s'affiche en violet comme une réunion.
-	function rdvStatusClass(
-		status: string | null | undefined,
-		motif?: string | null | undefined
-	): string {
-		if (status === 'déballé') return 'bg-violet-500/15 text-violet-400';
-		if (status === 'annulé') return 'bg-red-500/15 text-red-400';
-		if (status === 'vendu') return 'bg-emerald-500/15 text-emerald-400';
-		if (motif === 'confortation' || motif === 'gestion') return 'bg-violet-500/15 text-violet-400';
-		return 'bg-blue-500/15 text-blue-400';
-	}
-
-	function rdvStatusLabel(
-		status: string | null | undefined,
-		motif?: string | null | undefined
-	): string {
-		if (status === 'déballé') return 'Déballé';
-		if (status === 'annulé') return 'Annulé';
-		if (status === 'vendu') return 'Vendu';
-		if (motif === 'confortation') return 'Confortation';
-		if (motif === 'gestion') return 'Gestion dossier';
-		return 'Programmé';
-	}
 
 	let selected = $state<ContactRow | null>(null);
 	let dialogOpen = $state(false);

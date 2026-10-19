@@ -11,6 +11,7 @@
 		DialogHeader,
 		DialogTitle
 	} from '$lib/components/ui/dialog/index.js';
+	import { EVENT_EMOJI, EVENT_STYLE, EVENT_TYPE_LABEL, rdvStatusClass } from '$lib/agenda-style';
 
 	let { open = $bindable(false) }: { open?: boolean } = $props();
 
@@ -24,33 +25,6 @@
 	const WEEKDAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
 	const RDV_EMOJI = '💼';
 
-	// Styles identiques à la page Agenda.
-	const EVENT_STYLE: Record<string, string> = {
-		réunion: 'bg-violet-500/20 text-violet-300 light:bg-violet-500/15 light:text-violet-700',
-		formation: 'bg-yellow-500/20 text-yellow-300 light:bg-yellow-500/15 light:text-yellow-700',
-		prospection: 'bg-rose-500/20 text-rose-300 light:bg-rose-500/15 light:text-rose-700',
-		gestion: 'bg-violet-500/20 text-violet-300 light:bg-violet-500/15 light:text-violet-700'
-	};
-	const EVENT_EMOJI: Record<string, string> = {
-		réunion: '👨‍🏫',
-		formation: '🎓',
-		prospection: '🔎',
-		gestion: '📁'
-	};
-	const EVENT_TYPE_LABEL: Record<string, string> = {
-		réunion: 'Réunion',
-		formation: 'Formation',
-		prospection: 'Prospection',
-		gestion: 'Gestion dossier'
-	};
-	const rdvStatusClass = (status: string | null | undefined) =>
-		status === 'déballé'
-			? 'bg-violet-500/15 text-violet-400 light:bg-violet-500/15 light:text-violet-700'
-			: status === 'annulé'
-				? 'bg-red-500/15 text-red-400 light:bg-red-500/15 light:text-red-700'
-				: status === 'vendu'
-					? 'bg-emerald-500/15 text-emerald-400 light:bg-emerald-500/15 light:text-emerald-700'
-					: 'bg-blue-500/15 text-blue-400 light:bg-blue-500/15 light:text-blue-700';
 	const chipMonth =
 		'overflow-hidden rounded-md text-left text-[11px] font-medium transition-colors flex w-full items-start gap-1.5 px-2 py-1';
 
@@ -77,9 +51,10 @@
 		| { id: string; kind: 'reunion'; time: string };
 
 	const toISO = (d: Date) =>
-		`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
-			d.getDate()
-		).padStart(2, '0')}`;
+		`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(
+			2,
+			'0'
+		)}`;
 
 	const today = new Date();
 	today.setHours(0, 0, 0, 0);
@@ -148,9 +123,7 @@
 		return map;
 	});
 
-	const label = $derived(
-		anchor.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
-	);
+	const label = $derived(anchor.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }));
 
 	function prev() {
 		anchor = new Date(anchor.getFullYear(), anchor.getMonth() - 1, 1);
@@ -169,9 +142,7 @@
 </script>
 
 <Dialog bind:open>
-	<DialogContent
-		class="max-h-[90vh] overflow-y-auto rounded-xl border-line bg-card sm:max-w-3xl"
-	>
+	<DialogContent class="max-h-[90vh] overflow-y-auto rounded-xl border-line bg-card sm:max-w-3xl">
 		<DialogHeader>
 			<DialogTitle class="flex items-center gap-2.5 text-[15px] font-semibold">
 				<span
@@ -236,26 +207,20 @@
 										<span class="hidden font-mono text-[10px] opacity-70 sm:block">
 											{item.time}
 										</span>
-										<span
-											class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap"
-										>
+										<span class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
 											<span class="hidden sm:inline">{RDV_EMOJI}</span>
 											{item.name}
 										</span>
 									</div>
 								{:else if item.kind === 'evenement'}
 									<div
-										class={[chipMonth, EVENT_STYLE[item.type] ?? EVENT_STYLE.gestion].join(
-											' '
-										)}
+										class={[chipMonth, EVENT_STYLE[item.type] ?? EVENT_STYLE.gestion].join(' ')}
 										title={`${EVENT_TYPE_LABEL[item.type] ?? item.type} — ${item.time}`}
 									>
 										<span class="hidden font-mono text-[10px] opacity-70 sm:block">
 											{item.time}
 										</span>
-										<span
-											class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap"
-										>
+										<span class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
 											<span class="hidden sm:inline">{EVENT_EMOJI[item.type] ?? ''}</span>
 											{item.titre}
 										</span>
@@ -266,9 +231,7 @@
 										title="Gestion dossier — créneau fixe (mercredi et vendredi 14h–15h)"
 									>
 										<span class="hidden font-mono text-[10px] opacity-70 sm:block">14:00</span>
-										<span
-											class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap"
-										>
+										<span class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
 											Gestion dossier
 										</span>
 									</div>
@@ -278,9 +241,7 @@
 										title="Réunion — créneau fixe (lundi et vendredi 8h30–9h30)"
 									>
 										<span class="hidden font-mono text-[10px] opacity-70 sm:block">08:30</span>
-										<span
-											class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap"
-										>
+										<span class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
 											📋 Réunion
 										</span>
 									</div>

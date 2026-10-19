@@ -39,7 +39,7 @@
 					'flex items-center justify-center rounded-lg px-3 py-1.5 text-[12px] font-medium transition-all duration-150',
 					statsPeriod.period === period.value
 						? 'bg-primary text-primary-foreground shadow-md shadow-primary/25'
-						: 'text-muted-foreground hover:bg-primary/10 hover:text-violet-200 light:hover:text-violet-600'
+						: 'text-muted-foreground hover:bg-brand/10 hover:text-brand light:hover:text-brand'
 				].join(' ')}
 				onclick={() => (statsPeriod.period = period.value)}
 			>

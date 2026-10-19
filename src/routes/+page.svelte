@@ -65,7 +65,7 @@
 				<Button
 					variant="outline"
 					size="sm"
-					class="border-violet-500/40 text-violet-300 hover:bg-violet-500/10 hover:text-violet-200 light:border-violet-500/60 light:text-violet-600 light:hover:text-violet-700"
+					class="border-brand/40 text-brand hover:bg-brand/10 hover:text-brand light:border-brand/50 light:text-brand light:hover:bg-brand/12 light:hover:text-brand"
 					onclick={() => (objectifsOpen = true)}
 				>
 					<SlidersHorizontal class="size-3.5" />

@@ -1,5 +1,5 @@
 <script lang="ts" module>
-	export	type ContactRow = {
+	export type ContactRow = {
 		_id: string;
 		name: string;
 		civilites?: ('M.' | 'Mme' | 'Melle')[] | null;
@@ -25,6 +25,9 @@
 			annulationDate?: number | null;
 		} | null;
 		rdvHistory?: { at: number; reason?: string }[] | null;
+		// Date et raison du marquage « traité » : rejouées dans l'historique.
+		treatedAt?: number | null;
+		treatedReason?: string | null;
 		isClient?: boolean | null;
 		agencyId?: string | null;
 		createdBy?: string | null;
@@ -42,13 +45,17 @@
 		Check,
 		CheckCircle2,
 		Copy,
+		Ellipsis,
 		LoaderCircle,
+		MapPin,
+		Megaphone,
 		Pencil,
 		PhoneCall,
 		Plus,
 		Printer,
 		Trash2,
 		Undo2,
+		UserRound,
 		X
 	} from '@lucide/svelte';
 	import { CalendarDate, getLocalTimeZone, type DateValue } from '@internationalized/date';
@@ -145,6 +152,15 @@
 	const ventes = useQuery(api.ventes.getVentes, () =>
 		contact?._id && open ? { contactId: contact._id as Id<'contacts'> } : 'skip'
 	);
+	// MOCK TEMPORAIRE
+	Object.defineProperty(ventes, 'data', {
+		get: () => [
+			{ _id: 'v1', date: Date.parse('2026-09-11'), vendeurName: 'Jordan Brunot', vendeurDisplay: 'Jordan Brunot et Pierre Torres', statut: 'valide', produits: [{ produit: 'PAC air / eau', tva: 5.5, montantHT: 20853.08 }], totalTTC: 21999.9994 },
+			{ _id: 'v2', date: Date.parse('2026-08-02'), vendeurName: 'Edgar Veiller', vendeurDisplay: 'Edgar Veiller', statut: 'en attente', produits: [{ produit: 'Photovoltaïque', tva: 8.5, montantHT: 15000 }], tvaDetail: [{ taux: 5.5, montant: 275 }, { taux: 10, montant: 1000 }], totalTTC: 16275 },
+			{ _id: 'v3', date: Date.parse('2026-07-15'), vendeurName: 'Edgar Veiller', vendeurDisplay: 'Edgar Veiller', statut: 'erreur', produits: [{ produit: 'Batterie', tva: 20, montantHT: 3000 }], totalTTC: 3600, erreur: { par: 'Pierre Torres', manquants: ['Bon de commande', 'Justificatif'], note: 'Il manque la signature du client.' } }
+		] as never[],
+		configurable: true
+	});
 
 	// Commerciaux liés au client : le créateur du contact + les vendeurs des
 	// ventes (le binôme), sans doublons.
@@ -161,6 +177,7 @@
 		_id: string;
 		vendeurId?: string | null;
 		produits: { produit: string; tva: number; montantHT: number }[];
+		tvaDetail?: { taux: number; montant: number }[] | null;
 		date?: number | null;
 	} | null>(null);
 	let erreurOpen = $state(false);
@@ -179,10 +196,10 @@
 		return 'Valide';
 	};
 	const venteStatutClass = (s: string | undefined | null): string => {
-		if (s === 'erreur') return 'bg-orange-500/15 text-orange-400';
-		if (s === 'annulée') return 'bg-red-500/15 text-red-400';
-		if (s === 'en attente') return 'bg-sky-500/15 text-sky-400';
-		return 'bg-emerald-500/15 text-emerald-400';
+		if (s === 'erreur') return 'bg-orange-500/15 text-orange-700 dark:text-orange-300';
+		if (s === 'annulée') return 'bg-red-500/15 text-red-700 dark:text-red-300';
+		if (s === 'en attente') return 'bg-sky-500/15 text-sky-700 dark:text-sky-300';
+		return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300';
 	};
 	// Émojis et couleurs pour mettre en évidence les ventes dans la fiche.
 	const venteEmoji = (s: string | undefined | null): string =>
@@ -197,12 +214,15 @@
 					: 'border-emerald-500/30';
 	const venteTotalClass = (s: string | undefined | null): string =>
 		s === 'erreur'
-			? 'text-orange-400'
+			? 'text-orange-700 dark:text-orange-300'
 			: s === 'annulée'
-				? 'text-red-400'
+				? 'text-red-700 dark:text-red-300'
 				: s === 'en attente'
-					? 'text-sky-400'
-					: 'text-emerald-400';
+					? 'text-sky-700 dark:text-sky-300'
+					: 'text-emerald-700 dark:text-emerald-300';
+	// Montant lisible partout dans la fiche (TTC, HT, TVA).
+	const fmtMoney = (n: number | null | undefined): string =>
+		(n ?? 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 	async function changeVenteStatut(venteId: string, statut: VenteStatut) {
 		try {
 			await updateVenteStatut({ venteId: venteId as Id<'ventes'>, statut });
@@ -247,6 +267,7 @@
 		_id: string;
 		vendeurId?: string | null;
 		produits: { produit: string; tva: number; montantHT: number }[];
+		tvaDetail?: { taux: number; montant: number }[] | null;
 		date?: number | null;
 	}) {
 		editingVente = vente;
@@ -502,7 +523,7 @@
 								commercial: recontactRdvCommercial !== NONE ? recontactRdvCommercial : undefined,
 								status:
 									recontactRdvStatus !== NONE
-										? (recontactRdvStatus as 'annulé' | 'déballé' | 'vendu')
+										? (recontactRdvStatus as 'annulé' | 'déballé' | 'vendu' | 'à reprogrammer')
 										: undefined
 							}
 						: {})
@@ -527,7 +548,7 @@
 								commercial: recontactRdvCommercial !== NONE ? recontactRdvCommercial : null,
 								status:
 									recontactRdvStatus !== NONE
-										? (recontactRdvStatus as 'annulé' | 'déballé' | 'vendu')
+										? (recontactRdvStatus as 'annulé' | 'déballé' | 'vendu' | 'à reprogrammer')
 										: null
 							}
 						: {})
@@ -553,14 +574,38 @@
 
 	// treated = false : on annule le marquage, le contact revient dans son état
 	// principal (RDV, rappel ou actif) — son suivi est conservé tel quel.
-	async function handleMarkTreated(treated = true) {
+	// La raison du traitement est conservée sur le contact pour l'historique.
+	async function handleMarkTreated(treated = true, reason?: string) {
 		if (!contact) return;
+		const at = Date.now();
+		const motif = reason?.trim() || contact.treatedReason || null;
 		try {
-			await markContactTreated({ contactId: contact._id as Id<'contacts'>, treated });
-			contact = { ...contact, statut: treated ? 'traité' : 'actif' };
+			await markContactTreated({
+				contactId: contact._id as Id<'contacts'>,
+				treated,
+				reason: treated ? (motif ?? undefined) : undefined
+			});
+			contact = {
+				...contact,
+				statut: treated ? 'traité' : 'actif',
+				treatedAt: treated ? at : (contact.treatedAt ?? null),
+				treatedReason: motif
+			};
 		} catch {
 			// L'état sera rafraîchi par la requête.
 		}
+	}
+
+	// Popup de saisie de la raison du traitement (marquage « traité »).
+	function openTraiteDialog() {
+		traiteReason = contact?.treatedReason ?? '';
+		traiteOpen = true;
+	}
+
+	async function confirmTraite() {
+		traiteOpen = false;
+		await handleMarkTreated(true, traiteReason.trim());
+		traiteReason = '';
 	}
 
 	// Mise à jour rapide depuis la fiche (sans ouvrir « Modifier ») : le statut du
@@ -569,6 +614,9 @@
 	// Popup de saisie de la raison de non-vente (statut « déballé »).
 	let nonVenteOpen = $state(false);
 	let nonVenteReason = $state('');
+	// Popup de saisie de la raison du marquage « traité ».
+	let traiteOpen = $state(false);
+	let traiteReason = $state('');
 	// Popup de saisie de la raison d'annulation (statut « annulé »).
 	let annulationOpen = $state(false);
 	let annulationReason = $state('');
@@ -674,7 +722,7 @@
 		try {
 			await setFollowUpFields({
 				contactId: contact._id as Id<'contacts'>,
-				status: value === NONE ? '' : (value as 'annulé' | 'déballé' | 'vendu')
+				status: value === NONE ? '' : (value as 'annulé' | 'déballé' | 'vendu' | 'à reprogrammer')
 			});
 			patchFollowUp({ status: value === NONE ? null : value });
 		} catch (e) {
@@ -784,7 +832,7 @@
 		for (const r of contact?.recontacts ?? []) {
 			entries.push({
 				at: r.date,
-				label: '🔔 Rappel',
+				label: '📞 Recontact',
 				detail: r.response,
 				dotClass: 'bg-amber-400'
 			});
@@ -814,23 +862,20 @@
 			const at = new Date(y, m - 1, d).getTime();
 			const motif = rdvMotifLabel(fu.motif);
 			const rdvDot = motif ? 'bg-violet-400' : 'bg-blue-400';
-			if (fu.type === 'rdv') {
-				// Le RDV garde toujours sa date dans le suivi, même une fois passé
-				// (annulé / déballé / vendu) : seule l'étiquette change.
+			// Un suivi encore ouvert est déjà affiché dans la carte d'identité
+			// (ligne « RDV » / « Rappel ») : inutile de le répéter ici.
+			const suiviOuvert = !fu.status;
+			if (fu.type === 'rdv' && !suiviOuvert) {
+				// Le RDV clos garde sa date dans l'historique (annulé / déballé / vendu).
 				entries.push({
 					at,
-					label: !fu.status
-						? motif
-							? `📅 RDV ${motif}`
-							: '📅 RDV planifié'
-						: motif
-							? `📅 RDV ${motif}`
-							: '📅 RDV',
+					label: motif ? `📅 RDV ${motif}` : '📅 RDV',
 					detail: fu.time ? `à ${fu.time}` : undefined,
 					dotClass: rdvDot
 				});
-				// Quand le RDV est annulé, on ajoute la date d'annulation dans le suivi
-				// (repli sur la date du RDV pour les annulations antérieures à ce champ).
+				// L'issue du RDV reste dans l'historique, avec sa raison quand il y en a une.
+				// Annulation : date d'annulation, repli sur la date du RDV pour les cas
+				// antérieurs à ce champ.
 				if (fu.status === 'annulé') {
 					entries.push({
 						at: fu.annulationDate ?? at,
@@ -838,14 +883,44 @@
 						detail: fu.annulationReason ?? undefined,
 						dotClass: 'bg-red-400'
 					});
+				} else if (fu.status === 'déballé') {
+					entries.push({
+						at,
+						label: '📦 Déballé',
+						detail: fu.nonVenteReason ?? undefined,
+						dotClass: 'bg-violet-400'
+					});
+				} else if (fu.status === 'vendu') {
+					entries.push({
+						at,
+						label: '💰 Vendu',
+						dotClass: 'bg-emerald-400'
+					});
+				} else if (fu.status === 'à reprogrammer') {
+					entries.push({
+						at,
+						label: '🔁 À reprogrammer',
+						dotClass: 'bg-orange-400'
+					});
 				}
-			} else if (fu.type === 'rappel') {
+			} else if (fu.type === 'rappel' && !suiviOuvert) {
 				entries.push({
 					at,
 					label: '🔔 Rappel planifié',
 					dotClass: 'bg-amber-400'
 				});
 			}
+		}
+
+		// Marquage « traité » : la trace reste dans l'historique, avec sa raison,
+		// comme les autres issues du dossier.
+		if (contact?.statut === 'traité') {
+			entries.push({
+				at: contact.treatedAt ?? contact.dateContact ?? contact._creationTime ?? Date.now(),
+				label: '✅ Traité',
+				detail: contact.treatedReason ?? undefined,
+				dotClass: 'bg-emerald-400'
+			});
 		}
 
 		return entries.sort((a, b) => a.at - b.at);
@@ -883,6 +958,81 @@
 		return null;
 	}
 
+	// ---------------------------------------------- Bandeau de gestion (fiche)
+	// Une seule ligne pour lire l'essentiel d'un contact : son état, son prochain
+	// pas et qui le suit. Les changements d'état se font directement ici.
+
+	/** Prochain pas encore à faire (un RDV clos n'est plus un prochain pas). */
+	const prochainPas = $derived.by(() => {
+		const fu = contact?.followUp;
+		if (!fu?.date || fu.status) return null;
+		const [y, m, d] = fu.date.split('-').map(Number);
+		const jour = new Date(y, m - 1, d);
+		const auj = new Date();
+		auj.setHours(0, 0, 0, 0);
+		const jours = Math.round((jour.getTime() - auj.getTime()) / 86_400_000);
+		const quand =
+			jours === 0
+				? "aujourd'hui"
+				: jours === 1
+					? 'demain'
+					: jours > 0
+						? `dans ${jours} j`
+						: `${-jours} j de retard`;
+		return { rdv: fu.type === 'rdv', jour, jours, quand, heure: fu.time ?? null };
+	});
+
+	/** Date du contact corrigée, sinon date de création. */
+	const dateContact = $derived(
+		contact ? (contact.dateContact ?? contact._creationTime ?? null) : null
+	);
+
+	/** Dernier échange connu : recontact, prise de RDV ou vente. */
+	const dernierEchange = $derived.by(() => {
+		const dates = [
+			...(contact?.recontacts ?? []).map((r) => r.date),
+			...(contact?.rdvHistory ?? []).map((h) => h.at),
+			...(ventes.data ?? []).map((v) => v.date)
+		];
+		return dates.length ? Math.max(...dates) : null;
+	});
+
+	/** Ancienneté lisible : « aujourd'hui », « hier », « il y a 4 j ». */
+	function depuis(ms: number): string {
+		const auj = new Date();
+		auj.setHours(0, 0, 0, 0);
+		const j = new Date(ms);
+		j.setHours(0, 0, 0, 0);
+		const jours = Math.round((auj.getTime() - j.getTime()) / 86_400_000);
+		return jours <= 0 ? "aujourd'hui" : jours === 1 ? 'hier' : `il y a ${jours} j`;
+	}
+
+	/** Ancienneté du dossier, sans répéter deux fois la même date. */
+	const resumeSuivi = $derived.by(() => {
+		if (!dateContact) return dernierEchange ? `Échangé ${depuis(dernierEchange)}` : '';
+		const pris = `Contact pris ${depuis(dateContact)}`;
+		if (!dernierEchange) return pris;
+		if (depuis(dernierEchange) === depuis(dateContact)) return pris;
+		return `${pris} · échangé ${depuis(dernierEchange)}`;
+	});
+
+	/** L'action la plus utile maintenant, selon l'état du contact. */
+	const actionPrincipale = $derived.by(
+		(): { id: 'annonce' | 'recontact'; label: string } | null => {
+			const c = contact;
+			if (!c || c.isClient) return null;
+			if (c.followUp?.type === 'rdv' && !c.followUp.status) {
+				return { id: 'annonce', label: 'Annoncer le RDV' };
+			}
+			return { id: 'recontact', label: 'Recontacter' };
+		}
+	);
+
+	/** Menu des actions secondaires de la fiche. */
+	let actionsOuvertes = $state(false);
+	const itemAction =
+		'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12.5px] font-medium text-foreground transition-colors hover:bg-glass-2';
+
 	function statusLabel(contact: ContactRow): string {
 		// Dès qu'une vente existe, le contact est un client — c'est son statut principal.
 		if (contact.isClient) return '👤 Client';
@@ -892,6 +1042,7 @@
 			const s = contact.followUp.status;
 			if (s === 'vendu') return '💰 Vendu';
 			if (s === 'déballé') return '📦 Déballé';
+			if (s === 'à reprogrammer') return '🔁 À reprogrammer';
 			if (s === 'annulé') return '❌ Annulé';
 			const motif = rdvMotifLabel(contact.followUp.motif);
 			if (motif) return `📅 ${motif}`;
@@ -904,18 +1055,22 @@
 	function statusClass(contact: ContactRow): string {
 		// Style teinté (fond translucide + texte coloré) comme les autres badges
 		// de l'app (source, statut de vente) — jamais de fond plein.
-		if (contact.isClient) return 'bg-emerald-500/15 text-emerald-400';
-		if (contact.statut === 'traité') return 'bg-emerald-500/15 text-emerald-400';
+		if (contact.isClient) return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300';
+		if (contact.statut === 'traité')
+			return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300';
 		if (contact.followUp?.type === 'rdv') {
 			const s = contact.followUp.status;
-			if (s === 'vendu') return 'bg-emerald-500/15 text-emerald-400';
-			if (s === 'déballé') return 'bg-violet-500/15 text-violet-400';
-			if (s === 'annulé') return 'bg-red-500/15 text-red-400';
+			if (s === 'vendu') return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300';
+			if (s === 'déballé') return 'bg-violet-500/15 text-violet-700 dark:text-violet-300';
+			if (s === 'à reprogrammer') return 'bg-orange-500/15 text-orange-700 dark:text-orange-300';
+			if (s === 'annulé') return 'bg-red-500/15 text-red-700 dark:text-red-300';
 			// RDV « Confortation » / « Gestion dossier » : violet comme une réunion.
-			if (rdvMotifLabel(contact.followUp.motif)) return 'bg-violet-500/15 text-violet-400';
-			return 'bg-blue-500/15 text-blue-400';
+			if (rdvMotifLabel(contact.followUp.motif))
+				return 'bg-violet-500/15 text-violet-700 dark:text-violet-300';
+			return 'bg-blue-500/15 text-blue-700 dark:text-blue-300';
 		}
-		if (contact.followUp?.type === 'rappel') return 'bg-amber-500/15 text-amber-400';
+		if (contact.followUp?.type === 'rappel')
+			return 'bg-amber-500/15 text-amber-700 dark:text-amber-300';
 		return 'bg-glass-3 text-muted-foreground';
 	}
 
@@ -923,24 +1078,27 @@
 		status: string | null | undefined,
 		motif?: string | null | undefined
 	): string {
-		if (status === 'déballé') return '📦 Déballé';
-		if (status === 'annulé') return '❌ Annulé';
-		if (status === 'vendu') return '💰 Vendu';
+		if (status === 'déballé') return 'Déballé';
+		if (status === 'à reprogrammer') return 'À reprogrammer';
+		if (status === 'annulé') return 'Annulé';
+		if (status === 'vendu') return 'Vendu';
 		const motifLabel = rdvMotifLabel(motif);
-		if (motifLabel) return `📅 ${motifLabel}`;
-		return '📅 Programmé';
+		if (motifLabel) return motifLabel;
+		return 'Programmé';
 	}
 
+	// Bloc teinté du statut de RDV : une couleur par état, comme les autres badges.
 	function rdvStatusClass(
 		status: string | null | undefined,
 		motif?: string | null | undefined
 	): string {
-		if (status === 'déballé') return 'text-violet-400';
-		if (status === 'annulé') return 'text-red-400';
-		if (status === 'vendu') return 'text-emerald-400';
+		if (status === 'déballé') return 'bg-violet-500/15 text-violet-700 dark:text-violet-300';
+		if (status === 'à reprogrammer') return 'bg-orange-500/15 text-orange-700 dark:text-orange-300';
+		if (status === 'annulé') return 'bg-red-500/15 text-red-700 dark:text-red-300';
+		if (status === 'vendu') return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300';
 		// RDV « Confortation » / « Gestion dossier » : violet comme une réunion.
-		if (rdvMotifLabel(motif)) return 'text-violet-400';
-		return 'text-blue-400';
+		if (rdvMotifLabel(motif)) return 'bg-violet-500/15 text-violet-700 dark:text-violet-300';
+		return 'bg-blue-500/15 text-blue-700 dark:text-blue-300';
 	}
 
 	async function copyValue(key: 'address' | 'phone' | 'date') {
@@ -1089,7 +1247,7 @@
 								commercial: editRdvCommercial !== NONE ? editRdvCommercial : undefined,
 								status:
 									editRdvStatus !== NONE
-										? (editRdvStatus as 'annulé' | 'déballé' | 'vendu')
+										? (editRdvStatus as 'annulé' | 'déballé' | 'vendu' | 'à reprogrammer')
 										: undefined
 							}
 						: {})
@@ -1110,130 +1268,30 @@
 	>
 		<DialogHeader>
 			<DialogTitle class="text-[15px] font-semibold">
-				{mode === 'view' ? contact?.name : `Modifier ${contact?.name}`}
+				{mode === 'view' ? 'Fiche contact' : `Modifier ${contact?.name}`}
 			</DialogTitle>
 		</DialogHeader>
 
 		{#if contact}
 			{#if mode === 'view'}
 				<!-- Fiche consultable : infos à gauche, recontacts/ventes à droite sur PC -->
+
 				<div class="grid gap-3 md:grid-cols-2">
 					<div class="space-y-3">
-						<div class="grid grid-cols-2 gap-3">
-							<div class="rounded-lg border border-line bg-base px-3 py-2.5">
-								<p
-									class="mb-1 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase"
+						<div class="overflow-hidden rounded-lg border border-line bg-card2/60">
+							<div
+								class="flex flex-wrap items-center gap-x-2.5 gap-y-2 border-b border-line/70 bg-glass-1 px-3 py-2.5"
+							>
+								<span
+									class="grid size-8 shrink-0 place-items-center rounded-full bg-brand/10 text-[10.5px] font-bold text-brand"
+									aria-hidden="true"
 								>
-									Commercial
+									{initialsOf(contact.name)}
+								</span>
+								<p class="min-w-0 flex-1 truncate text-[14.5px] font-semibold text-foreground">
+									{contact.name}
 								</p>
-								{#if commerciauxLies.length > 0}
-									<div class="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-										{#each commerciauxLies as name (name)}
-											<span class="flex items-center gap-1.5">
-												<Avatar
-													photo={photoByName.get(name.trim().toLowerCase())}
-													label={initialsOf(name)}
-													alt={name}
-													class="size-5 bg-muted text-[9px] font-bold text-muted-foreground"
-												/>
-												<span class="text-[13.5px] text-foreground">{name}</span>
-											</span>
-										{/each}
-									</div>
-								{:else}
-									<p class="text-[13.5px] text-foreground">—</p>
-								{/if}
-							</div>
 
-							<div class="rounded-lg border border-line bg-base px-3 py-2.5">
-								<p
-									class="mb-1 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase"
-								>
-									Projet
-								</p>
-								<p class="text-[13.5px] text-foreground">{contact.projet ?? '—'}</p>
-							</div>
-
-							<div class="rounded-lg border border-line bg-base px-3 py-2.5">
-								<p
-									class="mb-1 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase"
-								>
-									Adresse
-								</p>
-								<div class="flex items-start gap-2">
-									<p class="min-w-0 flex-1 text-[13.5px] text-foreground">
-										{contact.address ?? '—'}
-									</p>
-									{#if contact.address}
-										<Button
-											variant="ghost"
-											size="icon-sm"
-											onclick={() => copyValue('address')}
-											class="text-muted-foreground hover:text-foreground"
-										>
-											{#if copied === 'address'}
-												<Check class="size-3.5" />
-											{:else}
-												<Copy class="size-3.5" />
-											{/if}
-										</Button>
-									{/if}
-								</div>
-							</div>
-
-							<div class="rounded-lg border border-line bg-base px-3 py-2.5">
-								<p
-									class="mb-1 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase"
-								>
-									Téléphone
-								</p>
-								<div class="flex items-center gap-2">
-									<p class="min-w-0 flex-1 font-mono text-[13.5px] text-foreground">
-										{formatPhone(contact.phone) || '—'}
-									</p>
-									{#if contact.phone}
-										<Button
-											variant="ghost"
-											size="icon-sm"
-											onclick={() => copyValue('phone')}
-											class="text-muted-foreground hover:text-foreground"
-										>
-											{#if copied === 'phone'}
-												<Check class="size-3.5" />
-											{:else}
-												<Copy class="size-3.5" />
-											{/if}
-										</Button>
-									{/if}
-								</div>
-							</div>
-
-							<div class="rounded-lg border border-line bg-base px-3 py-2.5">
-								<p
-									class="mb-1 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase"
-								>
-									Source
-								</p>
-								{#if contact.source}
-									<Badge
-										class={[
-											'rounded-md px-2 py-0.5 text-[10.5px] font-medium',
-											sourceClass(contact.source)
-										].join(' ')}
-									>
-										{contact.source}
-									</Badge>
-								{:else}
-									<p class="text-[13.5px] text-muted-foreground">—</p>
-								{/if}
-							</div>
-
-							<div class="rounded-lg border border-line bg-base px-3 py-2.5">
-								<p
-									class="mb-1 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase"
-								>
-									Statut
-								</p>
 								{#if !contact.isClient && contact.followUp?.type === 'rdv'}
 									<Select
 										type="single"
@@ -1241,18 +1299,20 @@
 										onValueChange={(v: string) => quickSetStatus(v)}
 									>
 										<SelectTrigger
-											class="h-7 w-fit gap-1.5 border border-line bg-base px-2 text-[12px]"
+											class={[
+												'h-7 w-fit gap-1 rounded-sm border-0 pr-1.5 pl-2 text-[12px] font-semibold shadow-none focus-visible:ring-2 focus-visible:ring-brand/40 data-[size=default]:h-7 [&>svg]:size-3.5 [&>svg]:text-current',
+												rdvStatusClass(contact.followUp?.status, contact.followUp?.motif)
+											].join(' ')}
+											aria-label="Changer le statut du RDV"
 										>
-											<span
-												data-slot="select-value"
-												class={rdvStatusClass(contact.followUp?.status, contact.followUp?.motif)}
-											>
+											<span data-slot="select-value">
 												{rdvStatusLabel(contact.followUp?.status, contact.followUp?.motif)}
 											</span>
 										</SelectTrigger>
 										<SelectContent>
 											<SelectItem value={NONE}>📅 Programmé</SelectItem>
 											<SelectItem value="déballé">📦 Déballé</SelectItem>
+											<SelectItem value="à reprogrammer">🔁 À reprogrammer</SelectItem>
 											<SelectItem value="annulé">❌ Annulé</SelectItem>
 											<SelectItem value="vendu">💰 Vendu</SelectItem>
 										</SelectContent>
@@ -1260,7 +1320,7 @@
 								{:else}
 									<Badge
 										class={[
-											'gap-1.5 rounded-md px-2 py-0.5 text-[10.5px] font-medium',
+											'gap-1.5 rounded-sm px-2 py-0.5 text-[11.5px] font-semibold',
 											statusClass(contact)
 										].join(' ')}
 									>
@@ -1269,78 +1329,223 @@
 								{/if}
 							</div>
 
-							{#if contact.followUp?.status === 'déballé' && contact.followUp?.nonVenteReason}
-								<div class="rounded-lg border border-violet-500/30 bg-violet-500/5 px-3 py-2.5">
-									<p
-										class="mb-1 text-[10px] font-semibold tracking-wider text-violet-400 uppercase"
+							<div class="flex items-center gap-2 px-3 py-2">
+								<PhoneCall class="size-3.5 shrink-0 text-muted-foreground" strokeWidth={1.7} />
+								{#if contact.phone}
+									<a
+										href="tel:{contact.phone.replace(/\s/g, '')}"
+										class="min-w-0 flex-1 truncate font-mono text-[13.5px] font-medium text-foreground hover:text-brand"
 									>
-										🛑 Raison de non-vente
-									</p>
-									<p class="text-[13px] whitespace-pre-wrap text-foreground">
-										{contact.followUp.nonVenteReason}
-									</p>
-								</div>
-							{/if}
+										{formatPhone(contact.phone)}
+									</a>
+									<Button
+										variant="ghost"
+										size="icon-sm"
+										onclick={() => copyValue('phone')}
+										aria-label="Copier le téléphone"
+										class="text-muted-foreground hover:text-foreground"
+									>
+										{#if copied === 'phone'}
+											<Check class="size-3.5" />
+										{:else}
+											<Copy class="size-3.5" />
+										{/if}
+									</Button>
+								{:else}
+									<span class="flex-1 text-[13.5px] text-muted-foreground">Aucun numéro</span>
+								{/if}
+							</div>
 
-							{#if contact.followUp?.status === 'annulé' && contact.followUp?.annulationReason}
-								<div class="rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-2.5">
-									<p class="mb-1 text-[10px] font-semibold tracking-wider text-red-400 uppercase">
-										❌ Raison d'annulation
-									</p>
-									<p class="text-[13px] whitespace-pre-wrap text-foreground">
-										{contact.followUp.annulationReason}
-									</p>
-								</div>
-							{/if}
+							<div class="flex items-start gap-2 border-t border-line/70 px-3 py-2">
+								<MapPin class="mt-0.5 size-3.5 shrink-0 text-muted-foreground" strokeWidth={1.7} />
+								<p class="min-w-0 flex-1 text-[13px] leading-snug text-foreground">
+									{contact.address ?? 'Adresse non renseignée'}
+								</p>
+								{#if contact.address}
+									<Button
+										variant="ghost"
+										size="icon-sm"
+										onclick={() => copyValue('address')}
+										aria-label="Copier l'adresse"
+										class="text-muted-foreground hover:text-foreground"
+									>
+										{#if copied === 'address'}
+											<Check class="size-3.5" />
+										{:else}
+											<Copy class="size-3.5" />
+										{/if}
+									</Button>
+								{/if}
+							</div>
 
-							{#if !contact.isClient && contact.followUp?.type === 'rdv'}
-								<div class="rounded-lg border border-line bg-base px-3 py-2.5">
-									<p
-										class="mb-1 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase"
-									>
-										Commercial rattaché
-									</p>
-									<Select
-										type="single"
-										value={contact.followUp?.commercial ?? NONE}
-										onValueChange={(v: string) => quickSetCommercial(v)}
-									>
-										<SelectTrigger
-											class="h-7 w-fit min-w-[130px] gap-1.5 border border-line bg-base px-2 text-[12px]"
-										>
-											{#if contact.followUp?.commercial}
-												<Avatar
-													photo={photoByName.get(contact.followUp.commercial.trim().toLowerCase())}
-													label={initialsOf(contact.followUp.commercial)}
-													alt={contact.followUp.commercial}
-													class="size-5 bg-muted text-[9px] font-bold text-muted-foreground"
-												/>
-											{/if}
-											<span data-slot="select-value">
-												{contact.followUp?.commercial || 'Aucun'}
+							<dl class="border-t border-line/70">
+								<div class="flex items-baseline gap-3 px-3 py-1.5">
+									<dt class="w-28 shrink-0 text-[10.5px] font-medium text-muted-foreground">
+										Projet
+									</dt>
+									<dd class="min-w-0 flex-1 text-[13px] text-foreground">
+										{contact.projet ?? '—'}
+									</dd>
+								</div>
+								<div class="flex items-center gap-3 border-t border-line/70 px-3 py-1.5">
+									<dt class="w-28 shrink-0 text-[10.5px] font-medium text-muted-foreground">
+										Source
+									</dt>
+									<dd class="min-w-0 flex-1">
+										{#if contact.source}
+											<Badge
+												class={[
+													'rounded-md px-1.5 py-0 text-[10.5px] font-medium',
+													sourceClass(contact.source)
+												].join(' ')}
+											>
+												{contact.source}
+											</Badge>
+										{:else}
+											<span class="text-[13px] text-muted-foreground">—</span>
+										{/if}
+									</dd>
+								</div>
+								{#if prochainPas}
+									<div class="flex items-center gap-3 border-t border-line/70 px-3 py-1.5">
+										<dt class="w-28 shrink-0 text-[10.5px] font-medium text-muted-foreground">
+											{prochainPas.rdv ? 'RDV' : 'Rappel'}
+										</dt>
+										<dd class="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
+											<span class="text-[13px] text-foreground tabular-nums">
+												{prochainPas.jour.toLocaleDateString('fr-FR', {
+													weekday: 'short',
+													day: 'numeric',
+													month: 'short'
+												})}{prochainPas.heure ? ` · ${prochainPas.heure}` : ''}
 											</span>
-										</SelectTrigger>
-										<SelectContent>
-											<SelectItem value={NONE}>Aucun</SelectItem>
-											{#each rattachables as c}
-												<SelectItem value={commercialName(c)}>
-													<span class="flex items-center gap-2">
+											<span
+												class={[
+													'rounded-md px-1.5 py-0.5 text-[10.5px] font-semibold',
+													prochainPas.jours < 0
+														? 'bg-destructive/15 text-destructive'
+														: prochainPas.jours === 0
+															? 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
+															: 'bg-glass-3 text-muted-foreground'
+												].join(' ')}
+											>
+												{prochainPas.quand}
+											</span>
+										</dd>
+									</div>
+								{/if}
+
+								<div class="flex items-center gap-3 border-t border-line/70 px-3 py-1.5">
+									<dt class="w-28 shrink-0 text-[10.5px] font-medium text-muted-foreground">
+										Commercial
+									</dt>
+									<dd class="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+										{#if commerciauxLies.length > 0}
+											{#each commerciauxLies as name (name)}
+												<span class="flex items-center gap-1.5">
+													<Avatar
+														photo={photoByName.get(name.trim().toLowerCase())}
+														label={initialsOf(name)}
+														alt={name}
+														class="size-5 bg-muted text-[9px] font-bold text-muted-foreground"
+													/>
+													<span class="text-[13px] text-foreground">{name}</span>
+												</span>
+											{/each}
+										{:else}
+											<span class="text-[13px] text-muted-foreground">—</span>
+										{/if}
+									</dd>
+								</div>
+
+								{#if !contact.isClient && contact.followUp?.type === 'rdv'}
+									<div class="flex items-center gap-3 border-t border-line/70 px-3 py-1.5">
+										<dt class="w-28 shrink-0 text-[10.5px] font-medium text-muted-foreground">
+											Commercial rattaché
+										</dt>
+										<dd class="flex min-w-0 flex-1 flex-wrap items-center">
+											<Select
+												type="single"
+												value={contact.followUp?.commercial ?? NONE}
+												onValueChange={(v: string) => quickSetCommercial(v)}
+											>
+												<SelectTrigger
+													class="-my-1 h-7 w-fit gap-1.5 rounded-sm border border-transparent bg-transparent px-1 text-[13px] hover:border-line hover:bg-card"
+												>
+													{#if contact.followUp?.commercial}
 														<Avatar
-															photo={photoByName.get(commercialName(c).trim().toLowerCase())}
-															label={initialsOf(commercialName(c))}
+															photo={photoByName.get(
+																contact.followUp.commercial.trim().toLowerCase()
+															)}
+															label={initialsOf(contact.followUp.commercial)}
+															alt={contact.followUp.commercial}
 															class="size-5 bg-muted text-[9px] font-bold text-muted-foreground"
 														/>
-														{commercialName(c)}
+													{:else}
+														<UserRound class="size-3.5 text-muted-foreground" strokeWidth={1.8} />
+													{/if}
+													<span
+														data-slot="select-value"
+														class={contact.followUp?.commercial ? '' : 'text-muted-foreground'}
+													>
+														{contact.followUp?.commercial || 'Attribuer à…'}
 													</span>
-												</SelectItem>
-											{/each}
-										</SelectContent>
-									</Select>
-								</div>
+												</SelectTrigger>
+												<SelectContent>
+													<SelectItem value={NONE}>Personne</SelectItem>
+													{#each rattachables as c}
+														<SelectItem value={commercialName(c)}>
+															<span class="flex items-center gap-2">
+																<Avatar
+																	photo={photoByName.get(commercialName(c).trim().toLowerCase())}
+																	label={initialsOf(commercialName(c))}
+																	class="size-5 bg-muted text-[9px] font-bold text-muted-foreground"
+																/>
+																{commercialName(c)}
+															</span>
+														</SelectItem>
+													{/each}
+												</SelectContent>
+											</Select>
+										</dd>
+									</div>
+								{/if}
+							</dl>
+
+							{#if resumeSuivi}
+								<p class="border-t border-line/70 px-3 py-1.5 text-[10.5px] text-muted-foreground">
+									{resumeSuivi}
+								</p>
 							{/if}
 						</div>
 
-						<div class="rounded-lg border border-line bg-base px-3 py-2.5">
+						{#if contact.followUp?.status === 'déballé' && contact.followUp?.nonVenteReason}
+							<div class="rounded-lg border border-violet-500/30 bg-violet-500/5 px-3 py-2.5">
+								<p
+									class="mb-1 text-[10px] font-semibold tracking-wider text-violet-700 uppercase dark:text-violet-300"
+								>
+									🛑 Raison de non-vente
+								</p>
+								<p class="text-[13px] whitespace-pre-wrap text-foreground">
+									{contact.followUp.nonVenteReason}
+								</p>
+							</div>
+						{/if}
+
+						{#if contact.followUp?.status === 'annulé' && contact.followUp?.annulationReason}
+							<div class="rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-2.5">
+								<p
+									class="mb-1 text-[10px] font-semibold tracking-wider text-red-700 uppercase dark:text-red-300"
+								>
+									❌ Raison d'annulation
+								</p>
+								<p class="text-[13px] whitespace-pre-wrap text-foreground">
+									{contact.followUp.annulationReason}
+								</p>
+							</div>
+						{/if}
+
+						<div class="rounded-lg border border-line bg-card2/60 px-3 py-2.5">
 							<div class="relative pl-4">
 								<div
 									class="absolute top-[6px] bottom-1 left-[4px] w-px bg-line/70"
@@ -1349,11 +1554,17 @@
 								<span
 									class="absolute top-[4px] left-0 size-2.5 rounded-full bg-muted-foreground/40 ring-2 ring-card"
 									aria-hidden="true"
-								></span>
-								<p
-									class="mb-3 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase"
 								>
-									Suivi
+								</span>
+								<p
+									class="mb-3 flex items-center gap-1.5 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase"
+								>
+									Historique
+									{#if timeline.length > 0}
+										<span class="rounded-full bg-glass-3 px-1.5 py-0.5 text-[9.5px] tabular-nums">
+											{timeline.length}
+										</span>
+									{/if}
 								</p>
 								{#if timeline.length > 0}
 									<div class="space-y-3">
@@ -1367,7 +1578,9 @@
 												></span>
 												<div class="min-w-0 flex-1">
 													<div class="flex items-center gap-x-2 text-[12px]">
-														<span class="min-w-0 truncate font-semibold text-foreground">
+														<span
+															class="min-w-0 truncate text-[12px] font-semibold text-foreground"
+														>
 															{entry.label}
 														</span>
 														<span class="shrink-0 text-[11px] text-muted-foreground tabular-nums">
@@ -1375,7 +1588,9 @@
 														</span>
 													</div>
 													{#if entry.detail}
-														<p class="mt-0.5 text-[11px] text-muted-foreground">
+														<p
+															class="mt-0.5 text-[11.5px] leading-snug whitespace-pre-wrap text-muted-foreground"
+														>
 															{entry.detail}
 														</p>
 													{/if}
@@ -1392,7 +1607,7 @@
 
 					<div class="space-y-3">
 						{#if viewQualifItems.length > 0}
-							<div class="rounded-lg border border-line bg-base px-3 py-2.5">
+							<div class="rounded-lg border border-line bg-card2/60 px-3 py-2.5">
 								<p
 									class="mb-2 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase"
 								>
@@ -1410,7 +1625,7 @@
 							</div>
 						{/if}
 
-						<div class="rounded-lg border border-line bg-base px-3 py-2.5">
+						<div class="rounded-lg border border-line bg-card2/60 px-3 py-2.5">
 							<p
 								class="mb-1 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase"
 							>
@@ -1421,54 +1636,24 @@
 							</p>
 						</div>
 
-						<div class="rounded-lg border border-line bg-base px-3 py-2.5">
-							<p
-								class="mb-1 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase"
-							>
-								📞 Recontacts
-								{#if (contact.recontacts?.length ?? 0) > 0}
-									<span
-										class="ml-1 rounded-full bg-blue-500/15 px-1.5 py-0.5 text-[9.5px] font-semibold text-blue-400"
-									>
-										{contact.recontacts?.length}
-									</span>
-								{/if}
-							</p>
-							{#if (contact.recontacts?.length ?? 0) > 0}
-								<div class="space-y-1.5">
-									{#each (contact.recontacts ?? []).slice().reverse() as entry}
-										<div class="rounded-md border border-blue-500/25 bg-blue-500/5 px-3 py-2">
-											<p class="text-[12.5px] whitespace-pre-wrap text-foreground">
-												💬 {entry.response}
-											</p>
-											<p class="mt-1 text-[10.5px] font-medium text-blue-400/90">
-												📅 {new Date(entry.date).toLocaleDateString('fr-FR', {
-													day: 'numeric',
-													month: 'short',
-													year: 'numeric'
-												})}
-											</p>
-										</div>
-									{/each}
-								</div>
-							{:else}
-								<p class="text-[13.5px] text-muted-foreground">Aucun recontact.</p>
-							{/if}
-						</div>
-
-						<div class="rounded-lg border border-line bg-base px-3 py-2.5">
+						<div class="rounded-lg border border-line bg-card2/60 px-3 py-2.5">
 							<div class="mb-1 flex items-center justify-between gap-2">
 								<p class="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
 									💰 Ventes
 									{#if (ventes.data?.length ?? 0) > 0}
 										<span
-											class="ml-1 rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[9.5px] font-semibold text-emerald-400"
+											class="ml-1 rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[9.5px] font-semibold text-emerald-700 dark:text-emerald-300"
 										>
 											{ventes.data?.length}
 										</span>
 									{/if}
 								</p>
-								<Button variant="outline" size="sm" onclick={() => (saleOpen = true)}>
+								<!-- Sans vente, le bouton est plein : c'est l'action à faire. -->
+								<Button
+									variant={(ventes.data?.length ?? 0) > 0 ? 'outline' : 'default'}
+									size="sm"
+									onclick={() => (saleOpen = true)}
+								>
 									<Plus class="size-3.5" />
 									Ajouter une vente
 								</Button>
@@ -1476,107 +1661,124 @@
 							{#if (ventes.data?.length ?? 0) > 0}
 								<div class="space-y-2">
 									{#each ventes.data ?? [] as vente}
+										{@const venteHT = vente.produits.reduce((s, p) => s + p.montantHT, 0)}
+										{@const familles = [...new Set(vente.produits.map((p) => p.produit))].join(
+											' · '
+										)}
+										{@const taux = (
+											vente.tvaDetail && vente.tvaDetail.length > 0
+												? vente.tvaDetail.map((d) => d.taux)
+												: vente.produits.map((p) => Number(p.tva))
+										)
+											.filter((t, i, all) => all.indexOf(t) === i)
+											.sort((a, b) => a - b)
+											.map((t) => String(t).replace('.', ','))
+											.join(' + ')}
 										<div
 											class={[
-												'rounded-md border bg-card2 px-3 py-2',
+												'rounded-xl border bg-card2/60 px-3 py-2.5 transition-colors hover:bg-card2',
 												venteCardClass(vente.statut)
 											].join(' ')}
 										>
-											<div class="flex flex-wrap items-center justify-between gap-2">
-												<p class="text-[12px] font-semibold text-foreground">
-													🛍️ {new Date(vente.date).toLocaleDateString('fr-FR', {
-														day: 'numeric',
-														month: 'short',
-														year: 'numeric'
-													})}
-												</p>
-												<div class="flex items-center gap-2">
-													<p class="text-[11px] text-muted-foreground">
-														Vendu par {vente.vendeurDisplay ?? vente.vendeurName}
+											<!-- Le montant de la vente et la famille, sur une seule ligne. -->
+											<div class="flex items-start justify-between gap-3">
+												<div class="min-w-0">
+													<p
+														class="flex items-center gap-1.5 text-[13px] font-semibold text-foreground"
+													>
+														<span
+															class="grid size-6 shrink-0 place-items-center rounded-md bg-glass-2 text-[11px]"
+														>
+															🛍️
+														</span>
+														<span class="truncate">{familles}</span>
 													</p>
+													<p class="mt-1 truncate text-[10.5px] text-muted-foreground">
+														{new Date(vente.date).toLocaleDateString('fr-FR', {
+															day: 'numeric',
+															month: 'short',
+															year: 'numeric'
+														})} · {fmtMoney(venteHT)} € HT · TVA {taux} %
+													</p>
+												</div>
+												<div class="shrink-0 text-right">
+													<p
+														class={[
+															'text-[18px] leading-none font-bold tabular-nums',
+															venteTotalClass(vente.statut)
+														].join(' ')}
+													>
+														{fmtMoney(vente.totalTTC)} €
+													</p>
+													<p
+														class="mt-1 text-[9px] font-semibold tracking-[0.16em] text-muted-foreground uppercase"
+													>
+														TTC
+													</p>
+												</div>
+											</div>
+
+											<!-- Statut (menu) à gauche, auteur de la vente à droite. -->
+											<div
+												class="mt-2 flex items-center justify-between gap-2 border-t border-line/50 pt-1.5"
+											>
+												<div class="flex min-w-0 items-center gap-1.5">
+													<Select
+														type="single"
+														value={vente.statut ?? 'valide'}
+														onValueChange={(v) => onVenteStatutChange(vente, v)}
+													>
+														<SelectTrigger
+															class={[
+																'h-6 w-fit shrink-0 gap-0.5 rounded-full border-0 px-2 text-[10.5px] font-semibold shadow-none [&>svg]:size-3 [&>svg]:opacity-60',
+																venteStatutClass(vente.statut)
+															].join(' ')}
+														>
+															<span data-slot="select-value">
+																{venteEmoji(vente.statut)}
+																{venteStatutLabel(vente.statut)}
+															</span>
+														</SelectTrigger>
+														<SelectContent>
+															<SelectItem value="valide">Valide</SelectItem>
+															<SelectItem value="en attente">En attente</SelectItem>
+															{#if isManager}
+																<SelectItem value="erreur">Erreur</SelectItem>
+															{/if}
+															<SelectItem value="annulée">Annulée</SelectItem>
+														</SelectContent>
+													</Select>
+													<span class="truncate text-[10.5px] text-muted-foreground">
+														Vendu par {vente.vendeurDisplay ?? vente.vendeurName}
+													</span>
+												</div>
+												<div class="flex shrink-0 items-center gap-0.5">
 													<button
 														type="button"
 														onclick={() => openEditVente(vente)}
-														class="text-muted-foreground transition-colors hover:text-foreground"
+														class="rounded-md p-1 text-muted-foreground transition-colors hover:bg-glass-2 hover:text-foreground"
 														aria-label="Modifier la vente"
 													>
-														<Pencil class="size-3" strokeWidth={1.7} />
+														<Pencil class="size-3.5" strokeWidth={1.7} />
 													</button>
 													{#if isManager}
 														<button
 															type="button"
 															onclick={() => handleRemoveVente(vente)}
-															class="text-muted-foreground transition-colors hover:text-red-400"
+															class="rounded-md p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
 															aria-label="Supprimer la vente"
 														>
-															<Trash2 class="size-3" strokeWidth={1.7} />
+															<Trash2 class="size-3.5" strokeWidth={1.7} />
 														</button>
 													{/if}
 												</div>
 											</div>
-											<ul class="mt-1.5 space-y-0.5">
-												{#each vente.produits as p}
-													<li class="flex items-center justify-between gap-2 text-[11.5px]">
-														<span class="min-w-0 truncate text-foreground">🛒 {p.produit}</span>
-														<span class="shrink-0 text-muted-foreground">
-															{p.montantHT.toLocaleString('fr-FR', {
-																minimumFractionDigits: 2,
-																maximumFractionDigits: 2
-															})} € HT · TVA {p.tva} %
-														</span>
-													</li>
-												{/each}
-											</ul>
-											<div
-												class="mt-1.5 flex items-center justify-between gap-2 border-t border-line/60 pt-1.5"
-											>
-												<p
-													class={[
-														'text-[11.5px] font-semibold',
-														venteTotalClass(vente.statut)
-													].join(' ')}
-												>
-													💰 Total : {vente.totalTTC.toLocaleString('fr-FR', {
-														minimumFractionDigits: 2,
-														maximumFractionDigits: 2
-													})} € TTC
-												</p>
-												<Select
-													type="single"
-													value={vente.statut ?? 'valide'}
-													onValueChange={(v) => onVenteStatutChange(vente, v)}
-												>
-													<SelectTrigger
-														class="h-6 w-fit gap-1 border-0 bg-transparent p-0 shadow-none hover:bg-transparent dark:bg-transparent dark:hover:bg-transparent [&>svg]:hidden"
-													>
-														<span
-															data-slot="select-value"
-															class={[
-																'rounded-md px-2 py-0.5 text-[10.5px] font-medium',
-																venteStatutClass(vente.statut)
-															].join(' ')}
-														>
-															{venteEmoji(vente.statut)}
-															{venteStatutLabel(vente.statut)}
-														</span>
-													</SelectTrigger>
-													<SelectContent>
-														<SelectItem value="valide">Valide</SelectItem>
-														<SelectItem value="en attente">En attente</SelectItem>
-														{#if isManager}
-															<SelectItem value="erreur">Erreur</SelectItem>
-														{/if}
-														<SelectItem value="annulée">Annulée</SelectItem>
-													</SelectContent>
-												</Select>
-											</div>
+
 											{#if vente.statut === 'erreur' && vente.erreur}
-												<div
-													class="mt-2 rounded-md border border-orange-500/30 bg-orange-500/5 px-2.5 py-2"
-												>
+												<div class="mt-2 rounded-md bg-orange-500/5 px-2.5 py-2">
 													<div class="flex flex-wrap items-center justify-between gap-2">
 														<p
-															class="flex items-center gap-1.5 text-[10.5px] font-semibold tracking-wider text-orange-400 uppercase"
+															class="flex items-center gap-1.5 text-[10.5px] font-semibold tracking-wider text-orange-700 uppercase dark:text-orange-300"
 														>
 															<AlertTriangle class="size-3.5" />
 															Dossier en erreur
@@ -1588,7 +1790,7 @@
 															<button
 																type="button"
 																onclick={() => handleRemoveErreur(vente._id)}
-																class="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10.5px] font-medium text-orange-400 transition-colors hover:bg-orange-500/10"
+																class="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10.5px] font-medium text-orange-700 transition-colors hover:bg-orange-500/10 dark:text-orange-300"
 															>
 																<X class="size-3" />
 																Supprimer l'erreur
@@ -1599,7 +1801,7 @@
 														<div class="mt-1.5 flex flex-wrap gap-1">
 															{#each vente.erreur.manquants ?? [] as manquant}
 																<span
-																	class="rounded-full bg-orange-500/15 px-2 py-0.5 text-[10px] font-medium text-orange-400"
+																	class="rounded-full bg-orange-500/15 px-2 py-0.5 text-[10px] font-medium text-orange-700 dark:text-orange-300"
 																>
 																	{manquant}
 																</span>
@@ -1617,9 +1819,12 @@
 									{/each}
 								</div>
 							{:else}
-								<p class="text-[13.5px] text-muted-foreground">
-									Aucune vente — transforme ce contact en client en ajoutant une vente.
-								</p>
+								<div class="rounded-lg border border-dashed border-line px-3 py-4 text-center">
+									<p class="text-[12.5px] text-muted-foreground">Aucune vente pour l'instant.</p>
+									<p class="mt-0.5 text-[11px] text-muted-foreground/80">
+										Un produit, un montant HT, la TVA : le TTC se calcule seul.
+									</p>
+								</div>
 							{/if}
 						</div>
 					</div>
@@ -1647,7 +1852,7 @@
 								id="editContactName"
 								required
 								bind:value={editName}
-								class="border-line bg-base"
+								class="border-input bg-base"
 							/>
 						</div>
 
@@ -1666,14 +1871,14 @@
 									editPhone = formatPhone(e.currentTarget.value);
 									onPhoneInput(e);
 								}}
-								class="border-line bg-base"
+								class="border-input bg-base"
 							/>
 						</div>
 
 						<div class="space-y-1.5">
 							<Label for="editContactSource">Source</Label>
 							<Select type="single" bind:value={editSource}>
-								<SelectTrigger id="editContactSource" class="w-full border-line bg-base">
+								<SelectTrigger id="editContactSource" class="w-full border-input bg-base">
 									<span data-slot="select-value">
 										{editSource ? editSource : 'Choisir une source'}
 									</span>
@@ -1692,14 +1897,14 @@
 								id="editContactDate"
 								type="date"
 								bind:value={editDateContact}
-								class="border-line bg-base"
+								class="border-input bg-base"
 							/>
 						</div>
 
 						<div class="space-y-1.5 md:col-span-2">
 							<Label for="editContactProjet">Projet</Label>
 							<Select type="single" bind:value={editProjet}>
-								<SelectTrigger id="editContactProjet" class="w-full border-line bg-base">
+								<SelectTrigger id="editContactProjet" class="w-full border-input bg-base">
 									<span data-slot="select-value">
 										{editProjet ? editProjet : 'Choisir une famille'}
 									</span>
@@ -1716,7 +1921,7 @@
 							<div class="space-y-1.5 md:col-span-2">
 								<Label for="editContactCreatedBy">Pris par</Label>
 								<Select type="single" bind:value={editCreatedBy}>
-									<SelectTrigger id="editContactCreatedBy" class="w-full border-line bg-base">
+									<SelectTrigger id="editContactCreatedBy" class="w-full border-input bg-base">
 										<span data-slot="select-value">
 											{preneurOptions.find((o) => o._id === editCreatedBy)?.name ??
 												'Choisir qui a pris le contact'}
@@ -1729,9 +1934,8 @@
 									</SelectContent>
 								</Select>
 								<p class="text-[11.5px] text-muted-foreground">
-									Réservé à l'administrateur, au directeur de zone et au directeur
-									d'agence. Le contact est ensuite rattaché à cette personne (technicien
-									conseil de la fiche).
+									Réservé à l'administrateur, au directeur de zone et au directeur d'agence. Le
+									contact est ensuite rattaché à cette personne (technicien conseil de la fiche).
 								</p>
 							</div>
 						{/if}
@@ -1750,7 +1954,7 @@
 										'flex h-9 items-center justify-center gap-1.5 rounded-lg px-3 text-[12px] font-medium transition-all',
 										editFollowUpType === 'rdv'
 											? 'bg-primary text-primary-foreground shadow-md shadow-primary/25'
-											: 'text-muted-foreground hover:bg-primary/10 hover:text-violet-200 light:hover:text-violet-600'
+											: 'text-muted-foreground hover:bg-brand/10 hover:text-brand light:hover:text-brand'
 									].join(' ')}
 								>
 									<span class="text-[13px] leading-none">📅</span>
@@ -1763,7 +1967,7 @@
 										'flex h-9 items-center justify-center gap-1.5 rounded-lg px-3 text-[12px] font-medium transition-all',
 										editFollowUpType === 'rappel'
 											? 'bg-primary text-primary-foreground shadow-md shadow-primary/25'
-											: 'text-muted-foreground hover:bg-primary/10 hover:text-violet-200 light:hover:text-violet-600'
+											: 'text-muted-foreground hover:bg-brand/10 hover:text-brand light:hover:text-brand'
 									].join(' ')}
 								>
 									<span class="text-[13px] leading-none">🔔</span>
@@ -1795,7 +1999,7 @@
 										id="editSwitchReason"
 										placeholder="Ex : client injoignable, reporté…"
 										bind:value={editSwitchReason}
-										class="border-line bg-base"
+										class="border-input bg-base"
 									/>
 								</div>
 							{/if}
@@ -1830,7 +2034,7 @@
 									<div class="w-28 space-y-1.5">
 										<Label>Heure</Label>
 										<Select type="single" bind:value={editFollowUpTime}>
-											<SelectTrigger class="w-full border-line bg-base">
+											<SelectTrigger class="w-full border-input bg-base">
 												<span data-slot="select-value">{editFollowUpTime}</span>
 											</SelectTrigger>
 											<SelectContent>
@@ -1848,7 +2052,7 @@
 									<div class="space-y-1.5">
 										<Label>Commercial rattaché</Label>
 										<Select type="single" bind:value={editRdvCommercial}>
-											<SelectTrigger class="w-full border-line bg-base">
+											<SelectTrigger class="w-full border-input bg-base">
 												{#if editRdvCommercial !== NONE}
 													<Avatar
 														photo={photoByName.get(editRdvCommercial.trim().toLowerCase())}
@@ -1881,7 +2085,7 @@
 									<div class="space-y-1.5">
 										<Label>Statut</Label>
 										<Select type="single" bind:value={editRdvStatus}>
-											<SelectTrigger class="w-full border-line bg-base">
+											<SelectTrigger class="w-full border-input bg-base">
 												<span data-slot="select-value">
 													{editRdvStatus !== NONE ? rdvStatusLabel(editRdvStatus) : 'Programmé'}
 												</span>
@@ -1889,6 +2093,7 @@
 											<SelectContent>
 												<SelectItem value={NONE}>Programmé</SelectItem>
 												<SelectItem value="déballé">Déballé</SelectItem>
+												<SelectItem value="à reprogrammer">À reprogrammer</SelectItem>
 												<SelectItem value="annulé">Annulé</SelectItem>
 												<SelectItem value="vendu">Vendu</SelectItem>
 											</SelectContent>
@@ -1911,7 +2116,7 @@
 							id="editContactNote"
 							rows={4}
 							bind:value={editNote}
-							class="min-h-28 border-line bg-base"
+							class="min-h-28 border-input bg-base"
 						/>
 					</div>
 
@@ -1930,7 +2135,7 @@
 							required
 							placeholder="Réponse du contact…"
 							bind:value={recontactResponse}
-							class="min-h-28 border-line bg-base"
+							class="min-h-28 border-input bg-base"
 						/>
 					</div>
 
@@ -1946,7 +2151,7 @@
 									'flex h-9 items-center justify-center gap-1.5 rounded-lg px-3 text-[12px] font-medium transition-all',
 									recontactFollowUpType === 'rdv'
 										? 'bg-primary text-primary-foreground shadow-md shadow-primary/25'
-										: 'text-muted-foreground hover:bg-primary/10 hover:text-violet-200 light:hover:text-violet-600'
+										: 'text-muted-foreground hover:bg-brand/10 hover:text-brand light:hover:text-brand'
 								].join(' ')}
 							>
 								<span class="text-[13px] leading-none">📅</span>
@@ -1959,7 +2164,7 @@
 									'flex h-9 items-center justify-center gap-1.5 rounded-lg px-3 text-[12px] font-medium transition-all',
 									recontactFollowUpType === 'rappel'
 										? 'bg-primary text-primary-foreground shadow-md shadow-primary/25'
-										: 'text-muted-foreground hover:bg-primary/10 hover:text-violet-200 light:hover:text-violet-600'
+										: 'text-muted-foreground hover:bg-brand/10 hover:text-brand light:hover:text-brand'
 								].join(' ')}
 							>
 								<span class="text-[13px] leading-none">🔔</span>
@@ -1974,7 +2179,7 @@
 									id="recontactSwitchReason"
 									placeholder="Ex : client injoignable, reporté…"
 									bind:value={recontactSwitchReason}
-									class="border-line bg-base"
+									class="border-input bg-base"
 								/>
 							</div>
 						{/if}
@@ -2009,7 +2214,7 @@
 								<div class="w-28 space-y-1.5">
 									<Label>Heure</Label>
 									<Select type="single" bind:value={recontactFollowUpTime}>
-										<SelectTrigger class="w-full border-line bg-base">
+										<SelectTrigger class="w-full border-input bg-base">
 											<span data-slot="select-value">{recontactFollowUpTime}</span>
 										</SelectTrigger>
 										<SelectContent>
@@ -2027,7 +2232,7 @@
 								<div class="space-y-1.5">
 									<Label>Commercial rattaché</Label>
 									<Select type="single" bind:value={recontactRdvCommercial}>
-										<SelectTrigger class="w-full border-line bg-base">
+										<SelectTrigger class="w-full border-input bg-base">
 											{#if recontactRdvCommercial !== NONE}
 												<Avatar
 													photo={photoByName.get(recontactRdvCommercial.trim().toLowerCase())}
@@ -2060,7 +2265,7 @@
 								<div class="space-y-1.5">
 									<Label>Statut</Label>
 									<Select type="single" bind:value={recontactRdvStatus}>
-										<SelectTrigger class="w-full border-line bg-base">
+										<SelectTrigger class="w-full border-input bg-base">
 											<span data-slot="select-value">
 												{recontactRdvStatus !== NONE
 													? rdvStatusLabel(recontactRdvStatus)
@@ -2086,65 +2291,120 @@
 			{/if}
 		{/if}
 
-		<!-- Barre d'actions : elle se replie sur une deuxième ligne au lieu de
-		     déborder quand les boutons sont trop larges pour la fenêtre. -->
-		<DialogFooter class="gap-2 sm:flex-wrap sm:items-center">
+		<!-- Barre d'actions : l'action utile maintenant, le reste rangé dans « Plus ».
+		     Trois éléments au lieu de six, et rien qui déborde de la fenêtre. -->
+		<DialogFooter class="flex flex-col gap-2 sm:flex-row sm:items-center">
 			{#if mode === 'view'}
-				{#if canDelete}
-					<Button variant="destructive" onclick={() => (deleteOpen = true)} class="gap-1.5">
-						<Trash2 class="size-4" strokeWidth={1.7} />
-						Supprimer
-					</Button>
-				{/if}
-				{#if !contact?.isClient}
-					<Button onclick={() => openRecontact()}>
-						<PhoneCall class="size-4" strokeWidth={1.7} />
-						Recontacter
-					</Button>
-					{#if contact?.statut !== 'traité'}
-						<Button variant="ghost" onclick={() => handleMarkTreated()} class="gap-1.5">
-							<CheckCircle2 class="size-4" />
-							Marquer comme traité
-						</Button>
-					{:else}
-						<Button variant="ghost" onclick={() => handleMarkTreated(false)} class="gap-1.5">
-							<Undo2 class="size-4" />
-							Annuler le traitement
-						</Button>
-					{/if}
-				{/if}
-				<Button
-					variant="outline"
-					onclick={printContactSheet}
-					class={[
-						'gap-1.5',
-						isPrinted
-							? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/15 hover:text-emerald-300'
-							: ''
-					].join(' ')}
-				>
-					{#if isPrinted}
-						<Check class="size-4" />
-						Fiche imprimée
-					{:else}
-						<Printer class="size-4" strokeWidth={1.7} />
-						Imprimer la fiche
-					{/if}
-				</Button>
-				{#if contact?.followUp?.type === 'rdv'}
-					<Button variant="outline" onclick={copyAnnonceRdv} class="gap-1.5">
-						{#if annonceCopied}
-							<Check class="size-4" />
-							Copié !
+				<Popover bind:open={actionsOuvertes}>
+					<PopoverTrigger
+						class="order-1 inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-full border border-line-strong px-3.5 text-[12.5px] font-bold tracking-[0.06em] text-foreground uppercase transition-colors hover:border-brand hover:text-brand aria-expanded:border-brand aria-expanded:text-brand sm:order-none sm:mr-auto"
+					>
+						<Ellipsis class="size-4" />
+						Plus
+					</PopoverTrigger>
+					<PopoverContent align="start" class="w-60 gap-0.5 p-1.5">
+						{#if !contact?.isClient}
+							{#if actionPrincipale?.id === 'annonce'}
+								<button
+									type="button"
+									class={itemAction}
+									onclick={() => {
+										actionsOuvertes = false;
+										openRecontact();
+									}}
+								>
+									<PhoneCall class="size-3.5 text-muted-foreground" />
+									Recontacter
+								</button>
+							{:else if contact?.followUp?.type === 'rdv'}
+								<button
+									type="button"
+									class={itemAction}
+									onclick={() => {
+										actionsOuvertes = false;
+										copyAnnonceRdv();
+									}}
+								>
+									<Megaphone class="size-3.5 text-muted-foreground" />
+									{annonceCopied ? 'Annonce copiée !' : "Copier l'annonce du RDV"}
+								</button>
+							{/if}
+						{/if}
+						<button
+							type="button"
+							class={itemAction}
+							onclick={() => {
+								actionsOuvertes = false;
+								printContactSheet();
+							}}
+						>
+							{#if isPrinted}
+								<Check class="size-3.5 text-emerald-700 dark:text-emerald-300" />
+								Fiche imprimée
+							{:else}
+								<Printer class="size-3.5 text-muted-foreground" />
+								Imprimer la fiche
+							{/if}
+						</button>
+						{#if !contact?.isClient}
+							<button
+								type="button"
+								class={itemAction}
+								onclick={() => {
+									actionsOuvertes = false;
+									// Traiter demande une raison (journalisée) ; retirer le marquage
+									// se fait directement.
+									if (contact?.statut === 'traité') handleMarkTreated(false);
+									else openTraiteDialog();
+								}}
+							>
+								{#if contact?.statut === 'traité'}
+									<Undo2 class="size-3.5 text-muted-foreground" />
+									Remettre dans le suivi
+								{:else}
+									<CheckCircle2 class="size-3.5 text-muted-foreground" />
+									Marquer comme traité
+								{/if}
+							</button>
+						{/if}
+						{#if canDelete}
+							<div class="my-1 h-px bg-line"></div>
+							<button
+								type="button"
+								class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12.5px] font-medium text-destructive transition-colors hover:bg-destructive/10"
+								onclick={() => {
+									actionsOuvertes = false;
+									deleteOpen = true;
+								}}
+							>
+								<Trash2 class="size-3.5" />
+								Supprimer
+							</button>
+						{/if}
+					</PopoverContent>
+				</Popover>
+
+				{#if actionPrincipale}
+					<Button
+						onclick={() => (actionPrincipale.id === 'annonce' ? copyAnnonceRdv() : openRecontact())}
+						class="order-3 gap-1.5 sm:order-none"
+					>
+						{#if actionPrincipale.id === 'annonce'}
+							{#if annonceCopied}
+								<Check class="size-4" />
+								Copié !
+							{:else}
+								<Megaphone class="size-4" strokeWidth={1.8} />
+								{actionPrincipale.label}
+							{/if}
 						{:else}
-							<span class="text-[13px] leading-none">🔔</span>
-							Annoncer le RDV
+							<PhoneCall class="size-4" strokeWidth={1.7} />
+							{actionPrincipale.label}
 						{/if}
 					</Button>
 				{/if}
-				<!-- « Modifier » reste à droite tant qu'il y a la place, sans bloquer
-				     le repli des autres boutons. -->
-				<Button variant="outline" onclick={() => (mode = 'edit')} class="sm:ml-auto">
+
+				<Button variant="outline" onclick={() => (mode = 'edit')} class="order-2 sm:order-none">
 					<Pencil class="size-4" strokeWidth={1.7} />
 					Modifier
 				</Button>
@@ -2253,7 +2513,7 @@
 					rows={3}
 					placeholder="Ex : prix trop élevé, besoin pas prioritaire, dossier reporté…"
 					bind:value={nonVenteReason}
-					class="min-h-20 border-line bg-base"
+					class="min-h-20 border-input bg-base"
 					autofocus
 				/>
 			</div>
@@ -2302,7 +2562,7 @@
 					rows={3}
 					placeholder="Ex : client absent, reporté, plus intéressé…"
 					bind:value={annulationReason}
-					class="min-h-20 border-line bg-base"
+					class="min-h-20 border-input bg-base"
 					autofocus
 				/>
 			</div>
@@ -2318,6 +2578,55 @@
 					Annuler
 				</Button>
 				<Button onclick={confirmAnnulation} disabled={quickBusy || !annulationReason.trim()}>
+					{#if quickBusy}
+						<LoaderCircle class="size-4 animate-spin" />
+					{/if}
+					Valider
+				</Button>
+			</DialogFooter>
+		</DialogContent>
+	</Dialog>
+
+	<!-- Popup de saisie de la raison du marquage « traité » -->
+	<Dialog bind:open={traiteOpen}>
+		<DialogContent
+			class="max-w-sm rounded-xl border-line bg-card"
+			onInteractOutside={(event) => event.preventDefault()}
+		>
+			<DialogHeader>
+				<DialogTitle class="flex items-center gap-2 text-[14px] font-semibold">
+					<span
+						class="grid size-8 place-items-center rounded-lg border border-line bg-card2 text-muted-foreground"
+					>
+						✅
+					</span>
+					Pourquoi ce contact est-il traité ?
+				</DialogTitle>
+			</DialogHeader>
+
+			<div class="space-y-1.5">
+				<Label for="traiteReason">Raison du traitement</Label>
+				<Textarea
+					id="traiteReason"
+					rows={3}
+					placeholder="Ex : dossier clos, client déjà équipé, hors cible…"
+					bind:value={traiteReason}
+					class="min-h-20 border-input bg-base"
+					autofocus
+				/>
+			</div>
+
+			<DialogFooter class="gap-2">
+				<Button
+					variant="ghost"
+					onclick={() => {
+						traiteReason = '';
+						traiteOpen = false;
+					}}
+				>
+					Annuler
+				</Button>
+				<Button onclick={confirmTraite} disabled={quickBusy || !traiteReason.trim()}>
 					{#if quickBusy}
 						<LoaderCircle class="size-4 animate-spin" />
 					{/if}

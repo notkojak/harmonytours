@@ -35,7 +35,7 @@
 <div class="space-y-1.5">
 	<Label>{label}</Label>
 	<Select type="single" value={famille} onValueChange={(v) => onFamilleChange(v as string)}>
-		<SelectTrigger class="w-full border-line bg-base text-[12.5px]">
+		<SelectTrigger class="w-full border-input bg-base text-[12.5px]">
 			<span data-slot="select-value">{famille || 'Choisir une famille'}</span>
 		</SelectTrigger>
 		<SelectContent class="max-h-64 overflow-y-auto">
@@ -46,7 +46,7 @@
 	</Select>
 	{#if famille}
 		<Select type="single" bind:value={produit}>
-			<SelectTrigger class="w-full border-line bg-base text-[12.5px]">
+			<SelectTrigger class="w-full border-input bg-base text-[12.5px]">
 				<span data-slot="select-value">{produit || produitPlaceholder}</span>
 			</SelectTrigger>
 			<SelectContent class="max-h-64 overflow-y-auto">

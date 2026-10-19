@@ -84,7 +84,7 @@
 	<DialogContent class="sm:max-w-xl">
 		<DialogHeader>
 			<DialogTitle class="flex items-center gap-2">
-				<AlertTriangle class="size-4 text-orange-400" />
+				<AlertTriangle class="size-4 text-orange-700 dark:text-orange-300" />
 				Mettre la vente en erreur
 			</DialogTitle>
 		</DialogHeader>
@@ -116,8 +116,8 @@
 							class={[
 								'rounded-full border px-3 py-1.5 text-[12px] font-medium transition-colors',
 								selected.includes(doc)
-									? 'border-orange-500/60 bg-orange-500/15 text-orange-400'
-									: 'border-line bg-base text-muted-foreground hover:bg-glass-2 hover:text-foreground'
+									? 'border-orange-500/60 bg-orange-500/15 text-orange-700 dark:text-orange-300'
+									: 'border-input bg-base text-muted-foreground hover:bg-glass-2 hover:text-foreground'
 							].join(' ')}
 						>
 							{doc}
@@ -132,7 +132,7 @@
 					bind:value={note}
 					rows={6}
 					placeholder="Explique pourquoi le dossier est bloqué, ce qui manque, ce qui a été demandé…"
-					class="border-line bg-base"
+					class="border-input bg-base"
 				/>
 			</div>
 

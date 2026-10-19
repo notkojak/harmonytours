@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { ChevronLeft, ChevronRight } from '@lucide/svelte';
+
 	// Page « Books » : synthèse des 16 modules du book de formation commercial
 	// Bravaux 2026. Le Module 8 (TAP) contient la trame complète à
 	// réciter sur le terrain.
@@ -231,31 +233,24 @@
 		}
 	];
 
+	// Répliques du script : uniquement la palette de marque — encre pour le
+	// vendeur (nous), voile pour le client (lui), accent bleu pour la question
+	// et la règle. Les quatre répliques restent lisibles au premier coup d’œil.
 	const lineChip = {
-		V: {
-			label: 'Vendeur',
-			cls: 'bg-emerald-500/15 text-emerald-300 light:bg-emerald-500/15 light:text-emerald-600'
-		},
-		C: {
-			label: 'Client',
-			cls: 'bg-sky-500/15 text-sky-300 light:bg-sky-500/15 light:text-sky-600'
-		},
-		Q: {
-			label: 'Question',
-			cls: 'bg-violet-500/15 text-violet-300 light:bg-violet-500/15 light:text-violet-600'
-		},
-		R: {
-			label: 'Règle',
-			cls: 'bg-amber-500/15 text-amber-300 light:bg-amber-500/15 light:text-amber-600'
-		}
+		V: { label: 'Vendeur', cls: 'bg-foreground text-background' },
+		C: { label: 'Client', cls: 'bg-glass-3 text-ink-soft' },
+		Q: { label: 'Question', cls: 'border border-brand/40 bg-brand/5 text-brand' },
+		R: { label: 'Règle', cls: 'bg-brand/10 text-brand' }
 	};
 
+	// Encadrés : les tons gardent leur sens (alerte, danger, réussite) ; le ton
+	// « violet » était décoratif, il reprend l’accent bleu de la marque.
 	const toneCls: Record<Tone, string> = {
-		amber: 'bg-amber-500/10 text-amber-600 dark:text-amber-300',
-		red: 'bg-red-500/10 text-red-600 dark:text-red-400',
-		emerald: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-		violet: 'bg-violet-500/10 text-violet-600 dark:text-violet-400',
-		line: 'bg-card2 text-muted-foreground'
+		amber: 'border-amber-500/40 bg-amber-500/[0.07] text-amber-700 dark:text-amber-300',
+		red: 'border-destructive/40 bg-destructive/[0.07] text-destructive',
+		emerald: 'border-emerald-500/40 bg-emerald-500/[0.07] text-emerald-700 dark:text-emerald-300',
+		violet: 'border-brand/40 bg-brand/[0.07] text-brand',
+		line: 'border-line bg-card2 text-ink-soft'
 	};
 
 	const modules: Record<number, ModuleDef> = {
@@ -316,7 +311,11 @@
 				{
 					kind: 'list',
 					title: 'Les ratios de base',
-					items: ['Contact / Assise = 1 / 3', 'Assise / Ventes = 1 / 3', 'Taux d’annulation entre 15 % et 20 %']
+					items: [
+						'Contact / Assise = 1 / 3',
+						'Assise / Ventes = 1 / 3',
+						'Taux d’annulation entre 15 % et 20 %'
+					]
 				},
 				{
 					kind: 'list',
@@ -491,7 +490,8 @@
 						},
 						{
 							q: 'Un produit inscrit dans la gamme Bravaux.',
-							detail: 'Connaître par cœur la gamme de produits pour ne pas proposer un produit non commercialisé.'
+							detail:
+								'Connaître par cœur la gamme de produits pour ne pas proposer un produit non commercialisé.'
 						},
 						{
 							q: 'Si le RDV est pris avec Madame, le confirmer le jour même avec Monsieur.',
@@ -527,7 +527,8 @@
 					items: [
 						{
 							q: 'Nombre de personnes dans le foyer ?',
-							detail: 'Savoir si tous les décisionnaires sont présents. Permet de connaître le pouvoir d’achat.'
+							detail:
+								'Savoir si tous les décisionnaires sont présents. Permet de connaître le pouvoir d’achat.'
 						},
 						{
 							q: 'Depuis combien de temps habitent-ils ici ?',
@@ -556,8 +557,7 @@
 						},
 						{
 							q: 'Vous connaissez le produit, vous vous êtes déjà renseigné ?',
-							detail:
-								'Ont-ils vu la concurrence ? Cela permettra d’adapter l’argumentation.'
+							detail: 'Ont-ils vu la concurrence ? Cela permettra d’adapter l’argumentation.'
 						},
 						{
 							q: 'Pour un projet comme le vôtre, dans quelle fourchette tarifaire se situe la concurrence ?',
@@ -634,8 +634,7 @@
 						},
 						{
 							q: 'Ne me considérez pas comme un client définitivement acquis.',
-							detail:
-								'Dépensez autant d’énergie pour me conserver que pour me conquérir.'
+							detail: 'Dépensez autant d’énergie pour me conserver que pour me conquérir.'
 						},
 						{
 							q: 'Adaptez votre comportement à mon état d’esprit (SONCAS)',
@@ -645,7 +644,8 @@
 				},
 				{
 					kind: 'list',
-					title: 'La règle des 3 fois 20 — tout le monde se fait un avis de l’interlocuteur qu’il rencontre pour la première fois',
+					title:
+						'La règle des 3 fois 20 — tout le monde se fait un avis de l’interlocuteur qu’il rencontre pour la première fois',
 					items: [
 						{
 							q: '20 premières secondes',
@@ -669,9 +669,7 @@
 				{
 					kind: 'list',
 					title: 'Sujets à aborder',
-					items: [
-						'Son environnement, sa décoration, son jardin, ses loisirs, ses animaux, sa vie.'
-					]
+					items: ['Son environnement, sa décoration, son jardin, ses loisirs, ses animaux, sa vie.']
 				},
 				{
 					kind: 'list',
@@ -960,11 +958,16 @@
 					kind: 'steps',
 					title: 'Méthodologie du traitement des objections',
 					items: [
-						{ n: '1', label: 'ÉCOUTER ACTIVEMENT', detail: 'Se taire et ne jamais interrompre son client.' },
+						{
+							n: '1',
+							label: 'ÉCOUTER ACTIVEMENT',
+							detail: 'Se taire et ne jamais interrompre son client.'
+						},
 						{
 							n: '2',
 							label: 'ACQUIESCER L’OBJECTION',
-							detail: 'Aller dans le sens du client positivement sans jamais lui dire « non mais... ».'
+							detail:
+								'Aller dans le sens du client positivement sans jamais lui dire « non mais... ».'
 						},
 						{
 							n: '3',
@@ -1021,7 +1024,8 @@
 						{ q: 'Écouter / Acquiescer', detail: '« d’accord, j’ai compris... »' },
 						{
 							q: 'Isoler',
-							detail: '« Vous devez donc en parler avec [X], et ce sont eux qui prennent la décision ? »'
+							detail:
+								'« Vous devez donc en parler avec [X], et ce sont eux qui prennent la décision ? »'
 						},
 						{ q: 'Reformuler', detail: '« Vous souhaitez donc parler de votre projet à [X]. »' },
 						{
@@ -1034,7 +1038,10 @@
 					kind: 'list',
 					title: '« ON VEUT VOIR LA CONCURRENCE »',
 					items: [
-						{ q: 'Écouter / Acquiescer', detail: '« Votre souhait est légitime, je le comprends. »' },
+						{
+							q: 'Écouter / Acquiescer',
+							detail: '« Votre souhait est légitime, je le comprends. »'
+						},
 						{
 							q: 'Isoler',
 							detail: '« Pouvez-vous me dire ce qui vous semble perfectible dans ma proposition ? »'
@@ -1190,7 +1197,8 @@
 					items: [
 						{
 							n: '1',
-							label: 'Après avoir bien relu les documents avec vos clients, les remercier de leur confiance.'
+							label:
+								'Après avoir bien relu les documents avec vos clients, les remercier de leur confiance.'
 						},
 						{ n: '2', label: 'Ne pas oublier de prendre un RDV métré.' },
 						{ n: '3', label: 'Continuer le climat de confiance — ambiance.' },
@@ -1231,231 +1239,311 @@
 	let activeModule = $state<number>(8);
 </script>
 
-<div class="mx-auto max-w-3xl space-y-4 p-4">
-	<!-- Onglets : les 16 modules du book de formation -->
-	<div class="flex flex-wrap gap-1.5 rounded-xl border border-line bg-glass-3 p-1">
-		{#each moduleOrder as m (m)}
-			<button
-				type="button"
-				onclick={() => (activeModule = m)}
-				class={[
-					'rounded-lg px-3 py-1.5 text-[12.5px] font-semibold transition-colors',
-					activeModule === m
-						? 'bg-foreground text-background shadow-sm'
-						: 'text-muted-foreground hover:bg-foreground/5 hover:text-foreground'
-				].join(' ')}
-			>
-				{modules[m].icon} {modules[m].title}
-			</button>
-		{/each}
-	</div>
-
-	<!-- En-tête -->
-	<div class="flex items-center gap-3">
-		<span
-			class="grid size-11 place-items-center rounded-xl border border-line bg-primary/15 text-primary"
-		>
-			{modules[activeModule].icon}
-		</span>
-		<div>
-			<h1 class="text-[19px] font-bold text-foreground">
-				{modules[activeModule].title}
-			</h1>
-			<p class="text-[12.5px] text-muted-foreground">
-				{modules[activeModule].subtitle}
-			</p>
-		</div>
-	</div>
-
-	{#each modules[activeModule].blocks as block}
-		{#if block.kind === 'p'}
-			<div class="rounded-2xl border border-line bg-card2 p-4">
-				<p class="text-[12.5px] leading-relaxed text-muted-foreground">{block.text}</p>
-			</div>
-		{:else if block.kind === 'callout'}
-			<div
-				class={[
-					'rounded-xl border border-line p-3 text-[12.5px] leading-relaxed font-medium',
-					toneCls[block.tone ?? 'line']
-				].join(' ')}
-			>
-				{block.text}
-			</div>
-		{:else if block.kind === 'list'}
-			<div class="rounded-2xl border border-line bg-card2 p-4">
-				{#if block.title}
-					<p class="mb-3 text-[13px] font-semibold text-foreground">{block.title}</p>
-				{/if}
-				<div class="space-y-2.5">
-					{#each block.items as item}
-						{@const text = typeof item === 'string' ? item : item.q}
-						{@const detail = typeof item === 'string' ? undefined : item.detail}
-						{@const i = block.items.indexOf(item)}
-						<div class="flex items-start gap-3">
-							{#if block.numbered}
+<div class="mx-auto max-w-6xl">
+	<div class="flex flex-col gap-5 lg:flex-row">
+		<!-- Sommaire des 16 modules, en colonne sur grand écran -->
+		<aside class="hidden shrink-0 lg:block lg:w-64">
+			<div class="sticky top-2 rounded-2xl border border-line bg-card p-3.5">
+				<p class="px-1 font-display text-[13px] font-semibold text-foreground">Sommaire</p>
+				<p class="px-1 text-[11.5px] text-ink-soft">Les {moduleOrder.length} modules du book</p>
+				<nav class="mt-3 space-y-0.5">
+					{#each moduleOrder as m (m)}
+						<button
+							type="button"
+							onclick={() => (activeModule = m)}
+							class={[
+								'relative flex w-full items-center gap-1.5 rounded-xl py-2 pr-2 pl-2.5 text-left transition-colors',
+								activeModule === m
+									? 'bg-glass-2 font-semibold text-foreground'
+									: 'font-medium text-ink-soft hover:bg-glass-1 hover:text-foreground'
+							].join(' ')}
+						>
+							{#if activeModule === m}
 								<span
-									class="mt-0.5 grid size-6 shrink-0 place-items-center rounded-lg bg-emerald-500/15 text-[12px] font-bold text-emerald-400 light:text-emerald-600"
-								>
-									{i + 1}
-								</span>
-							{:else if block.check}
-								<span
-									class="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-emerald-500/15 text-[11px] text-emerald-400 light:text-emerald-600"
-								>
-									✓
-								</span>
-							{:else}
-								<span
-									class="mt-[7px] size-1.5 shrink-0 rounded-full bg-muted-foreground/50"
+									class="absolute top-1/2 left-0 h-4 w-[3px] -translate-y-1/2 rounded-full bg-brand"
 								></span>
 							{/if}
-							<div class="min-w-0">
-								<p class="text-[13px] font-semibold text-foreground">{text}</p>
-								{#if detail}
-									<p class="mt-0.5 text-[12.5px] leading-relaxed text-muted-foreground">{detail}</p>
-								{/if}
-							</div>
-						</div>
+							<span class="w-3.5 shrink-0 text-[11px] font-bold text-ink-mute tabular-nums">
+								{m}
+							</span>
+							<span class="shrink-0 text-[13px] leading-none">{modules[m].icon}</span>
+							<span class="min-w-0 flex-1 truncate text-[12.5px]">{modules[m].title}</span>
+						</button>
 					{/each}
+				</nav>
+			</div>
+		</aside>
+
+		<!-- Sommaire horizontal, pour les écrans étroits -->
+		<div class="flex gap-1.5 overflow-x-auto pb-1 lg:hidden">
+			{#each moduleOrder as m (m)}
+				<button
+					type="button"
+					onclick={() => (activeModule = m)}
+					class={[
+						'flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] whitespace-nowrap transition-colors',
+						activeModule === m
+							? 'bg-foreground font-semibold text-background'
+							: 'border border-line font-medium text-ink-soft'
+					].join(' ')}
+				>
+					<span class="font-bold tabular-nums">{m}</span>
+					{modules[m].icon}
+					{modules[m].title}
+				</button>
+			{/each}
+		</div>
+
+		<div class="min-w-0 flex-1 space-y-4">
+			<!-- En-tête du module -->
+			<div class="flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-card p-4">
+				<span
+					class="grid size-12 shrink-0 place-items-center rounded-2xl border border-brand/20 bg-brand/10 text-[22px] leading-none"
+				>
+					{modules[activeModule].icon}
+				</span>
+				<div class="min-w-0 flex-1">
+					<p class="text-[10.5px] font-bold tracking-[0.14em] text-brand uppercase">
+						Module {activeModule} / {moduleOrder.length}
+					</p>
+					<h1
+						class="font-display text-[22px] leading-tight font-semibold tracking-[-0.02em] text-foreground"
+					>
+						{modules[activeModule].title}
+					</h1>
+					<p class="mt-0.5 text-[12.5px] text-ink-soft">
+						{modules[activeModule].subtitle}
+					</p>
+				</div>
+				<div class="flex items-center gap-1.5">
+					<button
+						type="button"
+						disabled={activeModule === moduleOrder[0]}
+						onclick={() => (activeModule = activeModule - 1)}
+						class="flex h-9 items-center gap-1 rounded-full border border-line px-3 text-[12px] font-semibold text-ink-soft transition-colors hover:border-brand/40 hover:text-brand disabled:pointer-events-none disabled:opacity-40"
+					>
+						<ChevronLeft class="size-3.5" strokeWidth={2.2} />
+						Précédent
+					</button>
+					<button
+						type="button"
+						disabled={activeModule === moduleOrder[moduleOrder.length - 1]}
+						onclick={() => (activeModule = activeModule + 1)}
+						class="flex h-9 items-center gap-1 rounded-full bg-foreground px-3 text-[12px] font-semibold text-background transition-opacity hover:opacity-90 disabled:pointer-events-none disabled:opacity-40"
+					>
+						Suivant
+						<ChevronRight class="size-3.5" strokeWidth={2.2} />
+					</button>
 				</div>
 			</div>
-		{:else if block.kind === 'table'}
-			<div class="rounded-2xl border border-line bg-card2 p-4">
-				{#if block.title}
-					<p class="mb-3 text-[13px] font-semibold text-foreground">{block.title}</p>
-				{/if}
-				<div class="overflow-x-auto">
-					<table class="w-full border-collapse text-left">
-						<thead>
-							<tr>
-								{#each block.headers as h}
-									<th
-										class="border-b border-line px-2.5 py-2 text-[11px] font-bold tracking-wider text-muted-foreground uppercase"
+
+			{#each modules[activeModule].blocks as block}
+				{#if block.kind === 'p'}
+					<div class="rounded-2xl border border-line bg-card p-4">
+						<p class="text-[13px] leading-relaxed text-ink-soft">{block.text}</p>
+					</div>
+				{:else if block.kind === 'callout'}
+					<div
+						class={[
+							'rounded-2xl border p-3.5 text-[13px] leading-relaxed font-medium',
+							toneCls[block.tone ?? 'line']
+						].join(' ')}
+					>
+						{block.text}
+					</div>
+				{:else if block.kind === 'list'}
+					<div class="rounded-2xl border border-line bg-card p-4">
+						{#if block.title}
+							<p class="mb-3 font-display text-[13.5px] font-semibold text-foreground">
+								{block.title}
+							</p>
+						{/if}
+						<div class="space-y-2.5">
+							{#each block.items as item}
+								{@const text = typeof item === 'string' ? item : item.q}
+								{@const detail = typeof item === 'string' ? undefined : item.detail}
+								{@const i = block.items.indexOf(item)}
+								<div class="flex items-start gap-3">
+									{#if block.numbered}
+										<span
+											class="mt-0.5 grid size-6 shrink-0 place-items-center rounded-lg bg-brand/10 text-[12px] font-bold text-brand"
+										>
+											{i + 1}
+										</span>
+									{:else if block.check}
+										<span
+											class="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-brand/10 text-[11px] text-brand"
+										>
+											✓
+										</span>
+									{:else}
+										<span class="mt-[7px] size-1.5 shrink-0 rounded-full bg-line-strong"></span>
+									{/if}
+									<div class="min-w-0">
+										<p class="text-[13px] font-semibold text-foreground">{text}</p>
+										{#if detail}
+											<p class="mt-0.5 text-[13px] leading-relaxed text-ink-soft">{detail}</p>
+										{/if}
+									</div>
+								</div>
+							{/each}
+						</div>
+					</div>
+				{:else if block.kind === 'table'}
+					<div class="rounded-2xl border border-line bg-card p-4">
+						{#if block.title}
+							<p class="mb-3 font-display text-[13.5px] font-semibold text-foreground">
+								{block.title}
+							</p>
+						{/if}
+						<div class="overflow-x-auto">
+							<table class="w-full border-collapse text-left">
+								<thead>
+									<tr>
+										{#each block.headers as h}
+											<th
+												class="border-b border-line px-2.5 py-2 text-[10.5px] font-bold tracking-[0.1em] text-ink-mute uppercase"
+											>
+												{h}
+											</th>
+										{/each}
+									</tr>
+								</thead>
+								<tbody>
+									{#each block.rows as row}
+										<tr class="border-b border-line/60 last:border-0">
+											{#each row as cell, ci}
+												<td
+													class={[
+														'px-2.5 py-2 align-top text-[12.5px] leading-relaxed',
+														ci === 0 ? 'font-semibold text-foreground' : 'text-ink-soft'
+													].join(' ')}
+												>
+													{cell}
+												</td>
+											{/each}
+										</tr>
+									{/each}
+								</tbody>
+							</table>
+						</div>
+					</div>
+				{:else if block.kind === 'script'}
+					<div class="rounded-2xl border border-line bg-card p-4">
+						{#if block.lines.length > 1}
+							<p class="mb-3 font-display text-[13.5px] font-semibold text-foreground">Le script</p>
+						{/if}
+						<div class="space-y-2">
+							{#each block.lines as line}
+								<div class="flex items-start gap-2.5">
+									<span
+										class={[
+											'mt-0.5 w-16 shrink-0 rounded-full px-1.5 py-0.5 text-center text-[9.5px] font-bold tracking-[0.06em] uppercase',
+											lineChip[line.type].cls
+										].join(' ')}
 									>
-										{h}
-									</th>
-								{/each}
-							</tr>
-						</thead>
-						<tbody>
-							{#each block.rows as row}
-								<tr class="border-b border-line/60 last:border-0">
-									{#each row as cell, ci}
-										<td
+										{lineChip[line.type].label}
+									</span>
+									<p
+										class={[
+											'text-[13px] leading-relaxed',
+											line.type === 'V' || line.type === 'C' ? 'text-foreground' : 'text-ink-soft'
+										].join(' ')}
+									>
+										{#if line.type === 'V' || line.type === 'C'}
+											« {line.text} »
+										{:else}
+											{line.text}
+										{/if}
+									</p>
+								</div>
+							{/each}
+						</div>
+					</div>
+				{:else if block.kind === 'steps'}
+					<div class="rounded-2xl border border-line bg-card p-4">
+						{#if block.title}
+							<p class="mb-3 font-display text-[13.5px] font-semibold text-foreground">
+								{block.title}
+							</p>
+						{/if}
+						<div class="space-y-2.5">
+							{#each block.items as s}
+								<div class="flex items-start gap-3">
+									<span
+										class="grid size-8 shrink-0 place-items-center rounded-xl bg-brand/10 text-[15px] font-bold text-brand"
+									>
+										{s.n}
+									</span>
+									<div class="min-w-0 pt-0.5">
+										<p class="text-[13px] font-semibold text-foreground">{s.label}</p>
+										{#if s.detail}
+											<p class="mt-0.5 text-[13px] leading-relaxed text-ink-soft">{s.detail}</p>
+										{/if}
+									</div>
+								</div>
+							{/each}
+						</div>
+					</div>
+				{:else if block.kind === 'phases'}
+					<!-- Les 8 phases de la trame TAP -->
+					{#each block.phases as p}
+						<div class="rounded-2xl border border-line bg-card p-4">
+							<div class="flex items-start gap-3">
+								<span
+									class="grid size-10 shrink-0 place-items-center rounded-2xl bg-brand/10 text-[18px] font-bold text-brand"
+								>
+									{p.n}
+								</span>
+								<div class="min-w-0 flex-1">
+									<div class="flex flex-wrap items-center gap-2">
+										<h2
+											class="font-display text-[15px] font-semibold tracking-[-0.01em] text-foreground"
+										>
+											{p.name}
+										</h2>
+										{#if p.duration !== '—'}
+											<span
+												class="rounded-full border border-line bg-glass-3 px-2 py-0.5 text-[10px] font-bold tracking-[0.06em] text-ink-soft uppercase"
+											>
+												{p.duration}
+											</span>
+										{/if}
+									</div>
+									<p class="mt-0.5 text-[12px] text-ink-soft italic">{p.objectif}</p>
+								</div>
+							</div>
+
+							<div class="mt-3 space-y-2">
+								{#each p.lines as line}
+									<div class="flex items-start gap-2.5">
+										<span
 											class={[
-												'px-2.5 py-2 text-[12px] leading-relaxed align-top',
-												ci === 0
-													? 'font-semibold text-foreground'
-													: 'text-muted-foreground'
+												'mt-0.5 w-16 shrink-0 rounded-full px-1.5 py-0.5 text-center text-[9.5px] font-bold tracking-[0.06em] uppercase',
+												lineChip[line.type].cls
 											].join(' ')}
 										>
-											{cell}
-										</td>
-									{/each}
-								</tr>
-							{/each}
-						</tbody>
-					</table>
-				</div>
-			</div>
-		{:else if block.kind === 'script'}
-			<div class="rounded-2xl border border-line bg-card2 p-4">
-				{#if block.lines.length > 1}
-					<p class="mb-3 text-[13px] font-semibold text-foreground">Le script</p>
-				{/if}
-				<div class="space-y-2">
-					{#each block.lines as line}
-						<div class="flex items-start gap-2.5">
-							<span
-								class={[
-									'mt-0.5 shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-bold',
-									lineChip[line.type].cls
-								].join(' ')}
-							>
-								{lineChip[line.type].label}
-							</span>
-							<p class="text-[12.5px] leading-relaxed text-foreground">
-								{#if line.type === 'V' || line.type === 'C'}
-									« {line.text} »
-								{:else}
-									{line.text}
-								{/if}
-							</p>
-						</div>
-					{/each}
-				</div>
-			</div>
-		{:else if block.kind === 'steps'}
-			<div class="rounded-2xl border border-line bg-card2 p-4">
-				{#if block.title}
-					<p class="mb-3 text-[13px] font-semibold text-foreground">{block.title}</p>
-				{/if}
-				<div class="space-y-2.5">
-					{#each block.items as s}
-						<div class="flex items-start gap-3">
-							<span
-								class="grid size-8 shrink-0 place-items-center rounded-xl bg-emerald-500/15 text-[15px] font-bold text-emerald-400 light:text-emerald-600"
-							>
-								{s.n}
-							</span>
-							<div class="min-w-0 pt-0.5">
-								<p class="text-[13px] font-semibold text-foreground">{s.label}</p>
-								{#if s.detail}
-									<p class="mt-0.5 text-[12.5px] leading-relaxed text-muted-foreground">{s.detail}</p>
-								{/if}
+											{lineChip[line.type].label}
+										</span>
+										<p
+											class={[
+												'text-[13px] leading-relaxed',
+												line.type === 'V' || line.type === 'C' ? 'text-foreground' : 'text-ink-soft'
+											].join(' ')}
+										>
+											{#if line.type === 'V' || line.type === 'C'}
+												« {line.text} »
+											{:else}
+												{line.text}
+											{/if}
+										</p>
+									</div>
+								{/each}
 							</div>
 						</div>
 					{/each}
-				</div>
-			</div>
-		{:else if block.kind === 'phases'}
-			<!-- Les 8 phases de la trame TAP -->
-			{#each block.phases as p}
-				<div class="rounded-2xl border border-line bg-card2 p-4">
-					<div class="flex items-start gap-3">
-						<span
-							class="grid size-10 shrink-0 place-items-center rounded-xl bg-emerald-500/15 text-[18px] font-bold text-emerald-400 light:text-emerald-600"
-						>
-							{p.n}
-						</span>
-						<div class="min-w-0 flex-1">
-							<div class="flex flex-wrap items-center gap-2">
-								<h2 class="text-[14px] font-bold text-foreground">{p.name}</h2>
-								{#if p.duration !== '—'}
-									<span
-										class="rounded-full border border-line bg-glass-3 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground"
-									>
-										{p.duration}
-									</span>
-								{/if}
-							</div>
-							<p class="mt-0.5 text-[12px] text-muted-foreground italic">{p.objectif}</p>
-						</div>
-					</div>
-
-					<div class="mt-3 space-y-2">
-						{#each p.lines as line}
-							<div class="flex items-start gap-2.5">
-								<span
-									class={[
-										'mt-0.5 shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-bold',
-										lineChip[line.type].cls
-									].join(' ')}
-								>
-									{lineChip[line.type].label}
-								</span>
-								<p class="text-[12.5px] leading-relaxed text-foreground">
-									{#if line.type === 'V' || line.type === 'C'}
-										« {line.text} »
-									{:else}
-										{line.text}
-									{/if}
-								</p>
-							</div>
-						{/each}
-					</div>
-				</div>
+				{/if}
 			{/each}
-		{/if}
-	{/each}
+		</div>
+	</div>
 </div>

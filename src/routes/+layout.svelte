@@ -57,34 +57,36 @@
 
 		<main class="flex min-w-0 flex-1 flex-col py-2 pr-2 sm:py-3 sm:pr-3">
 			<div
-				class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-line bg-surface"
+				class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-[var(--ombre)]"
 			>
 				<Topbar
 					onMenu={() => (mobileNavOpen = true)}
 					showPeriod={pathname !== '/agenda'}
-					title={pathname === '/administration'
-						? 'Administration'
-						: pathname === '/contacts'
-							? 'Contacts'
-							: pathname === '/clients'
-								? 'Clients'
-								: pathname === '/agenda'
-									? 'Agenda'
-									: pathname === '/zones'
-										? 'Zones de prospection'
-										: pathname === '/bilan'
-											? 'Bilan de prospection'
-											: pathname === '/chiffrage'
-												? 'Chiffrage'
-												: 'Tableau de bord'}
+					title={pathname === '/progression'
+						? 'Progression'
+						: pathname === '/books'
+							? 'Books'
+							: pathname === '/administration'
+								? 'Administration'
+								: pathname === '/contacts'
+									? 'Contacts'
+									: pathname === '/clients'
+										? 'Clients'
+										: pathname === '/agenda'
+											? 'Agenda'
+											: pathname === '/zones'
+												? 'Zones de prospection'
+												: pathname === '/bilan'
+													? 'Bilan de prospection'
+													: pathname === '/chiffrage'
+														? 'Chiffrage'
+														: 'Tableau de bord'}
 				/>
 				<div
 					class={[
 						'min-h-0 flex-1 overflow-y-auto',
 						// Agenda : pleine largeur sur mobile (padding 0), valeurs PC conservées.
-						pathname === '/agenda'
-							? 'px-0 py-0 sm:px-6 sm:py-6'
-							: 'px-4 py-4 sm:px-6 sm:py-6'
+						pathname === '/agenda' ? 'px-0 py-0 sm:px-6 sm:py-6' : 'px-4 py-4 sm:px-6 sm:py-6'
 					].join(' ')}
 				>
 					{@render children()}

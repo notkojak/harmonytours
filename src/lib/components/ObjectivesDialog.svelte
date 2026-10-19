@@ -160,7 +160,7 @@
 									type="number"
 									min="0"
 									bind:value={row.rdv}
-									class="h-8 w-20 border-line bg-base text-right"
+									class="h-8 w-20 border-input bg-base text-right"
 								/>
 							</label>
 							<label class="flex items-center gap-1.5 text-[12px] text-muted-foreground">
@@ -170,7 +170,7 @@
 									min="0"
 									step="100"
 									bind:value={row.ca}
-									class="h-8 w-24 border-line bg-base text-right"
+									class="h-8 w-24 border-input bg-base text-right"
 								/>
 								<span class="text-[12px] text-muted-foreground">€</span>
 							</label>

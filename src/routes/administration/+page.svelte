@@ -314,13 +314,13 @@
 								required
 								placeholder="Tours"
 								bind:value={agencyName}
-								class="border-line bg-base"
+								class="border-input bg-base"
 							/>
 						</div>
 						<div class="min-w-40 space-y-1.5">
 							<Label for="agencyZone">Zone</Label>
 							<Select type="single" bind:value={agencyZone}>
-								<SelectTrigger id="agencyZone" class="w-full border-line bg-base">
+								<SelectTrigger id="agencyZone" class="w-full border-input bg-base">
 									<span data-slot="select-value">
 										{agencyZone ? agencyZone : 'Choisir une zone'}
 									</span>
@@ -374,7 +374,7 @@
 									required
 									placeholder="Marie"
 									bind:value={empFirstName}
-									class="border-line bg-base"
+									class="border-input bg-base"
 								/>
 							</div>
 							<div class="space-y-1.5">
@@ -384,7 +384,7 @@
 									required
 									placeholder="Dupont"
 									bind:value={empLastName}
-									class="border-line bg-base"
+									class="border-input bg-base"
 								/>
 							</div>
 							<div class="space-y-1.5">
@@ -395,7 +395,7 @@
 									required
 									placeholder="marie.dupont@exemple.fr"
 									bind:value={empEmail}
-									class="border-line bg-base"
+									class="border-input bg-base"
 								/>
 							</div>
 							<div class="space-y-1.5">
@@ -404,7 +404,7 @@
 									id="empBirthDate"
 									type="date"
 									bind:value={empBirthDate}
-									class="border-line bg-base"
+									class="border-input bg-base"
 								/>
 							</div>
 							<div class="space-y-1.5">
@@ -414,13 +414,13 @@
 									type="date"
 									required
 									bind:value={empDateEntree}
-									class="border-line bg-base"
+									class="border-input bg-base"
 								/>
 							</div>
 							<div class="space-y-1.5">
 								<Label for="empRole">Rôle</Label>
 								<Select type="single" bind:value={empRole}>
-									<SelectTrigger id="empRole" class="w-full border-line bg-base">
+									<SelectTrigger id="empRole" class="w-full border-input bg-base">
 										<span data-slot="select-value">
 											{empRole ? capitalizeRole(empRole) : 'Choisir un rôle'}
 										</span>
@@ -435,7 +435,7 @@
 							<div class="space-y-1.5">
 								<Label for="empAgency">Agence</Label>
 								<Select type="single" bind:value={empAgencyId}>
-									<SelectTrigger id="empAgency" class="w-full border-line bg-base">
+									<SelectTrigger id="empAgency" class="w-full border-input bg-base">
 										<span data-slot="select-value">
 											{agences.data?.find((a) => a._id === empAgencyId)?.name ??
 												'Choisir une agence'}
@@ -457,7 +457,7 @@
 									minlength={8}
 									placeholder="8 caractères minimum"
 									bind:value={empPassword}
-									class="border-line bg-base"
+									class="border-input bg-base"
 								/>
 							</div>
 						</div>
@@ -690,11 +690,11 @@
 						<div class="grid grid-cols-2 gap-3">
 							<div class="space-y-1.5">
 								<Label for="editFirstName">Prénom</Label>
-								<Input id="editFirstName" bind:value={editFirstName} class="border-line bg-base" />
+								<Input id="editFirstName" bind:value={editFirstName} class="border-input bg-base" />
 							</div>
 							<div class="space-y-1.5">
 								<Label for="editLastName">Nom</Label>
-								<Input id="editLastName" bind:value={editLastName} class="border-line bg-base" />
+								<Input id="editLastName" bind:value={editLastName} class="border-input bg-base" />
 							</div>
 						</div>
 
@@ -705,7 +705,7 @@
 									id="editBirthDate"
 									type="date"
 									bind:value={editBirthDate}
-									class="border-line bg-base"
+									class="border-input bg-base"
 								/>
 							</div>
 							<div class="space-y-1.5">
@@ -714,7 +714,7 @@
 									id="editDateEntree"
 									type="date"
 									bind:value={editDateEntree}
-									class="border-line bg-base"
+									class="border-input bg-base"
 								/>
 							</div>
 						</div>
@@ -723,7 +723,7 @@
 							<div class="space-y-1.5">
 								<Label for="editRole">Rôle</Label>
 								<Select type="single" bind:value={editRole}>
-									<SelectTrigger id="editRole" class="w-full border-line bg-base">
+									<SelectTrigger id="editRole" class="w-full border-input bg-base">
 										<span data-slot="select-value">
 											{editRole ? capitalizeRole(editRole) : 'Choisir un rôle'}
 										</span>
@@ -738,7 +738,7 @@
 							<div class="space-y-1.5">
 								<Label for="editAgency">Agence</Label>
 								<Select type="single" bind:value={editAgencyId}>
-									<SelectTrigger id="editAgency" class="w-full border-line bg-base">
+									<SelectTrigger id="editAgency" class="w-full border-input bg-base">
 										<span data-slot="select-value">
 											{agences.data?.find((a) => a._id === editAgencyId)?.name ??
 												'Choisir une agence'}

@@ -29,7 +29,6 @@
 		setTheme(theme);
 	}
 
-
 	// En production, Convex MASQUE le détail des erreurs côté client : le
 	// navigateur ne reçoit jamais « Invalid credentials », seulement un message
 	// générique `[CONVEX A(auth:signIn)] Server Error` + un Request ID. On ne
@@ -42,12 +41,15 @@
 		if (/fetch|network|ECONN|load failed|offline|connexion au serveur|resolve/i.test(message)) {
 			return 'Connexion impossible (réseau). Vérifie ta connexion puis réessaie.';
 		}
-		// Erreur liée à l'authentification : on classe selon l'e-mail.
+		// Erreur liée à l'authentification : on classe selon l'e-mail. Un compte
+		// licencié est refusé même avec le bon mot de passe (session coupée côté
+		// serveur) : on le dit clairement plutôt que d'accuser le mot de passe.
 		try {
 			const existing = await getConvexClient().query(api.users.getByEmail, { email });
-			return existing
-				? 'Mot de passe incorrect.'
-				: 'Aucun compte associé à cette adresse e-mail.';
+			if (existing?.statut === 'viré') {
+				return 'Compte désactivé. Contactez votre superviseur.';
+			}
+			return existing ? 'Mot de passe incorrect.' : 'Aucun compte associé à cette adresse e-mail.';
 		} catch {
 			return 'Connexion impossible. Vérifie tes identifiants.';
 		}
@@ -75,32 +77,43 @@
 </script>
 
 <button
-		type="button"
-		class="absolute top-4 right-4 grid size-9 place-items-center rounded-lg border border-line bg-card text-muted-foreground transition-colors hover:text-foreground"
-		onclick={toggleTheme}
-		aria-label={theme === 'dark' ? 'Passer en mode clair' : 'Passer en mode sombre'}
-		title={theme === 'dark' ? 'Mode clair' : 'Mode sombre'}
-	>
-		{#if theme === 'dark'}
-			<Sun class="size-4" strokeWidth={1.7} />
-		{:else}
-			<Moon class="size-4" strokeWidth={1.7} />
-		{/if}
-	</button>
+	type="button"
+	class="absolute top-5 right-5 grid size-10 place-items-center rounded-full border border-line bg-card text-ink-soft shadow-[var(--ombre)] transition-colors hover:border-brand/40 hover:text-brand"
+	onclick={toggleTheme}
+	aria-label={theme === 'dark' ? 'Passer en mode clair' : 'Passer en mode sombre'}
+	title={theme === 'dark' ? 'Mode clair' : 'Mode sombre'}
+>
+	{#if theme === 'dark'}
+		<Sun class="size-4" strokeWidth={1.7} />
+	{:else}
+		<Moon class="size-4" strokeWidth={1.7} />
+	{/if}
+</button>
 
-	<Card class="w-full max-w-sm rounded-2xl border-line py-0 shadow-none">
-	<CardHeader class="items-center px-6 pt-8 text-center">
-		<span class="mx-auto grid size-11 place-items-center overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-black/5">
-			<img src="/favicon.png" alt="Bravaux" class="size-10 rounded-xl object-contain" />
+<!-- Carte de connexion : même langage que les encadrés de bravaux.fr
+     (fond blanc, rayon généreux, ombre portée). -->
+<Card
+	class="w-full max-w-[430px] gap-0 rounded-[28px] border-line py-0 shadow-[var(--ombre-forte)]"
+>
+	<CardHeader class="items-center gap-0 px-10 pt-10 pb-0 text-center">
+		<span
+			class="mx-auto grid size-14 place-items-center overflow-hidden rounded-full ring-1 ring-line"
+		>
+			<img src="/favicon.png" alt="Bravaux" class="size-14 object-cover" />
 		</span>
-		<CardTitle class="mt-4 text-xl font-bold tracking-tight">Bravaux</CardTitle>
-		<CardDescription class="text-[13px]">Connecte-toi à ton tableau de bord</CardDescription>
+		<CardTitle class="mt-5 font-display text-[26px] leading-none font-semibold tracking-[-0.02em]">
+			Bravaux
+		</CardTitle>
+		<CardDescription class="mt-2 text-[14px] text-ink-soft">
+			Connecte-toi à ton tableau de bord
+		</CardDescription>
 	</CardHeader>
 
-	<CardContent class="px-6 pb-8">
-		<form onsubmit={handleSubmit} class="space-y-4">
-			<div class="space-y-1.5">
-				<Label for="email">Adresse e-mail</Label>
+	<CardContent class="px-10 pt-8 pb-10">
+		<form onsubmit={handleSubmit} class="space-y-5">
+			<div class="space-y-2">
+				<!-- Libellé décalé comme sur bravaux.fr, aligné sur la pilule du champ. -->
+				<Label for="email" class="pl-5">Adresse e-mail</Label>
 				<Input
 					id="email"
 					type="email"
@@ -108,12 +121,12 @@
 					autocomplete="email"
 					placeholder="toi@exemple.fr"
 					bind:value={email}
-					class="border-line bg-base"
+					class="h-14 px-6"
 				/>
 			</div>
 
-			<div class="space-y-1.5">
-				<Label for="password">Mot de passe</Label>
+			<div class="space-y-2">
+				<Label for="password" class="pl-5">Mot de passe</Label>
 				<Input
 					id="password"
 					type="password"
@@ -121,11 +134,11 @@
 					autocomplete="current-password"
 					placeholder="••••••••"
 					bind:value={password}
-					class="border-line bg-base"
+					class="h-14 px-6"
 				/>
 			</div>
 
-			<Button type="submit" disabled={sending} class="w-full">
+			<Button type="submit" size="lg" disabled={sending} class="w-full">
 				{#if sending}
 					<LoaderCircle class="size-4 animate-spin" />
 				{/if}
@@ -133,7 +146,7 @@
 			</Button>
 
 			{#if error}
-				<p class="text-center text-[12px] text-destructive">{error}</p>
+				<p class="text-center text-[12.5px] text-destructive">{error}</p>
 			{/if}
 		</form>
 	</CardContent>

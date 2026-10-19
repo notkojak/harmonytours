@@ -37,18 +37,18 @@
 	<div class="flex min-w-0 items-center gap-2.5">
 		<button
 			type="button"
-			class="grid size-8 shrink-0 place-items-center rounded-lg border border-line bg-card text-muted-foreground transition-colors hover:text-foreground lg:hidden"
+			class="grid size-8 shrink-0 place-items-center rounded-full border border-line bg-card text-muted-foreground transition-colors hover:border-brand/40 hover:text-brand lg:hidden"
 			onclick={() => onMenu?.()}
 			aria-label="Ouvrir le menu"
 		>
 			<Menu class="size-4" strokeWidth={1.7} />
 		</button>
 		<span
-			class="grid size-7 shrink-0 place-items-center rounded-lg border border-line bg-card text-muted-foreground"
+			class="grid size-7 shrink-0 place-items-center rounded-full border border-brand/20 bg-brand/10 text-brand"
 		>
 			<LayoutDashboard class="size-3.5" strokeWidth={1.7} />
 		</span>
-		<h1 class="truncate text-[14px] font-semibold text-foreground">{title}</h1>
+		<h1 class="truncate text-[15px] font-semibold text-foreground">{title}</h1>
 		{#if subtitle}
 			<p class="truncate text-[12px] text-muted-foreground">{subtitle}</p>
 		{/if}
@@ -63,7 +63,7 @@
 		{/if}
 		<button
 			type="button"
-			class="grid size-8 shrink-0 place-items-center rounded-lg border border-line bg-card text-muted-foreground transition-colors hover:text-foreground"
+			class="grid size-8 shrink-0 place-items-center rounded-full border border-line bg-card text-muted-foreground transition-colors hover:border-brand/40 hover:text-brand"
 			onclick={toggleTheme}
 			aria-label={theme === 'dark' ? 'Passer en mode clair' : 'Passer en mode sombre'}
 			title={theme === 'dark' ? 'Mode clair' : 'Mode sombre'}

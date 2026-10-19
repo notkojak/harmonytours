@@ -242,17 +242,17 @@
 					CA HT
 				</TableHead>
 				<TableHead
-					class="px-2.5 py-2 text-right text-[11.5px] font-semibold tracking-wide text-sky-400/70 uppercase"
+					class="px-2.5 py-2 text-right text-[11.5px] font-semibold tracking-wide text-sky-700 dark:text-sky-300/70 uppercase"
 				>
 					EN ATTENTE
 				</TableHead>
 				<TableHead
-					class="px-2.5 py-2 text-right text-[11.5px] font-semibold tracking-wide text-orange-400/70 uppercase"
+					class="px-2.5 py-2 text-right text-[11.5px] font-semibold tracking-wide text-orange-700 dark:text-orange-300/70 uppercase"
 				>
 					ERREUR
 				</TableHead>
 				<TableHead
-					class="px-2.5 py-2 text-right text-[11.5px] font-semibold tracking-wide text-red-400/70 uppercase"
+					class="px-2.5 py-2 text-right text-[11.5px] font-semibold tracking-wide text-red-700 dark:text-red-300/70 uppercase"
 				>
 					ANNULÉES
 				</TableHead>
@@ -324,17 +324,17 @@
 						{euro.format(member.caPeriode)}
 					</TableCell>
 					<TableCell
-						class="px-2.5 py-1.5 text-right text-[13.5px] font-semibold whitespace-nowrap text-sky-400/90"
+						class="px-2.5 py-1.5 text-right text-[13.5px] font-semibold whitespace-nowrap text-sky-700 dark:text-sky-300/90"
 					>
 						{euro.format(member.caAttente ?? 0)}
 					</TableCell>
 					<TableCell
-						class="px-2.5 py-1.5 text-right text-[13.5px] font-semibold whitespace-nowrap text-orange-400/90"
+						class="px-2.5 py-1.5 text-right text-[13.5px] font-semibold whitespace-nowrap text-orange-700 dark:text-orange-300/90"
 					>
 						{euro.format(member.caErreur)}
 					</TableCell>
 					<TableCell
-						class="px-2.5 py-1.5 text-right text-[13.5px] font-semibold whitespace-nowrap text-red-400/90"
+						class="px-2.5 py-1.5 text-right text-[13.5px] font-semibold whitespace-nowrap text-red-700 dark:text-red-300/90"
 					>
 						{euro.format(member.caAnnulations)}
 					</TableCell>
@@ -412,17 +412,17 @@
 							{euro.format(member.caPeriode)}
 						</TableCell>
 						<TableCell
-							class="px-2.5 py-1.5 text-right text-[13.5px] font-semibold whitespace-nowrap text-sky-400/90"
+							class="px-2.5 py-1.5 text-right text-[13.5px] font-semibold whitespace-nowrap text-sky-700 dark:text-sky-300/90"
 						>
 							{euro.format(member.caAttente ?? 0)}
 						</TableCell>
 						<TableCell
-							class="px-2.5 py-1.5 text-right text-[13.5px] font-semibold whitespace-nowrap text-orange-400/90"
+							class="px-2.5 py-1.5 text-right text-[13.5px] font-semibold whitespace-nowrap text-orange-700 dark:text-orange-300/90"
 						>
 							{euro.format(member.caErreur)}
 						</TableCell>
 						<TableCell
-							class="px-2.5 py-1.5 text-right text-[13.5px] font-semibold whitespace-nowrap text-red-400/90"
+							class="px-2.5 py-1.5 text-right text-[13.5px] font-semibold whitespace-nowrap text-red-700 dark:text-red-300/90"
 						>
 							{euro.format(member.caAnnulations)}
 						</TableCell>
@@ -485,17 +485,17 @@
 						{euro.format(countTotals.caPeriode)}
 					</TableCell>
 					<TableCell
-						class="px-2.5 py-1.5 text-right text-[13px] font-semibold whitespace-nowrap text-sky-400/70"
+						class="px-2.5 py-1.5 text-right text-[13px] font-semibold whitespace-nowrap text-sky-700 dark:text-sky-300/70"
 					>
 						{euro.format(countTotals.caAttente)}
 					</TableCell>
 					<TableCell
-						class="px-2.5 py-1.5 text-right text-[13px] font-semibold whitespace-nowrap text-orange-400/70"
+						class="px-2.5 py-1.5 text-right text-[13px] font-semibold whitespace-nowrap text-orange-700 dark:text-orange-300/70"
 					>
 						{euro.format(countTotals.caErreur)}
 					</TableCell>
 					<TableCell
-						class="px-2.5 py-1.5 text-right text-[13px] font-semibold whitespace-nowrap text-red-400/70"
+						class="px-2.5 py-1.5 text-right text-[13px] font-semibold whitespace-nowrap text-red-700 dark:text-red-300/70"
 					>
 						{euro.format(countTotals.caAnnulations)}
 					</TableCell>
@@ -556,17 +556,17 @@
 						{euro.format(grandTotals.caPeriode)}
 					</TableCell>
 					<TableCell
-						class="px-2.5 py-1.5 text-right text-[13.5px] font-bold whitespace-nowrap text-sky-400"
+						class="px-2.5 py-1.5 text-right text-[13.5px] font-bold whitespace-nowrap text-sky-700 dark:text-sky-300"
 					>
 						{euro.format(grandTotals.caAttente)}
 					</TableCell>
 					<TableCell
-						class="px-2.5 py-1.5 text-right text-[13.5px] font-bold whitespace-nowrap text-orange-400"
+						class="px-2.5 py-1.5 text-right text-[13.5px] font-bold whitespace-nowrap text-orange-700 dark:text-orange-300"
 					>
 						{euro.format(grandTotals.caErreur)}
 					</TableCell>
 					<TableCell
-						class="px-2.5 py-1.5 text-right text-[13.5px] font-bold whitespace-nowrap text-red-400"
+						class="px-2.5 py-1.5 text-right text-[13.5px] font-bold whitespace-nowrap text-red-700 dark:text-red-300"
 					>
 						{euro.format(grandTotals.caAnnulations)}
 					</TableCell>

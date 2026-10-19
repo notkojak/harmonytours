@@ -12,6 +12,8 @@ function profileOf(user: {
 	role?: string;
 	name?: string;
 	photo?: string;
+	statut?: string;
+	firedAt?: number;
 }) {
 	return {
 		_id: user._id,
@@ -21,7 +23,11 @@ function profileOf(user: {
 		birthDate: user.birthDate ?? null,
 		role: user.role ?? null,
 		name: user.name ?? null,
-		photo: user.photo ?? null
+		photo: user.photo ?? null,
+		// Statut du compte : permet au client de déconnecter un employé viré
+		// dès qu'il est licencié (et aux endpoints mobiles de refuser l'accès).
+		statut: user.statut ?? 'actif',
+		firedAt: user.firedAt ?? null
 	};
 }
 

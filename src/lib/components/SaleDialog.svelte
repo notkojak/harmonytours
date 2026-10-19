@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { LoaderCircle, Plus, Trash2 } from '@lucide/svelte';
+	import { untrack } from 'svelte';
+	import { LoaderCircle } from '@lucide/svelte';
 	import { useMutation, useQuery } from 'convex-svelte';
 	import { api } from '../../convex/_generated/api.js';
 	import type { Id } from '../../convex/_generated/dataModel.js';
@@ -35,6 +36,8 @@
 		venteId?: string;
 		initialVente?: {
 			produits: { produit: string; tva: number; montantHT: number }[];
+			// Montants de TVA par taux, tels qu'ils ont été saisis.
+			tvaDetail?: { taux: number; montant: number }[] | null;
 			vendeurId?: string | null;
 			// Date de la vente (ms) affichée dans le champ date.
 			date?: number | null;
@@ -43,53 +46,77 @@
 
 	const addVente = useMutation(api.ventes.addVente);
 	const updateVente = useMutation(api.ventes.updateVente);
+	// Le commercial et la date ne sont plus demandés : on reprend le commercial
+	// du RDV (sinon l'utilisateur connecté) et la date du jour.
 	const vendeurs = useQuery(api.employes.listVendeurs, () => (open ? {} : 'skip'));
 	let vendeurId = $state<string | undefined>();
-	// Date de la vente (AAAA-MM-JJ) : modifiable, elle place la vente dans les
-	// statistiques du mois correspondant.
 	let venteDate = $state(msToDateInput(Date.now()));
 
 	const isEdit = $derived(!!venteId);
 	const titre = $derived(isEdit ? 'Modifier la vente' : 'Ajouter une vente');
 
-	type LigneProduit = {
-		produit: string;
-		tva: '5.5' | '10' | '20';
-		montantHT: string;
-	};
+	// Un prix HT, puis le montant de TVA de chaque taux utilisé, et le TTC qui
+	// additionne le tout. Plusieurs taux peuvent cohabiter dans une même vente.
+	const TAUX = ['5.5', '10', '20'] as const;
+	type Taux = (typeof TAUX)[number];
+	const TAUX_LABEL: Record<Taux, string> = { '5.5': '5,5 %', '10': '10 %', '20': '20 %' };
 
-	let lignes = $state<LigneProduit[]>([]);
+	let famille = $state('');
+	let prixHT = $state('');
+	let tvaMontants = $state<Record<Taux, string>>({ '5.5': '', '10': '', '20': '' });
 	let busy = $state(false);
 	let error = $state('');
-	let lastVenteId = $state<string | undefined>();
 
-	function addLigne() {
-		lignes = [...lignes, { produit: FAMILLES[0] ?? '', tva: '20', montantHT: '' }];
-	}
+	const vide = (): Record<Taux, string> => ({ '5.5': '', '10': '', '20': '' });
+	const num = (v: string) => parseFloat(String(v ?? '').replace(',', '.')) || 0;
 
-	function removeLigne(index: number) {
-		lignes = lignes.filter((_, i) => i !== index);
-	}
+	const totalHT = $derived(num(prixHT));
+	const totalTVA = $derived(TAUX.reduce((s, k) => s + num(tvaMontants[k]), 0));
+	const totalTTC = $derived(totalHT + totalTVA);
 
+	const fmt = (n: number) =>
+		n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+	// À chaque ouverture, le formulaire repart de la vente éditée ou d'une page blanche.
 	$effect(() => {
-		// Réinitialise à l'ouverture, ou quand on passe d'une vente à une autre en édition.
-		if (open && (lignes.length === 0 || lastVenteId !== venteId)) {
-			lastVenteId = venteId;
-			if (isEdit && initialVente) {
-				lignes = initialVente.produits.map((p) => ({
-					produit: p.produit,
-					tva: String(p.tva) as '5.5' | '10' | '20',
-					montantHT: String(p.montantHT).replace('.', ',')
-				}));
+		if (!open) return;
+		untrack(() => {
+			error = '';
+			if (isEdit && initialVente && initialVente.produits.length > 0) {
+				const p = initialVente.produits;
+				famille = p[0].produit;
+				prixHT = String(Math.round(p.reduce((s, x) => s + x.montantHT, 0) * 100) / 100).replace(
+					'.',
+					','
+				);
+				// Le détail enregistré prime ; sinon on le retrouve depuis les lignes.
+				const parTaux: Record<Taux, number> = { '5.5': 0, '10': 0, '20': 0 };
+				if (initialVente.tvaDetail && initialVente.tvaDetail.length > 0) {
+					for (const d of initialVente.tvaDetail) {
+						const k = String(d.taux) as Taux;
+						if (k in parTaux) parTaux[k] += d.montant;
+					}
+				} else {
+					for (const ligne of p) {
+						const k = String(ligne.tva) as Taux;
+						if (k in parTaux) parTaux[k] += (ligne.montantHT * ligne.tva) / 100;
+					}
+				}
+				tvaMontants = {
+					'5.5': parTaux['5.5'] ? String(Math.round(parTaux['5.5'] * 100) / 100) : '',
+					'10': parTaux['10'] ? String(Math.round(parTaux['10'] * 100) / 100) : '',
+					'20': parTaux['20'] ? String(Math.round(parTaux['20'] * 100) / 100) : ''
+				};
 				vendeurId = initialVente.vendeurId ?? undefined;
 				venteDate = msToDateInput(initialVente.date ?? Date.now());
 			} else {
-				lignes = [{ produit: FAMILLES[0] ?? '', tva: '20', montantHT: '' }];
+				famille = '';
+				prixHT = '';
+				tvaMontants = vide();
 				vendeurId = undefined;
 				venteDate = msToDateInput(Date.now());
 			}
-			error = '';
-		}
+		});
 	});
 
 	// Auto-sélection du vendeur : le commercial lié au RDV du contact si présent,
@@ -104,34 +131,29 @@
 		}
 	});
 
-	const montant = (l: LigneProduit) => parseFloat(String(l.montantHT ?? '').replace(',', '.')) || 0;
-
-	const totalHT = $derived(lignes.reduce((sum, l) => sum + montant(l), 0));
-	const totalTVA = $derived(
-		lignes.reduce((sum, l) => sum + (montant(l) * parseFloat(l.tva)) / 100, 0)
-	);
-	const totalTTC = $derived(totalHT + totalTVA);
-
-	const fmt = (n: number) =>
-		n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
 	function close() {
 		open = false;
 	}
 
 	async function save() {
 		if (!contactId) return;
-		const produits = lignes
-			.filter((l) => l.produit && montant(l) > 0)
-			.map((l) => ({
-				produit: l.produit,
-				tva: parseFloat(l.tva) as 5.5 | 10 | 20,
-				montantHT: montant(l)
-			}));
-		if (produits.length === 0) {
-			error = 'Ajoute au moins un produit avec un montant HT valide.';
+		if (!famille) {
+			error = 'Choisis une famille de produit.';
 			return;
 		}
+		if (totalHT <= 0) {
+			error = 'Renseigne un prix HT.';
+			return;
+		}
+		// Le prix HT et les montants de TVA saisis donnent le TTC. On enregistre une
+		// ligne au taux effectif (TVA totale / HT) pour que le serveur retrouve
+		// exactement ce TTC, et le détail par taux à côté pour l'affichage.
+		const tauxEffectif = totalTVA > 0 ? (totalTVA / totalHT) * 100 : 0;
+		const produits = [{ produit: famille, tva: tauxEffectif, montantHT: totalHT }];
+		const tvaDetail = TAUX.filter((k) => num(tvaMontants[k]) > 0).map((k) => ({
+			taux: parseFloat(k),
+			montant: num(tvaMontants[k])
+		}));
 		const date = dateInputToMs(venteDate);
 		busy = true;
 		error = '';
@@ -140,6 +162,7 @@
 				await updateVente({
 					venteId: venteId as Id<'ventes'>,
 					produits,
+					tvaDetail,
 					...(vendeurId ? { vendeurId: vendeurId as Id<'users'> } : {}),
 					...(date ? { date } : {})
 				});
@@ -147,11 +170,14 @@
 				await addVente({
 					contactId: contactId as Id<'contacts'>,
 					produits,
+					tvaDetail,
 					...(vendeurId ? { vendeurId: vendeurId as Id<'users'> } : {}),
 					...(date ? { date } : {})
 				});
 			}
-			lignes = [];
+			famille = '';
+			prixHT = '';
+			tvaMontants = vide();
 			close();
 		} catch (e) {
 			error = e instanceof Error ? e.message : "Erreur lors de l'enregistrement de la vente.";
@@ -162,119 +188,80 @@
 </script>
 
 <Dialog bind:open>
-	<DialogContent class="sm:max-w-3xl">
+	<DialogContent class="rounded-2xl border-line bg-card sm:max-w-md">
 		<DialogHeader>
-			<DialogTitle>{titre}</DialogTitle>
+			<DialogTitle class="flex items-center gap-2 text-[14px] font-semibold">
+				<span
+					class="grid size-8 place-items-center rounded-lg border border-line bg-card2 text-muted-foreground"
+				>
+					🛍️
+				</span>
+				{titre}
+			</DialogTitle>
 		</DialogHeader>
 
 		<div class="space-y-3">
-			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-				<div class="space-y-1">
-					<Label>Commercial accompagnateur</Label>
-					<Select type="single" bind:value={vendeurId}>
-						<SelectTrigger class="w-full border-line bg-base">
-							<span data-slot="select-value">
-								{vendeurs?.data?.find((v) => v._id === vendeurId)?.name ??
-									'Choisir un commercial'}
-							</span>
-						</SelectTrigger>
-						<SelectContent>
-							{#each vendeurs?.data ?? [] as v}
-								<SelectItem value={v._id}>{v.name}{v.isMe ? ' (moi)' : ''}</SelectItem>
-							{/each}
-						</SelectContent>
-					</Select>
-				</div>
-
-				<div class="space-y-1">
-					<Label for="venteDate">Date de la vente</Label>
-					<Input id="venteDate" type="date" bind:value={venteDate} class="border-line bg-base" />
-				</div>
+			<div class="space-y-1">
+				<Label for="famille" class="text-[11px] text-muted-foreground">Famille de produit</Label>
+				<Select type="single" value={famille} onValueChange={(v) => (famille = v as string)}>
+					<SelectTrigger id="famille" class="w-full border-input bg-base">
+						<span data-slot="select-value">{famille || 'Choisir une famille'}</span>
+					</SelectTrigger>
+					<SelectContent class="max-h-64 overflow-y-auto">
+						{#each FAMILLES as f}
+							<SelectItem value={f}>{f}</SelectItem>
+						{/each}
+					</SelectContent>
+				</Select>
 			</div>
 
-			<div class="flex items-center justify-between text-[12px] font-medium text-muted-foreground">
-				<span>Produits de la vente</span>
-				<Button variant="outline" size="sm" onclick={addLigne}>
-					<Plus class="size-3.5" />
-					Ajouter un produit
-				</Button>
+			<div class="space-y-1">
+				<Label for="prixHT" class="text-[11px] text-muted-foreground">Prix HT (€)</Label>
+				<Input
+					id="prixHT"
+					type="number"
+					min="0"
+					step="0.01"
+					inputmode="decimal"
+					placeholder="0,00"
+					bind:value={prixHT}
+					class="border-input bg-base tabular-nums"
+				/>
 			</div>
 
-			{#each lignes as ligne, i (i)}
-				<div class="rounded-lg border border-line bg-base p-3">
-					<div class="space-y-1.5">
-						<Label>Produit</Label>
-						<Select type="single" bind:value={lignes[i].produit}>
-							<SelectTrigger class="w-full border-line bg-base">
-								<span data-slot="select-value">
-									{lignes[i].produit || 'Choisir un produit'}
-								</span>
-							</SelectTrigger>
-							<SelectContent>
-								{#each FAMILLES as f}
-									<SelectItem value={f}>{f}</SelectItem>
-								{/each}
-							</SelectContent>
-						</Select>
-					</div>
-					<div class="mt-2 grid grid-cols-2 items-end gap-2 sm:grid-cols-[1fr_120px_auto]">
+			<!-- Une case par taux : on n'y met que les montants de TVA concernés. -->
+			<div class="space-y-1">
+				<Label class="text-[11px] text-muted-foreground">Montants de TVA (€)</Label>
+				<div class="grid grid-cols-3 gap-2">
+					{#each TAUX as taux}
 						<div class="space-y-1">
-							<Label>Montant HT (€)</Label>
+							<p class="text-center text-[10.5px] font-medium text-muted-foreground">
+								{TAUX_LABEL[taux]}
+							</p>
 							<Input
+								id="tva{taux}"
 								type="number"
 								min="0"
 								step="0.01"
+								inputmode="decimal"
 								placeholder="0,00"
-								bind:value={lignes[i].montantHT}
-								class="border-line bg-base"
+								bind:value={tvaMontants[taux]}
+								class="border-input bg-base px-2 text-center tabular-nums"
 							/>
 						</div>
-						<div class="space-y-1">
-							<Label>TVA</Label>
-							<Select type="single" bind:value={lignes[i].tva}>
-								<SelectTrigger class="w-full border-line bg-base">
-									<span data-slot="select-value">{lignes[i].tva} %</span>
-								</SelectTrigger>
-								<SelectContent>
-									<SelectItem value="5.5">5,5 %</SelectItem>
-									<SelectItem value="10">10 %</SelectItem>
-									<SelectItem value="20">20 %</SelectItem>
-								</SelectContent>
-							</Select>
-						</div>
-						<Button
-							variant="ghost"
-							size="icon-sm"
-							class="text-muted-foreground hover:text-destructive"
-							onclick={() => removeLigne(i)}
-							aria-label="Supprimer le produit"
-						>
-							<Trash2 class="size-4" />
-						</Button>
-					</div>
+					{/each}
 				</div>
-			{/each}
+			</div>
 
-			{#if lignes.length === 0}
-				<p
-					class="rounded-lg border border-dashed border-line p-4 text-center text-[12px] text-muted-foreground"
+			<!-- Même hauteur de champ que les saisies, mais en lecture seule. -->
+			<div class="space-y-1">
+				<Label class="text-[11px] text-muted-foreground">Total TTC</Label>
+				<div
+					class="flex h-11 items-center justify-between gap-3 rounded-md border border-input bg-card px-3.5"
 				>
-					Aucun produit. Clique sur « Ajouter un produit » pour commencer.
-				</p>
-			{/if}
-
-			<div
-				class="flex items-center justify-end gap-4 rounded-lg border border-line bg-card2 px-4 py-2.5 text-[12.5px]"
-			>
-				<span class="text-muted-foreground">
-					Total HT : <span class="font-semibold text-foreground">{fmt(totalHT)} €</span>
-				</span>
-				<span class="text-muted-foreground">
-					TVA : <span class="font-semibold text-foreground">{fmt(totalTVA)} €</span>
-				</span>
-				<span class="text-muted-foreground">
-					Total TTC : <span class="font-semibold text-foreground">{fmt(totalTTC)} €</span>
-				</span>
+					<span class="text-[11px] font-semibold tracking-wider text-brand uppercase">TTC</span>
+					<span class="text-[15px] font-bold text-ink tabular-nums">{fmt(totalTTC)} €</span>
+				</div>
 			</div>
 
 			{#if error}
@@ -283,12 +270,12 @@
 		</div>
 
 		<DialogFooter>
-			<Button variant="outline" onclick={close}>Annuler</Button>
-			<Button onclick={save} disabled={busy}>
+			<Button variant="ghost" onclick={close}>Annuler</Button>
+			<Button onclick={save} disabled={busy || totalTTC <= 0}>
 				{#if busy}
 					<LoaderCircle class="size-4 animate-spin" />
 				{/if}
-				{isEdit ? 'Enregistrer les modifications' : 'Enregistrer la vente'}
+				{isEdit ? 'Enregistrer' : 'Enregistrer la vente'}
 			</Button>
 		</DialogFooter>
 	</DialogContent>

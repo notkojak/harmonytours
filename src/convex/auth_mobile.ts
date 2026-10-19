@@ -1,5 +1,7 @@
 import { httpAction } from './_generated/server';
 import { api } from './_generated/api';
+import { invalidateSessions } from '@convex-dev/auth/server';
+import type { Id } from './_generated/dataModel';
 
 // Endpoints HTTP utilisés par l'app mobile (BeastDoor) pour se connecter au
 // même backend que le web (Convex Auth, provider password). Le token de session
@@ -48,6 +50,7 @@ function userPayload(
 		role?: string;
 		name?: string;
 		photo?: string;
+		statut?: string;
 	} | null
 ) {
 	if (!user) return null;
@@ -58,8 +61,27 @@ function userPayload(
 		lastName: user.lastName ?? null,
 		role: user.role ?? null,
 		name: user.name ?? null,
-		photo: user.photo ?? null
+		photo: user.photo ?? null,
+		statut: user.statut ?? 'actif'
 	};
+}
+
+/** Message unique pour un compte licencié (web et BeastDoor). */
+const COMPTE_DESACTIVE = 'Compte désactivé. Contactez votre superviseur.';
+
+// Révoque les sessions d'un compte licencié : même si un token vient d'être
+// émis par Convex Auth, l'app ne doit pas repartir avec.
+async function revoquerSiVire(
+	ctx: Parameters<Parameters<typeof httpAction>[0]>[0],
+	user: { _id: unknown; statut?: string } | null
+): Promise<boolean> {
+	if (user?.statut !== 'viré') return false;
+	try {
+		await invalidateSessions(ctx, { userId: user._id as Id<'users'> });
+	} catch {
+		// Les sessions sont déjà invalidées au licenciement : on continue en 403.
+	}
+	return true;
 }
 
 // POST /api/auth-mobile/signin  { email, password } → { ok, token, user }
@@ -95,6 +117,10 @@ export const signin = httpAction(async (ctx, request) => {
 		}
 		if (!user) {
 			user = await ctx.runQuery(api.users.getByEmail, { email });
+		}
+		// Compte licencié : pas de token utilisable, l'app est bloquée elle aussi.
+		if (await revoquerSiVire(ctx, user as any)) {
+			return json({ ok: false, error: COMPTE_DESACTIVE }, 403);
 		}
 		return json({ ok: true, token, user: userPayload(user as any) });
 	} catch (e) {
@@ -136,5 +162,9 @@ export const me = httpAction(async (ctx, request) => {
 	const user = await ctx.runQuery(api.users.getById, {
 		userId: userId as any
 	});
+	// Un token encore valide d'un employé licencié ne donne accès à rien.
+	if (await revoquerSiVire(ctx, user as any)) {
+		return json({ ok: false, error: COMPTE_DESACTIVE }, 401);
+	}
 	return json({ ok: true, user: userPayload(user as any) });
 });

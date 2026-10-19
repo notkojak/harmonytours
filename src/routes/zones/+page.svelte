@@ -54,7 +54,8 @@
 		LIGHT_STYLE_URL,
 		FILL_OPACITY,
 		zoneDisplayColor,
-		isRedZone
+		isRedZone,
+		encreLibellesLieux
 	} from '$lib/zones/colors.js';
 	import { getTheme } from '$lib/theme';
 	import { drawing, editing, selectedZoneId } from '$lib/zones/ui.js';
@@ -1391,6 +1392,10 @@
 					console.error('zone layers setup failed', err);
 				}
 
+				// Light-v11 écrit les villes en gris : en thème clair on les repasse
+				// à l'encre, à chaque chargement de style.
+				if (getTheme() === 'light') encreLibellesLieux(m);
+
 				// Premier rendu des zones une fois les sources prêtes.
 				updateRenderAndLabels(zoneList);
 			});
@@ -1472,10 +1477,10 @@
 		>
 			<p class="text-[13px] font-semibold text-foreground">Token Mapbox manquant</p>
 			<p class="mt-1 text-[12px] leading-relaxed text-muted-foreground">
-				Ajoute <code class="rounded bg-muted px-1 py-0.5 text-amber-400">PUBLIC_MAPBOX_TOKEN</code>
-				au fichier <code class="rounded bg-muted px-1 py-0.5 text-amber-400">.env</code>
+				Ajoute <code class="rounded bg-muted px-1 py-0.5 text-amber-700 dark:text-amber-300">PUBLIC_MAPBOX_TOKEN</code>
+				au fichier <code class="rounded bg-muted px-1 py-0.5 text-amber-700 dark:text-amber-300">.env</code>
 				(récupérable sur account.mapbox.com), puis relance
-				<code class="rounded bg-muted px-1 py-0.5 text-amber-400">npm run dev</code>.
+				<code class="rounded bg-muted px-1 py-0.5 text-amber-700 dark:text-amber-300">npm run dev</code>.
 			</p>
 		</div>
 	{/if}
@@ -1582,7 +1587,7 @@
 				<div
 					class="flex flex-col gap-1 rounded-lg border border-rose-500/60 bg-rose-500/10 p-2.5 text-[11.5px] leading-relaxed"
 				>
-					<p class="flex items-center gap-1.5 font-semibold text-rose-400">
+					<p class="flex items-center gap-1.5 font-semibold text-rose-700 dark:text-rose-300">
 						<TriangleAlert class="size-3.5" strokeWidth={1.7} />
 						Erreur
 					</p>
@@ -1609,7 +1614,7 @@
 
 			{#if placingGms}
 				<div
-					class="rounded-lg border border-amber-500/50 bg-amber-500/10 p-2.5 text-[11.5px] leading-relaxed text-amber-400"
+					class="rounded-lg border border-amber-500/50 bg-amber-500/10 p-2.5 text-[11.5px] leading-relaxed text-amber-700 dark:text-amber-300"
 				>
 					Clique sur la carte à l'emplacement de la GMS pour poser le pin 🏪.
 				</div>
@@ -1617,7 +1622,7 @@
 
 			{#if $drawing}
 				<div
-					class="rounded-lg border border-amber-500/50 bg-amber-500/10 p-2.5 text-[11.5px] leading-relaxed text-amber-400"
+					class="rounded-lg border border-amber-500/50 bg-amber-500/10 p-2.5 text-[11.5px] leading-relaxed text-amber-700 dark:text-amber-300"
 				>
 					Clique sur la carte pour poser les points, puis double-clic pour fermer la zone.
 				</div>
@@ -1792,7 +1797,7 @@
 										greenWhenOld: z.greenWhenOld,
 										commercialIds: z.commercialIds as Id<'users'>[]
 									})}
-								class="h-8 border-line bg-base text-[12px]"
+								class="h-8 border-input bg-base text-[12px]"
 							/>
 						</div>
 						<Button class="h-8 w-full bg-rose-600 hover:bg-rose-500" onclick={deleteSelected}>
@@ -1844,7 +1849,7 @@
 					type="password"
 					bind:value={code}
 					placeholder="Code"
-					class="border-line bg-base"
+					class="border-input bg-base"
 					onkeydown={(e) => {
 						if (e.key === 'Enter') submitCode();
 					}}
@@ -1887,7 +1892,7 @@
 				id="gms-label"
 				bind:value={gmsLabel}
 				placeholder="Ex. Super U – Tours Nord"
-				class="border-line bg-base"
+				class="border-input bg-base"
 				onkeydown={(e) => {
 					if (e.key === 'Enter') saveGms();
 				}}

@@ -22,6 +22,36 @@ export function getStoredToken(): string | null {
 	return localStorage.getItem(TOKEN_KEY);
 }
 
+/**
+ * Un compte licencié ne doit ni se connecter ni garder sa session : on efface
+ * les tokens locaux et on révoque la session côté serveur. Le statut vient de
+ * `users.getProfile`, qui reste lisible même quand les autres requêtes sont
+ * bloquées par le contrôle d'accès.
+ */
+async function clearIfFired(email?: string): Promise<boolean> {
+	const client = getConvexClient();
+	try {
+		// À la connexion, l'e-mail est connu : `getByEmail` est public et fiable
+		// même si le token vient tout juste d'être posé. Au rafraîchissement, on
+		// lit le profil du compte connecté.
+		const profile = email
+			? await client.query(api.users.getByEmail, { email })
+			: await client.query(api.users.getProfile, {});
+		if (profile?.statut !== 'viré') return false;
+	} catch {
+		return false;
+	}
+	try {
+		await client.action(api.auth.signOut, {});
+	} catch {
+		// La session est peut-être déjà révoquée : on nettoie quand même le local.
+	}
+	storeToken(null);
+	storeRefreshToken(null);
+	client.setAuth(async () => null);
+	return true;
+}
+
 function getStoredRefreshToken(): string | null {
 	if (typeof localStorage === 'undefined') return null;
 	return localStorage.getItem(REFRESH_TOKEN_KEY);
@@ -87,6 +117,12 @@ export async function signInWithPassword(
 	storeToken(tokens.token);
 	if (tokens.refreshToken) storeRefreshToken(tokens.refreshToken);
 	client.setAuth(async () => tokens.token ?? null);
+
+	// Compte licencié : Convex Auth a bien émis un token, mais l'accès doit
+	// rester fermé. On coupe immédiatement la session et on explique pourquoi.
+	if (await clearIfFired(email)) {
+		throw new Error('Compte désactivé. Contactez votre superviseur.');
+	}
 }
 
 /**
@@ -118,6 +154,9 @@ export async function refreshSession(): Promise<boolean> {
 		storeToken(tokens.token);
 		if (tokens.refreshToken) storeRefreshToken(tokens.refreshToken);
 		client.setAuth(async () => tokens.token ?? null);
+		// Un employé viré pendant que son onglet était ouvert perd sa session au
+		// prochain rafraîchissement, même si son refresh token était encore valide.
+		if (await clearIfFired()) return false;
 		return true;
 	} catch {
 		// Échec transitoire (réseau, service) : on garde la session actuelle.

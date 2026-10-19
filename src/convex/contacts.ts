@@ -11,7 +11,14 @@ const followUpValidator = v.object({
 	date: v.string(),
 	time: v.optional(v.string()),
 	commercial: v.optional(v.string()),
-	status: v.optional(v.union(v.literal('annulé'), v.literal('déballé'), v.literal('vendu'))),
+	status: v.optional(
+		v.union(
+			v.literal('annulé'),
+			v.literal('déballé'),
+			v.literal('vendu'),
+			v.literal('à reprogrammer')
+		)
+	),
 	// Type de RDV placé : confortation (validation client) ou gestion dossier.
 	motif: v.optional(v.union(v.literal('confortation'), v.literal('gestion'))),
 	nonVenteReason: v.optional(v.string()),
@@ -62,9 +69,7 @@ async function assertCommercialNotCreator(
 export const create = mutation({
 	args: {
 		name: v.string(),
-		civilites: v.optional(
-			v.array(v.union(v.literal('M.'), v.literal('Mme'), v.literal('Melle')))
-		),
+		civilites: v.optional(v.array(v.union(v.literal('M.'), v.literal('Mme'), v.literal('Melle')))),
 		address: v.optional(v.string()),
 		phone: v.optional(v.string()),
 		projet: v.optional(v.string()),
@@ -141,7 +146,13 @@ export const setFollowUpFields = mutation({
 		contactId: v.id('contacts'),
 		commercial: v.optional(v.string()),
 		status: v.optional(
-			v.union(v.literal('annulé'), v.literal('déballé'), v.literal('vendu'), v.literal(''))
+			v.union(
+				v.literal('annulé'),
+				v.literal('déballé'),
+				v.literal('vendu'),
+				v.literal('à reprogrammer'),
+				v.literal('')
+			)
 		),
 		nonVenteReason: v.optional(v.string()),
 		annulationReason: v.optional(v.string())
@@ -210,14 +221,17 @@ export const setFollowUpFields = mutation({
 
 // Marque le contact comme traité, ou annule ce marquage (treated: false) : le
 // contact retrouve alors son suivi principal (RDV, rappel ou actif). Le suivi
-// et l'historique ne sont pas touchés — seul le drapeau `statut` change.
+// n'est pas touché ; la date et la raison du traitement sont conservées sur le
+// contact pour que la fiche puisse les rejouer dans son historique.
 export const markTreated = mutation({
 	args: {
 		contactId: v.id('contacts'),
 		// false = on retire le marquage « traité ».
-		treated: v.optional(v.boolean())
+		treated: v.optional(v.boolean()),
+		// Raison du traitement : journalisée dans l'historique de la fiche.
+		reason: v.optional(v.string())
 	},
-	handler: async (ctx, { contactId, treated }) => {
+	handler: async (ctx, { contactId, treated, reason }) => {
 		const user = await getCurrentUser(ctx);
 		const contact = await ctx.db.get(contactId);
 		if (!contact) {
@@ -226,7 +240,17 @@ export const markTreated = mutation({
 		if (contact.createdBy !== user._id) {
 			throw new Error('Non autorisé.');
 		}
-		await ctx.db.patch(contactId, { statut: treated === false ? 'actif' : 'traité' });
+		if (treated === false) {
+			// La date et la raison restent en base : un nouveau marquage les remplace.
+			await ctx.db.patch(contactId, { statut: 'actif' });
+			return;
+		}
+		const treatedReason = reason?.trim() || contact.treatedReason;
+		await ctx.db.patch(contactId, {
+			statut: 'traité',
+			treatedAt: Date.now(),
+			...(treatedReason ? { treatedReason } : {})
+		});
 	}
 });
 
@@ -247,8 +271,7 @@ export const markPrinted = mutation({
 		}
 		const myName = `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim().toLowerCase();
 		const isLinked =
-			!!contact.followUp?.commercial &&
-			contact.followUp.commercial.trim().toLowerCase() === myName;
+			!!contact.followUp?.commercial && contact.followUp.commercial.trim().toLowerCase() === myName;
 		const sameAgency = !!contact.agencyId && contact.agencyId === user.agencyId;
 		if (contact.createdBy !== user._id && !isLinked && !sameAgency && !canViewAllCrm(user)) {
 			throw new Error('Non autorisé.');
@@ -462,9 +485,7 @@ export const update = mutation({
 	args: {
 		contactId: v.id('contacts'),
 		name: v.optional(v.string()),
-		civilites: v.optional(
-			v.array(v.union(v.literal('M.'), v.literal('Mme'), v.literal('Melle')))
-		),
+		civilites: v.optional(v.array(v.union(v.literal('M.'), v.literal('Mme'), v.literal('Melle')))),
 		address: v.optional(v.string()),
 		phone: v.optional(v.string()),
 		projet: v.optional(v.string()),
@@ -521,7 +542,7 @@ export const update = mutation({
 				date: string;
 				time?: string;
 				commercial?: string;
-				status?: 'annulé' | 'déballé' | 'vendu';
+				status?: 'annulé' | 'déballé' | 'vendu' | 'à reprogrammer';
 				motif?: 'confortation' | 'gestion';
 				nonVenteReason?: string;
 				annulationReason?: string;

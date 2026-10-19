@@ -23,15 +23,20 @@
 </script>
 
 <Popover>
+	<!-- Pastille d'en-tête de bravaux.fr : pilule blanche, logo à gauche, ombre douce. -->
 	<PopoverTrigger
-		class="flex w-full items-center gap-2.5 rounded-xl border border-line bg-card p-2.5 text-left transition-colors hover:bg-card2"
+		class="flex w-full items-center gap-2.5 rounded-full border border-line bg-card p-1.5 pr-3 text-left shadow-[var(--ombre)] transition-colors hover:border-brand/40"
 	>
-		<img src="/favicon.png" alt="Bravaux" class="size-8 shrink-0 rounded-lg object-cover" />
+		<img
+			src="/favicon.png"
+			alt="Bravaux"
+			class="size-9 shrink-0 rounded-full object-cover ring-1 ring-line"
+		/>
 		<span class="min-w-0 flex-1 leading-tight">
-			<span class="block truncate text-[13px] font-semibold text-foreground">
+			<span class="block truncate font-display text-[13px] font-semibold text-foreground">
 				{current ? agencyLabel(current) : 'Choisir une agence'}
 			</span>
-			<span class="block truncate text-[11px] text-muted-foreground"> Bravaux </span>
+			<span class="block truncate text-[11px] text-ink-soft"> Bravaux </span>
 		</span>
 		<ChevronsUpDown class="size-4 shrink-0 text-muted-foreground" strokeWidth={1.7} />
 	</PopoverTrigger>

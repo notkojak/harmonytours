@@ -213,7 +213,7 @@
 						required
 						placeholder="Marie Dupont"
 						bind:value={name}
-						class="border-line bg-base"
+						class="border-input bg-base"
 					/>
 				</div>
 
@@ -233,14 +233,14 @@
 							phone = formatPhone(e.currentTarget.value);
 							onPhoneInput(e);
 						}}
-						class="border-line bg-base"
+						class="border-input bg-base"
 					/>
 				</div>
 
 				<div class="space-y-1.5">
 					<Label for="contactSource">Source</Label>
 					<Select type="single" bind:value={source}>
-						<SelectTrigger id="contactSource" class="w-full border-line bg-base">
+						<SelectTrigger id="contactSource" class="w-full border-input bg-base">
 							<span data-slot="select-value">
 								{source ? source : 'Choisir une source'}
 							</span>
@@ -256,7 +256,7 @@
 				<div class="space-y-1.5 md:col-span-2">
 					<Label for="contactProjet">Projet</Label>
 					<Select type="single" bind:value={projet}>
-						<SelectTrigger id="contactProjet" class="w-full border-line bg-base">
+						<SelectTrigger id="contactProjet" class="w-full border-input bg-base">
 							<span data-slot="select-value">
 								{projet ? projet : 'Choisir un projet'}
 							</span>
@@ -283,7 +283,7 @@
 								'flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition-all',
 								followUpType === 'rdv'
 									? 'bg-primary text-primary-foreground shadow-md shadow-primary/25'
-									: 'text-muted-foreground hover:bg-primary/10 hover:text-violet-200 light:hover:text-violet-600'
+									: 'text-muted-foreground hover:bg-brand/10 hover:text-brand light:hover:text-brand'
 							].join(' ')}
 						>
 							<span class="text-[13px] leading-none">📅</span>
@@ -296,7 +296,7 @@
 								'flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition-all',
 								followUpType === 'rappel'
 									? 'bg-primary text-primary-foreground shadow-md shadow-primary/25'
-									: 'text-muted-foreground hover:bg-primary/10 hover:text-violet-200 light:hover:text-violet-600'
+									: 'text-muted-foreground hover:bg-brand/10 hover:text-brand light:hover:text-brand'
 							].join(' ')}
 						>
 							<span class="text-[13px] leading-none">🔔</span>
@@ -344,7 +344,7 @@
 							<div class="w-28 space-y-1.5">
 								<Label for="contactTime">Heure</Label>
 								<Select type="single" bind:value={followUpTime}>
-									<SelectTrigger id="contactTime" class="w-full border-line bg-base">
+									<SelectTrigger id="contactTime" class="w-full border-input bg-base">
 										<span data-slot="select-value">{followUpTime}</span>
 									</SelectTrigger>
 									<SelectContent>
@@ -372,7 +372,7 @@
 					rows={5}
 					placeholder="Notes sur le contact…"
 					bind:value={note}
-					class="min-h-28 border-line bg-base"
+					class="min-h-28 border-input bg-base"
 				/>
 			</div>
 

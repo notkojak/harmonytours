@@ -100,11 +100,11 @@
 </script>
 
 <div class="space-y-5">
-	<Card class="gap-0 rounded-xl border-line py-0 shadow-none">
+	<Card class="gap-0 rounded-2xl border-line py-0">
 		<CardHeader class="flex flex-wrap items-center justify-between gap-3 px-5 pt-5 pb-0">
 			<CardTitle class="flex items-center gap-2.5 text-[14px] font-semibold">
 				<span
-					class="grid size-8 place-items-center rounded-lg border border-line bg-card2 text-muted-foreground"
+					class="grid size-8 place-items-center rounded-full border border-brand/20 bg-brand/10 text-brand"
 				>
 					<Users class="size-4" strokeWidth={1.7} />
 				</span>
@@ -121,7 +121,7 @@
 						type="search"
 						placeholder="Rechercher par nom…"
 						bind:value={search}
-						class="h-8 w-56 border-line bg-base pl-8"
+						class="h-9 w-56 border-input bg-card pl-8"
 					/>
 				</div>
 				<Badge variant="secondary" class="rounded-full px-2">
@@ -138,7 +138,7 @@
 					</p>
 				</div>
 			{:else}
-				<div class="overflow-x-auto rounded-lg border border-line">
+				<div class="overflow-x-auto rounded-2xl border border-line">
 					<Table class="min-w-[680px]">
 						<TableHeader>
 							<TableRow class="border-line bg-transparent hover:bg-transparent">
@@ -191,11 +191,7 @@
 									onclick={() => openFiche(client)}
 								>
 									<TableCell class="px-4 py-3">
-										<Badge
-											class="rounded-sm bg-emerald-500/15 px-2 py-0.5 text-[11.5px] font-medium text-emerald-400"
-										>
-											Client
-										</Badge>
+										<Badge class="bg-brand/15 text-brand">Client</Badge>
 									</TableCell>
 									<TableCell class="px-4 py-3">
 										{#if client.contact.followUp}
@@ -237,8 +233,12 @@
 									<TableCell class="px-4 py-3 font-mono text-[13.5px] text-muted-foreground">
 										{formatPhone(client.contact.phone) || '—'}
 									</TableCell>
-									<TableCell class="max-w-[260px] px-4 py-3 text-[13.5px] text-muted-foreground">
-										<span class="line-clamp-2">{produitsOf(client) || '—'}</span>
+									<TableCell
+										class="w-[200px] max-w-[200px] px-4 py-3 text-[13.5px] text-muted-foreground"
+									>
+										<span class="block truncate" title={produitsOf(client)}
+											>{produitsOf(client) || '—'}</span
+										>
 									</TableCell>
 									<TableCell class="px-4 py-3 text-[13.5px] font-semibold text-foreground">
 										{fmt(client.totalTTC)} €

@@ -67,6 +67,11 @@
 	const isLoading = $derived(progression.isLoading);
 	const toggle = useMutation(api.progression.toggle);
 
+	// Nombre de parcours terminés, affiché à côté du titre.
+	const treesDone = $derived(
+		TREES.filter((t) => (validatedByTree[t.key]?.length ?? 0) >= t.steps.length).length
+	);
+
 	let toggleError = $state('');
 	async function handleToggle(step: string) {
 		if (!canEdit || !selectedId) return;
@@ -79,31 +84,36 @@
 	}
 </script>
 
-<div class="mx-auto max-w-5xl space-y-5">
+<div class="mx-auto max-w-6xl space-y-4">
 	<Card class="gap-0 rounded-2xl border-line py-0 shadow-none">
 		<CardHeader class="flex flex-wrap items-center justify-between gap-3 px-5 pt-5 pb-0">
-			<CardTitle class="flex items-center gap-2.5 text-[14px] font-semibold">
+			<CardTitle class="flex items-center gap-2.5 font-display text-[16px] font-semibold">
 				<span
-					class="grid size-8 place-items-center rounded-lg border border-line bg-card2 text-muted-foreground"
+					class="grid size-8 place-items-center rounded-full border border-brand/20 bg-brand/10 text-brand"
 				>
 					<Sprout class="size-4" strokeWidth={1.7} />
 				</span>
 				{isManager ? 'Arbres de progression' : 'Mon arbre de progression'}
+				<span
+					class="rounded-full bg-glass-3 px-2 py-0.5 text-[11px] font-semibold text-ink-soft tabular-nums"
+				>
+					{treesDone}/{TREES.length}
+				</span>
 			</CardTitle>
 
 			{#if isManager && (people.data?.length ?? 0) > 1}
 				<div
-					class="flex max-w-full flex-wrap items-center justify-end gap-1 rounded-xl border border-line bg-card2/60 p-1"
+					class="flex max-w-full items-center gap-0.5 overflow-x-auto rounded-full border border-line bg-card2 p-1"
 				>
-					{#each people.data ?? [] as p}
+					{#each people.data ?? [] as p (p._id)}
 						<button
 							type="button"
 							onclick={() => (selectedId = p._id)}
 							class={[
-								'flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium whitespace-nowrap transition-all duration-150',
+								'flex shrink-0 items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] whitespace-nowrap transition-colors',
 								selectedId === p._id
-									? 'bg-white text-black shadow-md shadow-black/10 light:bg-foreground light:text-background'
-									: 'text-muted-foreground hover:bg-primary/10 hover:text-violet-200 light:hover:text-violet-600'
+									? 'bg-foreground font-semibold text-background'
+									: 'font-medium text-ink-soft hover:bg-glass-2 hover:text-foreground'
 							].join(' ')}
 						>
 							<Avatar
@@ -124,14 +134,11 @@
 			{/if}
 		</CardHeader>
 
-		<CardContent class="flex flex-col items-center px-5 pt-2 pb-5">
-			<!-- Sélecteur d'arbre : intégration puis tram de prospection.
-			     Chaque catégorie affiche son avancement, et une coche verte dès
-			     que toutes ses étapes sont validées. -->
-			<div
-				class="mb-5 flex max-w-full flex-wrap items-center justify-center gap-1 rounded-xl border border-line bg-card2/60 p-1"
-			>
-				{#each TREES as t}
+		<CardContent class="px-5 pt-4 pb-5">
+			<!-- Sélecteur d'arbre : une seule rangée qui défile, onglet actif en
+			     pilule noire, parcours terminé souligné d'un accent bleu. -->
+			<div class="mb-5 flex flex-wrap items-center gap-1.5">
+				{#each TREES as t (t.key)}
 					{@const done = validatedByTree[t.key]?.length ?? 0}
 					{@const complete = done >= t.steps.length}
 					{@const active = treeKey === t.key}
@@ -139,145 +146,146 @@
 						type="button"
 						onclick={() => (treeKey = t.key)}
 						class={[
-							'flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium whitespace-nowrap transition-all duration-150',
-							treeKey === t.key
-								? 'bg-emerald-500 text-black shadow-md shadow-emerald-500/25'
+							'flex items-center justify-center gap-2 rounded-full px-3.5 py-2 text-[12.5px] whitespace-nowrap transition-colors',
+							active
+								? 'bg-foreground font-semibold text-background shadow-[var(--ombre)]'
 								: complete
-									? 'border border-emerald-500/50 bg-emerald-500/15 text-emerald-300 light:text-emerald-600'
-									: 'text-muted-foreground hover:bg-emerald-500/10 hover:text-emerald-200 light:hover:text-emerald-600'
+									? 'border border-brand/40 bg-brand/5 font-medium text-foreground hover:border-brand'
+									: 'border border-transparent font-medium text-ink-soft hover:bg-glass-2 hover:text-foreground'
 						].join(' ')}
 					>
 						<span class="text-[13px] leading-none">{t.emoji}</span>
 						{t.label}
 						<span
 							class={[
-								'rounded-full px-1.5 py-0.5 text-[10px] font-semibold',
-								active
-									? 'bg-black/15 text-black'
-									: complete
-										? 'bg-emerald-500/25 text-emerald-300 light:text-emerald-600'
-										: 'bg-glass-3 text-muted-foreground'
+								'rounded-full px-1.5 py-0.5 text-[10.5px] font-semibold tabular-nums',
+								active ? 'bg-background/15 text-background' : 'bg-glass-3 text-ink-soft'
 							].join(' ')}
 						>
 							{done}/{t.steps.length}
 						</span>
-						{#if complete}
-							<Check class="size-3.5" strokeWidth={3.5} />
+						{#if complete && !active}
+							<Check class="size-3.5 text-brand" strokeWidth={3.5} />
 						{/if}
 					</button>
 				{/each}
 			</div>
 
-			{#if completeTree}
-				<div
-					class="mb-4 flex w-full max-w-sm items-center gap-3 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-3"
-				>
-					<span
-						class="grid size-9 shrink-0 place-items-center rounded-full bg-emerald-500 text-white shadow-md shadow-emerald-900/40"
+			<!-- Contenu de l'arbre sélectionné -->
+			<div class="flex flex-col items-center">
+				{#if completeTree}
+					<div
+						class="mb-5 flex w-full max-w-md items-center gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/[0.07] px-4 py-3"
 					>
-						<Check class="size-4.5" strokeWidth={3} />
-					</span>
-					<div class="min-w-0 leading-tight">
-						<p class="text-[13.5px] font-bold text-emerald-300">Catégorie validée 🎉</p>
-						<p class="text-[11.5px] text-emerald-300/80">
-							Toutes les étapes de « {currentTree.label} » sont complètes.
-						</p>
-					</div>
-				</div>
-			{/if}
-
-			{#if isLoading}
-				<div class="space-y-3 py-10">
-					<div class="skeleton h-3 w-56 rounded-full"></div>
-					<div class="skeleton h-64 w-72 rounded-2xl"></div>
-				</div>
-			{:else}
-				{#if toggleError}
-					<p
-						class="mb-4 rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-[12px] text-rose-400"
-					>
-						{toggleError}
-					</p>
-				{/if}
-				{#if isGridTree}
-					{@const done = validatedByTree[treeKey]?.length ?? 0}
-					<div class="w-full max-w-2xl">
-						<div class="flex items-center justify-between text-[12px]">
-							<span class="font-semibold text-foreground">Progression</span>
-							<span class="font-medium text-muted-foreground">
-								{done}/{currentTree.steps.length} élément{done > 1 ? 's' : ''} validé{done > 1 ? 's' : ''}
-							</span>
-						</div>
-						<div class="mt-2 h-2 overflow-hidden rounded-full bg-card2">
-							<div
-								class="h-full rounded-full bg-linear-to-r from-emerald-400 to-emerald-600 transition-all duration-500"
-								style={`width:${(done / currentTree.steps.length) * 100}%`}
-							></div>
-						</div>
-						{#if canEdit}
-							<p class="mt-2 text-[11px] text-muted-foreground">
-								Clique sur un rond pour valider la formation — reclique pour la retirer.
-							</p>
-						{/if}
-					</div>
-
-					<!-- Un rond par élément : familles du catalogue (même liste que le
-					     select « Projet » du nouveau contact) ou modules de vente. -->
-					<div class="grid w-full max-w-2xl grid-cols-1 gap-2 sm:grid-cols-2">
-						{#each currentTree.steps as step}
-							{@const active = (validatedByTree[treeKey] ?? []).includes(step.key)}
-							<button
-								type="button"
-								disabled={!canEdit}
-								onclick={() => handleToggle(step.key)}
-								title={canEdit
-									? active
-										? `Retirer « ${step.label} »`
-										: `Valider « ${step.label} »`
-									: step.label}
-								class={[
-									'flex items-center gap-3 rounded-xl border px-3.5 py-2.5 text-left transition-all duration-150',
-									canEdit
-										? 'cursor-pointer hover:border-emerald-500/50 hover:bg-emerald-500/5'
-										: 'cursor-default',
-									active
-										? 'border-emerald-500/50 bg-emerald-500/10'
-										: 'border-line bg-card2/40'
-								].join(' ')}
+						<span
+							class="grid size-9 shrink-0 place-items-center rounded-full bg-emerald-600 text-white"
+						>
+							<Check class="size-4.5" strokeWidth={3} />
+						</span>
+						<div class="min-w-0 leading-tight">
+							<p
+								class="font-display text-[13.5px] font-semibold text-emerald-700 dark:text-emerald-300"
 							>
-								<span
-									class={[
-										'grid size-6 shrink-0 place-items-center rounded-full border-2 transition-all duration-150',
-										active
-											? 'border-emerald-500 bg-emerald-500 text-white shadow-md shadow-emerald-900/40'
-											: 'border-line bg-base'
-									].join(' ')}
-								>
-									{#if active}
-										<Check class="size-3.5" strokeWidth={3.5} />
-									{/if}
-								</span>
-								<span
-									class={[
-										'text-[12.5px] leading-snug font-medium',
-										active ? 'text-foreground' : 'text-muted-foreground'
-									].join(' ')}
-								>
-									<span class="mr-1.5 text-[13px]">{step.emoji}</span>
-									{step.label}
-								</span>
-							</button>
-						{/each}
+								Catégorie validée 🎉
+							</p>
+							<p class="text-[11.5px] text-emerald-700 dark:text-emerald-300/80">
+								Toutes les étapes de « {currentTree.label} » sont complètes.
+							</p>
+						</div>
+					</div>
+				{/if}
+
+				{#if isLoading}
+					<div class="space-y-3 py-10">
+						<div class="skeleton h-3 w-56 rounded-full"></div>
+						<div class="skeleton h-64 w-72 rounded-2xl"></div>
 					</div>
 				{:else}
-					<ProgressionTree
-						steps={currentTree.steps}
-						validated={validatedByTree[treeKey] ?? []}
-						{canEdit}
-						onToggle={handleToggle}
-					/>
+					{#if toggleError}
+						<p
+							class="mb-4 w-full max-w-md rounded-2xl border border-destructive/40 bg-destructive/10 px-3.5 py-2.5 text-[12px] text-destructive"
+						>
+							{toggleError}
+						</p>
+					{/if}
+					{#if isGridTree}
+						{@const done = validatedByTree[treeKey]?.length ?? 0}
+						<div class="w-full max-w-2xl">
+							<div class="flex items-baseline justify-between">
+								<span class="font-display text-[13px] font-semibold text-foreground">
+									Progression
+								</span>
+								<span class="text-[12px] font-medium text-ink-soft tabular-nums">
+									{done}/{currentTree.steps.length} élément{done > 1 ? 's' : ''} validé{done > 1
+										? 's'
+										: ''}
+								</span>
+							</div>
+							<div class="mt-2 h-1.5 overflow-hidden rounded-full bg-glass-3">
+								<div
+									class="h-full rounded-full bg-brand transition-all duration-500"
+									style={`width:${(done / currentTree.steps.length) * 100}%`}
+								></div>
+							</div>
+							{#if canEdit}
+								<p class="mt-2 text-[11px] text-ink-soft">
+									Clique sur un rond pour valider la formation — reclique pour la retirer.
+								</p>
+							{/if}
+						</div>
+
+						<!-- Un rond par élément : familles du catalogue (même liste que le
+						     select « Projet » du nouveau contact) ou modules de vente. -->
+						<div class="mt-4 grid w-full max-w-2xl grid-cols-1 gap-2 sm:grid-cols-2">
+							{#each currentTree.steps as step (step.key)}
+								{@const active = (validatedByTree[treeKey] ?? []).includes(step.key)}
+								<button
+									type="button"
+									disabled={!canEdit}
+									onclick={() => handleToggle(step.key)}
+									title={canEdit
+										? active
+											? `Retirer « ${step.label} »`
+											: `Valider « ${step.label} »`
+										: step.label}
+									class={[
+										'flex items-center gap-3 rounded-2xl border px-3.5 py-2.5 text-left transition-colors',
+										canEdit ? 'cursor-pointer hover:border-brand/50' : 'cursor-default',
+										active ? 'border-brand/50 bg-brand/5' : 'border-line bg-card'
+									].join(' ')}
+								>
+									<span
+										class={[
+											'grid size-6 shrink-0 place-items-center rounded-full border-2 transition-colors',
+											active ? 'border-brand bg-brand text-white' : 'border-line bg-card'
+										].join(' ')}
+									>
+										{#if active}
+											<Check class="size-3.5" strokeWidth={3.5} />
+										{/if}
+									</span>
+									<span
+										class={[
+											'text-[12.5px] leading-snug',
+											active ? 'font-semibold text-foreground' : 'font-medium text-ink-soft'
+										].join(' ')}
+									>
+										<span class="mr-1.5 text-[13px]">{step.emoji}</span>
+										{step.label}
+									</span>
+								</button>
+							{/each}
+						</div>
+					{:else}
+						<ProgressionTree
+							steps={currentTree.steps}
+							validated={validatedByTree[treeKey] ?? []}
+							{canEdit}
+							onToggle={handleToggle}
+						/>
+					{/if}
 				{/if}
-			{/if}
+			</div>
 		</CardContent>
 	</Card>
 </div>

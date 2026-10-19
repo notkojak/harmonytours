@@ -3,6 +3,7 @@
 	import { useQuery } from 'convex-svelte';
 	import { api } from '../../../convex/_generated/api.js';
 	import { authState } from '$lib/auth-state.svelte';
+	import { statsPeriod } from '$lib/stats-period.svelte';
 	import Avatar from '$lib/components/Avatar.svelte';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card/index.js';
@@ -36,10 +37,19 @@
 	const fmt = (n: number) =>
 		n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-	// Toutes les ventes restent affichées dans le tableau, y compris les annulées
-	// (badge rouge « Annulée ») ; le total des annulations est rappelé en dessous.
-	const affichees = $derived(ventes.data ?? []);
-	const annulations = $derived((ventes.data ?? []).filter((v) => v.statut === 'annulée'));
+	// La carte suit le mois sélectionné dans le filtre du tableau de bord : on ne
+	// garde que les ventes datées de ce mois (les autres mois restent hors carte).
+	const mois = $derived(statsPeriod.date.slice(0, 7));
+	const moisDe = (ts: number) => {
+		const d = new Date(ts);
+		return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+	};
+	// Toutes les ventes du mois restent affichées dans le tableau, y compris les
+	// annulées (badge rouge « Annulée ») ; le total des annulations est rappelé
+	// en dessous.
+	const duMois = $derived((ventes.data ?? []).filter((v) => moisDe(v.date) === mois));
+	const affichees = $derived(duMois);
+	const annulations = $derived(duMois.filter((v) => v.statut === 'annulée'));
 
 	const totalHT = $derived(affichees.reduce((sum, v) => sum + v.totalHT, 0));
 	const totalTTC = $derived(affichees.reduce((sum, v) => sum + v.totalTTC, 0));
@@ -62,10 +72,10 @@
 		return 'Valide';
 	};
 	const statutClass = (s: string | undefined | null): string => {
-		if (s === 'erreur') return 'bg-orange-500/15 text-orange-400';
-		if (s === 'annulée') return 'bg-red-500/15 text-red-400';
-		if (s === 'en attente') return 'bg-sky-500/15 text-sky-400';
-		return 'bg-emerald-500/15 text-emerald-400';
+		if (s === 'erreur') return 'bg-orange-500/15 text-orange-700 dark:text-orange-300';
+		if (s === 'annulée') return 'bg-red-500/15 text-red-700 dark:text-red-300';
+		if (s === 'en attente') return 'bg-sky-500/15 text-sky-700 dark:text-sky-300';
+		return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300';
 	};
 
 	function produitsOf(v: { produits: { produit: string }[] }): string {
@@ -212,14 +222,14 @@
 						<TableRow class="bg-red-500/[0.04] hover:bg-red-500/[0.04]">
 							<TableCell
 								colspan={5}
-								class="px-4 py-3 text-[12px] font-semibold tracking-wider text-red-400 uppercase"
+								class="px-4 py-3 text-[12px] font-semibold tracking-wider text-red-700 dark:text-red-300 uppercase"
 							>
 								Total annulations ({annulations.length})
 							</TableCell>
-							<TableCell class="px-4 py-3 text-right text-[13.5px] font-semibold text-red-400">
+							<TableCell class="px-4 py-3 text-right text-[13.5px] font-semibold text-red-700 dark:text-red-300">
 								{fmt(totalAnnulationsHT)} € HT
 							</TableCell>
-							<TableCell class="px-4 py-3 text-right text-[13.5px] font-bold text-red-400">
+							<TableCell class="px-4 py-3 text-right text-[13.5px] font-bold text-red-700 dark:text-red-300">
 								{fmt(totalAnnulationsTTC)} € TTC
 							</TableCell>
 						</TableRow>

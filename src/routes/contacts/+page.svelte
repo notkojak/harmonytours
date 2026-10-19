@@ -100,38 +100,48 @@
 	}
 
 	let search = $state('');
-	// Onglets par état du RDV : « En attente » en premier et par défaut.
-	let tab = $state<'attente' | 'deballe' | 'annule' | 'rappel' | 'traite'>('attente');
+	// Trois onglets de vie du contact : en cours de suivi, à rejouer, ou clos.
+	let tab = $state<'actif' | 'encours' | 'traite'>('actif');
 
-	type T = { statut?: string | null; followUp?: { type?: string; status?: string | null } | null };
-	const isRdv = (c: T) => c.followUp?.type === 'rdv' && c.statut !== 'traité';
-	const isInAttente = (c: T) => isRdv(c) && !c.followUp?.status;
+	type T = {
+		statut?: string | null;
+		followUp?: { type?: string; date?: string; status?: string | null } | null;
+	};
+	// Dossier clos : soit marqué « traité », soit vendu (le RDV a abouti).
+	const isTraite = (c: T) => c.statut === 'traité' || c.followUp?.status === 'vendu';
+	// Actif : un suivi (RDV ou rappel) encore ouvert, ou un contact sans suivi.
+	const isActif = (c: T) => !isTraite(c) && !c.followUp?.status;
+	// En cours : le RDV a été annulé, déballé, ou doit être replanifié.
+	const isEnCours = (c: T) =>
+		!isTraite(c) && ['annulé', 'déballé', 'à reprogrammer'].includes(c.followUp?.status ?? '');
+
 	const counts = $derived({
-		// Onglet RDV : tous les RDV non annulés (programmé, déballé, vendu).
-		attente: (contacts.data ?? []).filter((c) => isRdv(c) && c.followUp?.status !== 'annulé')
-			.length,
-		deballe: (contacts.data ?? []).filter((c) => isRdv(c) && c.followUp?.status === 'déballé')
-			.length,
-		annule: (contacts.data ?? []).filter((c) => isRdv(c) && c.followUp?.status === 'annulé').length,
-		rappel: (contacts.data ?? []).filter(
-			(c) => c.followUp?.type === 'rappel' && c.statut !== 'traité'
-		).length,
-		traite: (contacts.data ?? []).filter((c) => c.statut === 'traité').length
+		actif: (contacts.data ?? []).filter(isActif).length,
+		encours: (contacts.data ?? []).filter(isEnCours).length,
+		traite: (contacts.data ?? []).filter(isTraite).length
 	});
 
 	const filtered = $derived(
 		(contacts.data ?? [])
 			.filter((contact) => {
-				if (tab === 'attente') return isRdv(contact) && contact.followUp?.status !== 'annulé';
-				if (tab === 'deballe') return isRdv(contact) && contact.followUp?.status === 'déballé';
-				if (tab === 'annule') return isRdv(contact) && contact.followUp?.status === 'annulé';
-				if (tab === 'rappel')
-					return contact.followUp?.type === 'rappel' && contact.statut !== 'traité';
-				if (tab === 'traite') return contact.statut === 'traité';
+				if (tab === 'actif') return isActif(contact);
+				if (tab === 'encours') return isEnCours(contact);
+				if (tab === 'traite') return isTraite(contact);
 				return true;
 			})
 			.filter((contact) => contact.name.toLowerCase().includes(search.trim().toLowerCase()))
 	);
+
+	// Retard d'un suivi encore ouvert : nombre de jours dépassés, sinon null.
+	function joursDeRetard(c: T): number | null {
+		const fu = c.followUp;
+		if (!fu?.date || fu.status || isTraite(c)) return null;
+		const [y, m, d] = fu.date.split('-').map(Number);
+		const aujourdhui = new Date();
+		aujourdhui.setHours(0, 0, 0, 0);
+		const jours = Math.round((new Date(y, m - 1, d).getTime() - aujourdhui.getTime()) / 86_400_000);
+		return jours < 0 ? -jours : null;
+	}
 
 	function openContact(contact: ContactRow) {
 		selected = contact;
@@ -157,6 +167,7 @@
 		if (c.followUp?.type === 'rdv') {
 			const s = c.followUp.status;
 			if (s === 'déballé') return 'Déballé';
+			if (s === 'à reprogrammer') return 'À reprogrammer';
 			if (s === 'vendu') return 'Vendu';
 			if (s === 'annulé') return 'Annulé';
 			return 'Programmé';
@@ -169,15 +180,16 @@
 		statut?: string | null;
 		followUp?: { type?: string; status?: string | null } | null;
 	}): string {
-		if (c.statut === 'traité') return 'bg-emerald-500/15 text-emerald-400';
+		if (c.statut === 'traité') return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300';
 		if (c.followUp?.type === 'rdv') {
 			const s = c.followUp.status;
-			if (s === 'déballé') return 'bg-violet-500/15 text-violet-400';
-			if (s === 'vendu') return 'bg-emerald-500/15 text-emerald-400';
-			if (s === 'annulé') return 'bg-red-500/15 text-red-400';
-			return 'bg-blue-500/15 text-blue-400';
+			if (s === 'déballé') return 'bg-violet-500/15 text-violet-700 dark:text-violet-300';
+			if (s === 'à reprogrammer') return 'bg-orange-500/15 text-orange-700 dark:text-orange-300';
+			if (s === 'vendu') return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300';
+			if (s === 'annulé') return 'bg-red-500/15 text-red-700 dark:text-red-300';
+			return 'bg-blue-500/15 text-blue-700 dark:text-blue-300';
 		}
-		if (c.followUp?.type === 'rappel') return 'bg-amber-500/15 text-amber-400';
+		if (c.followUp?.type === 'rappel') return 'bg-amber-500/15 text-amber-700 dark:text-amber-300';
 		return 'bg-glass-2 text-muted-foreground';
 	}
 </script>
@@ -204,7 +216,7 @@
 						type="search"
 						placeholder="Rechercher par nom…"
 						bind:value={search}
-						class="h-8 w-56 border-line bg-base pl-8"
+						class="h-8 w-56 border-input bg-base pl-8"
 					/>
 				</div>
 				<Badge variant="secondary" class="rounded-full px-2">
@@ -215,45 +227,28 @@
 		<CardContent class="px-5 pt-2 pb-5">
 			<Tabs
 				value={tab}
-				onValueChange={(value) =>
-					(tab = value as 'attente' | 'deballe' | 'annule' | 'rappel' | 'traite')}
+				onValueChange={(value) => (tab = value as 'actif' | 'encours' | 'traite')}
 				class="mb-4 w-fit"
 			>
 				<TabsList class="flex-wrap">
-					<TabsTrigger value="attente" class="group">
-						RDV
+					<TabsTrigger value="actif" class="group">
+						Actif
 						<span
 							class="ml-1.5 rounded-full bg-glass-3 px-1.5 py-px text-[10px] font-semibold text-muted-foreground tabular-nums group-data-[state=active]:bg-primary-foreground/10 group-data-[state=active]:text-primary-foreground"
 						>
-							{counts.attente}
+							{counts.actif}
 						</span>
 					</TabsTrigger>
-					<TabsTrigger value="rappel" class="group">
-						Rappel
+					<TabsTrigger value="encours" class="group">
+						En cours
 						<span
 							class="ml-1.5 rounded-full bg-glass-3 px-1.5 py-px text-[10px] font-semibold text-muted-foreground tabular-nums group-data-[state=active]:bg-primary-foreground/10 group-data-[state=active]:text-primary-foreground"
 						>
-							{counts.rappel}
-						</span>
-					</TabsTrigger>
-					<TabsTrigger value="annule" class="group">
-						RDV annulé
-						<span
-							class="ml-1.5 rounded-full bg-glass-3 px-1.5 py-px text-[10px] font-semibold text-muted-foreground tabular-nums group-data-[state=active]:bg-primary-foreground/10 group-data-[state=active]:text-primary-foreground"
-						>
-							{counts.annule}
-						</span>
-					</TabsTrigger>
-					<TabsTrigger value="deballe" class="group">
-						RDV Déballé
-						<span
-							class="ml-1.5 rounded-full bg-glass-3 px-1.5 py-px text-[10px] font-semibold text-muted-foreground tabular-nums group-data-[state=active]:bg-primary-foreground/10 group-data-[state=active]:text-primary-foreground"
-						>
-							{counts.deballe}
+							{counts.encours}
 						</span>
 					</TabsTrigger>
 					<TabsTrigger value="traite" class="group">
-						Traité
+						Traités
 						<span
 							class="ml-1.5 rounded-full bg-glass-3 px-1.5 py-px text-[10px] font-semibold text-muted-foreground tabular-nums group-data-[state=active]:bg-primary-foreground/10 group-data-[state=active]:text-primary-foreground"
 						>
@@ -306,8 +301,17 @@
 					</TableHeader>
 					<TableBody>
 						{#each filtered as contact}
+							{@const retard = joursDeRetard(contact)}
 							<TableRow
-								class="cursor-pointer border-line/60 transition-colors hover:bg-glass-1"
+								class={[
+									'cursor-pointer border-line/60 transition-colors',
+									// Retard : la ligne entière passe en rouge, date et compteur de jours
+									// compris. En thème sombre le voile est un peu plus dense, sinon
+									// /5 se fond dans le fond quasi noir.
+									retard
+										? 'bg-destructive/5 hover:bg-destructive/10 dark:bg-destructive/12 dark:hover:bg-destructive/16'
+										: 'hover:bg-glass-1'
+								].join(' ')}
 								onclick={() => openContact(contact)}
 							>
 								<TableCell class="px-4 py-3">
@@ -323,12 +327,25 @@
 								<TableCell class="px-4 py-3">
 									{#if contact.followUp}
 										<span class="inline-flex items-center gap-2 whitespace-nowrap">
-											<span class="inline-block min-w-[4.5rem] text-[13.5px] text-foreground">
+											<span
+												class={[
+													'inline-block min-w-[4.5rem] text-[13.5px]',
+													retard ? 'font-semibold text-destructive' : 'text-foreground'
+												].join(' ')}
+											>
 												{formatDate(contact.followUp.date)}
 											</span>
 											{#if contact.followUp.time}
 												<span class="text-[11.5px] text-muted-foreground tabular-nums">
 													{contact.followUp.time}
+												</span>
+											{/if}
+											{#if retard}
+												<span
+													class="rounded-md bg-destructive/15 px-1.5 py-0.5 text-[10.5px] font-semibold text-destructive"
+													title="Suivi en retard"
+												>
+													{retard} j
 												</span>
 											{/if}
 										</span>
@@ -379,7 +396,7 @@
 											class={[
 												'inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11.5px] font-medium transition-colors',
 												contact.printedAt
-													? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/15 hover:text-emerald-300'
+													? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/15 hover:text-emerald-300 dark:text-emerald-300'
 													: 'border-line text-muted-foreground hover:bg-glass-1 hover:text-foreground'
 											].join(' ')}
 											title={contact.printedAt

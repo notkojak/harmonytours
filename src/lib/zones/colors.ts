@@ -1,3 +1,4 @@
+import type { Map as MapboxMap } from 'mapbox-gl';
 import { isOlderThanSixMonths } from './dates.js';
 
 // Couleur par défaut d'une nouvelle zone (bleu).
@@ -32,6 +33,37 @@ export const OUTLINE_WIDTH = 2;
 
 export const STYLE_URL = 'mapbox://styles/mapbox/dark-v11';
 export const LIGHT_STYLE_URL = 'mapbox://styles/mapbox/light-v11';
+
+// `light-v11` peint les noms de lieux en gris (49 à 71 % de clarté selon
+// l'importance du lieu) : sur un fond clair, une ville secondaire s'efface.
+// La charte dit noir, on force donc l'encre sur les couches de lieux, avec un
+// halo blanc renforcé pour rester lisible par-dessus routes, eau et zones.
+export const LIEUX_LABEL_LAYERS = [
+	'settlement-major-label',
+	'settlement-minor-label',
+	'settlement-subdivision-label',
+	'state-label',
+	'country-label'
+] as const;
+
+const LIEUX_INK = '#000000';
+
+/**
+ * Repasse en noir les noms de villes, quartiers, départements et pays.
+ * À rappeler après chaque chargement de style (le style efface les
+ * surcharges) et en thème clair uniquement : en sombre les libellés sont clairs.
+ */ export function encreLibellesLieux(m: MapboxMap): void {
+	for (const id of LIEUX_LABEL_LAYERS) {
+		if (!m.getLayer(id)) continue;
+		try {
+			// Seule la couleur change : le halo blanc du style reste, c'est lui qui
+			// tient le texte par-dessus les routes et les zones de la carte.
+			m.setPaintProperty(id, 'text-color', LIEUX_INK);
+		} catch {
+			// couche absente ou non modifiable dans ce style : on garde l'original.
+		}
+	}
+}
 
 // Couleur affichée d'une zone : sa couleur personnalisée, sauf si l'option
 // « repasser en vert après 6 mois » est activée et que la dernière

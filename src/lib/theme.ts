@@ -1,8 +1,11 @@
 export type Theme = 'dark' | 'light';
 
+// L'identité bravaux.fr est claire : c'est le thème par défaut, le sombre est opt-in.
+export const DEFAULT_THEME: Theme = 'light';
+
 export function getTheme(): Theme {
-	if (typeof document === 'undefined') return 'dark';
-	return document.documentElement.classList.contains('light') ? 'light' : 'dark';
+	if (typeof document === 'undefined') return DEFAULT_THEME;
+	return document.documentElement.classList.contains('dark') ? 'dark' : DEFAULT_THEME;
 }
 
 export function setTheme(theme: Theme) {

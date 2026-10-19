@@ -83,6 +83,16 @@
 	}
 
 	const profile = useQuery(api.users.getProfile, () => (authState.isAuthenticated ? {} : 'skip'));
+
+	// Employé licencié : déconnexion immédiate, même si son JWT est encore
+	// valable. La session est révoquée côté serveur et il revient à /connexion.
+	let expelled = false;
+	$effect(() => {
+		if (expelled || profile.data?.statut !== 'viré') return;
+		expelled = true;
+		handleSignOut();
+	});
+
 	const contacts = useQuery(api.contacts.list, () => (authState.isAuthenticated ? {} : 'skip'));
 	const contactsCount = $derived(contacts.data?.length ?? 0);
 
@@ -137,13 +147,22 @@
 								<a
 									href={item.href}
 									class={[
-										'flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-[13.5px] font-medium transition-colors',
+										'relative flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-[13.5px] transition-colors',
 										isActive(item.href)
-											? 'bg-glass-3 text-foreground'
-											: 'text-muted-foreground hover:bg-glass-2 hover:text-foreground'
+											? 'bg-glass-2 font-semibold text-foreground'
+											: 'font-medium text-muted-foreground hover:bg-glass-1 hover:text-foreground'
 									].join(' ')}
 								>
-									<ItemIcon class="size-4" strokeWidth={1.7} />
+									{#if isActive(item.href)}
+										<!-- Repère bleu de bravaux.fr sur la page courante -->
+										<span
+											class="absolute top-1/2 left-0 h-4 w-[3px] -translate-y-1/2 rounded-full bg-brand"
+										></span>
+									{/if}
+									<ItemIcon
+										class={['size-4', isActive(item.href) ? 'text-brand' : ''].join(' ')}
+										strokeWidth={1.7}
+									/>
 									<span class="min-w-0 flex-1">{item.label}</span>
 									{#if item.href === '/contacts' && contactsCount > 0}
 										<span
@@ -188,7 +207,7 @@
 		<button
 			type="button"
 			onclick={() => (contactOpen = true)}
-			class="flex w-full items-center justify-center gap-2.5 rounded-xl border border-line bg-primary px-2.5 py-2 text-[13px] font-semibold text-primary-foreground shadow-md shadow-primary/10 transition-all hover:bg-primary/90"
+			class="flex h-11 w-full items-center justify-center gap-2.5 rounded-full bg-primary px-4 text-[13px] font-bold tracking-[0.07em] text-primary-foreground uppercase shadow-[var(--ombre-forte)] transition-all hover:bg-primary/85"
 		>
 			<UserPlus class="size-4" strokeWidth={1.7} />
 			<span>Nouveau Contact</span>
@@ -227,7 +246,7 @@
 				<button
 					type="button"
 					onclick={handleSignOut}
-					class="mt-2.5 flex w-full items-center justify-center gap-2 rounded-lg border border-line bg-base px-2.5 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+					class="mt-2.5 flex w-full items-center justify-center gap-2 rounded-full border border-line bg-base px-3 py-2 text-[11.5px] font-bold tracking-[0.06em] text-muted-foreground uppercase transition-colors hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive"
 				>
 					<LogOut class="size-3.5" strokeWidth={1.7} />
 					<span>Déconnexion</span>

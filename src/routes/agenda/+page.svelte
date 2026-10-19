@@ -1,9 +1,26 @@
 <script lang="ts">
-	import { CalendarDays, ChevronLeft, ChevronRight, MapPin, Plus, Trash2 } from '@lucide/svelte';
+	import {
+		CalendarDays,
+		Check,
+		ChevronLeft,
+		ChevronRight,
+		MapPin,
+		Plus,
+		Trash2
+	} from '@lucide/svelte';
 	import { useMutation, useQuery } from 'convex-svelte';
 	import { api } from '../../convex/_generated/api.js';
 	import type { Id } from '../../convex/_generated/dataModel.js';
 	import { authState } from '$lib/auth-state.svelte';
+	import {
+		EVENT_EMOJI,
+		EVENT_STYLE,
+		EVENT_TYPE_LABEL,
+		REUNION_FIXED_SLOT,
+		rdvGhostClass,
+		rdvStatusClass,
+		rdvStatusLabel
+	} from '$lib/agenda-style';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card/index.js';
 	import { Tabs, TabsList, TabsTrigger } from '$lib/components/ui/tabs/index.js';
@@ -88,21 +105,20 @@
 			| null;
 	};
 
-	const EVENT_STYLE: Record<string, string> = {
-		réunion: 'bg-violet-500/20 text-violet-300 light:bg-violet-500/15 light:text-violet-700',
-		formation: 'bg-yellow-500/20 text-yellow-300 light:bg-yellow-500/15 light:text-yellow-700',
-		prospection: 'bg-rose-500/20 text-rose-300 light:bg-rose-500/15 light:text-rose-700',
-		gestion: 'bg-violet-500/20 text-violet-300 light:bg-violet-500/15 light:text-violet-700'
-	};
-
-	// Émoji affiché dans la puce selon le type.
-	const EVENT_EMOJI: Record<string, string> = {
-		réunion: '👨‍🏫',
-		formation: '🎓',
-		prospection: '🔎',
-		gestion: '📁'
-	};
+	// La palette des puces (types d'événement, statuts de RDV, créneaux
+	// fixes) vit dans $lib/agenda-style : elle est partagée avec l'aperçu
+	// d'agenda et le planning du tableau de bord.
 	const RDV_EMOJI = '💼';
+
+	// Légende de la barre d'outils : les couleurs portent le statut du RDV,
+	// encore faut-il pouvoir les relire.
+	const LEGENDE = [
+		{ label: 'Programmé', cls: rdvStatusClass(null) },
+		{ label: 'Déballé', cls: rdvStatusClass('déballé') },
+		{ label: 'À reprogrammer', cls: rdvStatusClass('à reprogrammer') },
+		{ label: 'Vendu', cls: rdvStatusClass('vendu') },
+		{ label: 'Annulé', cls: rdvStatusClass('annulé') }
+	];
 
 	const eventsByDate = $derived.by(() => {
 		const map = new Map<string, EventRow[]>();
@@ -480,6 +496,11 @@
 		else anchor = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 1);
 	}
 
+	// Retour à la période courante (le jour du jour, ou le mois courant).
+	function goToToday() {
+		anchor = view === 'jour' ? new Date(today) : new Date(today.getFullYear(), today.getMonth(), 1);
+	}
+
 	// --- Glisser-déposer (pointer events) : déplace la date (et l'heure en vue
 	// jour/semaine) d'un RDV ou d'un événement. On calcule nous-mêmes la cellule
 	// survolée via elementFromPoint : pas de dépendance au hit-test du drag natif.
@@ -565,7 +586,12 @@
 				commercial: contact.followUp?.commercial ?? undefined,
 				motif: contact.followUp?.motif ?? undefined,
 				status:
-					(contact.followUp?.status as 'annulé' | 'déballé' | 'vendu' | undefined) ?? undefined
+					(contact.followUp?.status as
+						| 'annulé'
+						| 'déballé'
+						| 'vendu'
+						| 'à reprogrammer'
+						| undefined) ?? undefined
 			}
 		});
 	}
@@ -612,9 +638,12 @@
 		dialogOpen = true;
 	}
 
-	const chipBase = 'overflow-hidden rounded-md text-left text-[11px] font-medium transition-colors';
+	const chipBase = 'overflow-hidden rounded-lg text-left text-[11px] font-medium transition-colors';
 	const chipWeek = `${chipBase} absolute right-1 left-1 z-10 flex flex-col items-start gap-1 px-2 py-1.5 max-md:gap-0 max-md:px-1 max-md:py-1 max-md:text-[10px]`;
-	const chipMonth = `${chipBase} flex w-full items-start gap-1.5 px-2 py-1 max-md:gap-0.5 max-md:px-1 max-md:py-0.5 max-md:text-[9.5px]`;
+	// Vue mois : heure, nom, et de quoi lire le statut. Le détail (projet,
+	// téléphone, commercial) reste dans l'infobulle et dans la fiche ouverte au
+	// clic.
+	const chipMonth = `${chipBase} flex w-full items-center gap-1.5 px-1.5 py-1 max-md:gap-1 max-md:px-1 max-md:py-0.5 max-md:text-[9.5px]`;
 	// Curseur : main (glisser-déposer) si on peut déplacer le RDV, sinon flèche
 	// normale (lecture seule).
 	const chipCursor = (rdv: ContactRow) =>
@@ -624,43 +653,7 @@
 	const eventCursor = () =>
 		canCreateEvents ? 'cursor-grab touch-none active:cursor-grabbing' : 'cursor-pointer';
 
-	// Couleurs du RDV selon son statut : bleu (en attente), violet (déballé),
-	// rouge (annulé), vert (vendu). Un RDV « Confortation » ou « Gestion
-	// dossier » encore programmé s'affiche en violet comme une réunion.
-	const rdvStatusClass = (status: string | null | undefined, motif?: string | null | undefined) =>
-		status === 'déballé'
-			? 'bg-violet-500/15 text-violet-400 hover:bg-violet-500/25 light:bg-violet-500/15 light:text-violet-700 light:hover:bg-violet-500/25'
-			: status === 'annulé'
-				? 'bg-red-500/15 text-red-400 hover:bg-red-500/25 light:bg-red-500/15 light:text-red-700 light:hover:bg-red-500/25'
-				: status === 'vendu'
-					? 'bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 light:bg-emerald-500/15 light:text-emerald-700 light:hover:bg-emerald-500/25'
-					: motif === 'confortation' || motif === 'gestion'
-						? 'bg-violet-500/15 text-violet-400 hover:bg-violet-500/25 light:bg-violet-500/15 light:text-violet-700 light:hover:bg-violet-500/25'
-						: 'bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 light:bg-blue-500/15 light:text-blue-700 light:hover:bg-blue-500/25';
-
-	const rdvGhostClass = (status: string | null | undefined, motif?: string | null | undefined) =>
-		status === 'déballé'
-			? 'border-violet-500/60 bg-violet-500/10 text-violet-400/70 light:text-violet-700/80'
-			: status === 'annulé'
-				? 'border-red-500/60 bg-red-500/10 text-red-400/70 light:text-red-700/80'
-				: status === 'vendu'
-					? 'border-emerald-500/60 bg-emerald-500/10 text-emerald-400/70 light:text-emerald-700/80'
-					: motif === 'confortation' || motif === 'gestion'
-						? 'border-violet-500/60 bg-violet-500/10 text-violet-400/70 light:text-violet-700/80'
-						: 'border-blue-500/60 bg-blue-500/10 text-blue-400/70 light:text-blue-700/80';
-
-	const rdvStatusLabel = (status: string | null | undefined, motif?: string | null | undefined) =>
-		status === 'déballé'
-			? 'Déballé'
-			: status === 'annulé'
-				? 'Annulé'
-				: status === 'vendu'
-					? 'Vendu'
-					: motif === 'confortation'
-						? 'Confortation'
-						: motif === 'gestion'
-							? 'Gestion dossier'
-							: 'En attente';
+	// Couleurs et libellés du statut du RDV : $lib/agenda-style.
 
 	// Prénoms des commerciaux liés (la valeur peut contenir plusieurs noms,
 	// séparés par « et » ou par une virgule).
@@ -749,13 +742,6 @@
 		];
 	}
 
-	const EVENT_TYPE_LABEL: Record<string, string> = {
-		réunion: 'Réunion',
-		formation: 'Formation',
-		prospection: 'Prospection',
-		gestion: 'Gestion dossier'
-	};
-
 	function fmtDate(iso: string): string {
 		return new Date(`${iso}T00:00:00`).toLocaleDateString('fr-FR', {
 			weekday: 'long',
@@ -779,13 +765,13 @@
 </script>
 
 <div class="space-y-5">
-	<Card class="gap-0 rounded-xl border-line py-0 shadow-none">
+	<Card class="gap-0 rounded-2xl border-line py-0 shadow-none">
 		<CardHeader
 			class="flex flex-wrap items-center justify-between gap-3 px-3 pt-4 pb-0 sm:px-5 sm:pt-5"
 		>
-			<CardTitle class="flex items-center gap-2.5 text-[14px] font-semibold">
+			<CardTitle class="flex items-center gap-2.5 text-[15px] font-semibold">
 				<span
-					class="grid size-8 place-items-center rounded-lg border border-line bg-card2 text-muted-foreground"
+					class="grid size-8 place-items-center rounded-lg border border-brand/25 bg-brand/10 text-brand"
 				>
 					<CalendarDays class="size-4" strokeWidth={1.7} />
 				</span>
@@ -801,26 +787,52 @@
 
 		<CardContent class="px-2 pt-3 pb-4 sm:px-5 sm:pb-5">
 			<div class="mb-3 flex flex-wrap items-center gap-2 sm:mb-4">
-				<Button variant="outline" size="icon-sm" onclick={prev} aria-label="Période précédente">
-					<ChevronLeft class="size-4" />
-				</Button>
-				<Button variant="outline" size="icon-sm" onclick={next} aria-label="Période suivante">
-					<ChevronRight class="size-4" />
-				</Button>
-				{#if view !== 'jour'}
-					<span class="text-[13px] font-medium text-foreground">{label}</span>
-				{/if}
-				{#if canCreateEvents}
+				<div class="inline-flex items-center rounded-full border border-line bg-card p-0.5">
 					<Button
-						variant="default"
-						size="sm"
-						class="ml-auto rounded-xl px-3 shadow-md shadow-primary/10"
-						onclick={() => openCreateDialog(toISO(today), '09:00')}
+						variant="ghost"
+						size="icon-sm"
+						class="rounded-full"
+						onclick={prev}
+						aria-label="Période précédente"
 					>
-						<Plus class="size-3.5" />
-						Nouvel événement
+						<ChevronLeft class="size-4" />
 					</Button>
-				{/if}
+					<Button
+						variant="ghost"
+						size="icon-sm"
+						class="rounded-full"
+						onclick={next}
+						aria-label="Période suivante"
+					>
+						<ChevronRight class="size-4" />
+					</Button>
+				</div>
+				<Button variant="outline" size="sm" class="rounded-full border-line" onclick={goToToday}>
+					Aujourd'hui
+				</Button>
+				<span class="font-display text-[15px] font-semibold text-foreground capitalize">
+					{label}
+				</span>
+				<div class="ml-auto flex items-center gap-2">
+					<div class="hidden items-center gap-1.5 lg:flex">
+						{#each LEGENDE as l (l.label)}
+							<span class={['rounded-full px-2 py-0.5 text-[10px] font-medium', l.cls].join(' ')}>
+								{l.label}
+							</span>
+						{/each}
+					</div>
+					{#if canCreateEvents}
+						<Button
+							variant="default"
+							size="sm"
+							class="rounded-full px-3.5"
+							onclick={() => openCreateDialog(toISO(today), '09:00')}
+						>
+							<Plus class="size-3.5" />
+							Nouvel événement
+						</Button>
+					{/if}
+				</div>
 			</div>
 
 			{#if view === 'jour'}
@@ -835,8 +847,8 @@
 								</p>
 								<p
 									class={[
-										'text-[13px] font-semibold',
-										sameDay(day, today) ? 'text-primary' : 'text-foreground'
+										'mx-auto grid size-6 place-items-center rounded-full text-[12px] font-semibold',
+										sameDay(day, today) ? 'bg-brand text-white' : 'text-foreground'
 									].join(' ')}
 								>
 									{day.getDate()}
@@ -875,7 +887,7 @@
 										}}
 										class={[
 											'h-[26px] border-b border-line/50 transition-colors last:border-b-0',
-											isTarget(dateISO, i) ? 'bg-blue-500/10' : 'hover:bg-glass-1',
+											isTarget(dateISO, i) ? 'bg-brand/10' : 'hover:bg-glass-1',
 											canCreateEvents ? 'cursor-pointer' : ''
 										].join(' ')}
 									></div>
@@ -1088,7 +1100,10 @@
 										</div>
 									{:else if block.kind === 'reunion'}
 										<div
-											class="absolute z-10 flex flex-col items-start gap-0.5 overflow-hidden rounded-md bg-violet-500/20 px-2 py-1 text-[11px] font-medium text-violet-300 max-md:text-[9.5px] light:bg-violet-500/15 light:text-violet-700"
+											class={[
+												'absolute z-10 flex flex-col items-start gap-0.5 overflow-hidden rounded-lg px-2 py-1 text-[11px] font-medium max-md:text-[9.5px]',
+												REUNION_FIXED_SLOT
+											].join(' ')}
 											style={blockStyle(block)}
 											title="Réunion — créneau fixe (lundi et vendredi 8h30–9h30)"
 										>
@@ -1146,8 +1161,9 @@
 									view = 'jour';
 								}}
 								class={[
-									'min-h-[92px] p-1.5 transition-colors max-md:min-h-[64px] max-md:p-1',
-									isTarget(dateISO) ? 'bg-blue-500/10' : 'hover:bg-glass-1',
+									'min-h-[104px] p-1.5 transition-colors max-md:min-h-[64px] max-md:p-1',
+									!inMonth ? 'bg-card2/40' : '',
+									isTarget(dateISO) ? 'bg-brand/10' : 'hover:bg-glass-2',
 									canCreateEvents ? 'cursor-pointer' : '',
 									i % 6 !== 0 ? 'border-l border-line/50' : '',
 									i < 30 ? 'border-b border-line/50' : ''
@@ -1157,7 +1173,7 @@
 									class={[
 										'mb-1 flex size-6 items-center justify-center rounded-full text-[12px] font-semibold',
 										sameDay(cell, today)
-											? 'bg-primary text-primary-foreground'
+											? 'bg-brand text-white'
 											: inMonth
 												? 'text-foreground'
 												: 'text-muted-foreground/40'
@@ -1182,53 +1198,33 @@
 												}}
 												class={[
 													chipMonth,
-													'flex-col',
 													rdvStatusClass(rdv.followUp?.status, rdv.followUp?.motif),
 													chipCursor(rdv)
 												].join(' ')}
-												title={`${rdv.name}${rdv.projet ? ` — ${rdv.projet}` : ''}${
+												title={[
+													`${rdv.followUp?.time ?? ''} ${rdv.name}`.trim(),
+													rdv.projet ?? '',
+													rdv.phone ? formatPhone(rdv.phone) : '',
 													rdv.followUp?.commercial && !canMoveRdv(rdv)
-														? ` · ${rdv.followUp.commercial}`
-														: ''
-												}`}
+														? rdv.followUp.commercial
+														: '',
+													rdvStatusLabel(rdv.followUp?.status, rdv.followUp?.motif)
+												]
+													.filter(Boolean)
+													.join(' · ')}
 											>
-												<div class="flex w-full items-center gap-1.5">
-													<span class="hidden font-mono text-[10px] opacity-70 sm:block">
-														{rdv.followUp?.time ?? ''}
-													</span>
+												{#if rdv.followUp?.time}
 													<span
-														class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap max-md:overflow-visible max-md:text-[9.5px] max-md:whitespace-normal"
+														class="shrink-0 font-mono text-[10px] leading-none opacity-70 max-md:hidden"
 													>
-														<span class="hidden sm:inline">{RDV_EMOJI}</span>
-														{rdv.name}
-													</span>
-													<Avatar
-														photo={photoFor(rdvCommercialLabel(rdv))}
-														label={commercialInitial(rdvCommercialLabel(rdv))}
-														title={rdv.followUp?.commercial ?? undefined}
-														class="hidden size-[16px] bg-muted text-[8px] font-semibold text-muted-foreground sm:grid"
-													/>
-												</div>
-												{#if rdv.projet}
-													<span
-														class="hidden w-full truncate text-[10px] font-normal opacity-80 sm:block"
-													>
-														{rdv.projet}
+														{rdv.followUp?.time}
 													</span>
 												{/if}
-												{#if rdv.phone}
-													<span
-														class="hidden w-full truncate font-mono text-[10px] font-normal opacity-80 sm:block"
-													>
-														{formatPhone(rdv.phone)}
-													</span>
-												{/if}
-												{#if rdvCommercialLabel(rdv)}
-													<span
-														class="hidden w-full truncate text-[10px] font-normal opacity-80 sm:block"
-													>
-														{rdvCommercialLabel(rdv)}
-													</span>
+												<span class="min-w-0 flex-1 truncate">{rdv.name}</span>
+												{#if rdv.followUp?.status === 'vendu'}
+													<Check class="size-3 shrink-0" strokeWidth={2.5} />
+												{:else if rdv.followUp?.status === 'annulé'}
+													<span class="shrink-0 text-[10px] leading-none font-semibold">✕</span>
 												{/if}
 											</button>
 										{:else if item.kind === 'evenement' && item.evenement}
@@ -1323,7 +1319,7 @@
 										{:else if item.kind === 'reunion'}
 											<div
 												data-static-chip
-												class="flex w-full items-start gap-1.5 overflow-hidden rounded-md bg-violet-500/20 px-2 py-1 text-[11px] font-medium text-violet-300 max-md:gap-0.5 max-md:px-1 max-md:py-0.5 max-md:text-[9.5px] light:bg-violet-500/15 light:text-violet-700"
+												class={[chipMonth, REUNION_FIXED_SLOT].join(' ')}
 												title="Réunion — créneau fixe (lundi et vendredi 8h30–9h30)"
 											>
 												<span class="hidden font-mono text-[10px] opacity-70 sm:block">08:30</span>

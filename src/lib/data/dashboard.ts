@@ -21,6 +21,10 @@ export const navSections = [
 		]
 	},
 	{
+		label: 'Outils',
+		items: [{ label: 'Chiffrage', icon: 'calculator', href: '/chiffrage' }]
+	},
+	{
 		label: 'Formation',
 		items: [
 			{ label: 'Progression', icon: 'sprout', href: '/progression' },
@@ -28,9 +32,6 @@ export const navSections = [
 		]
 	},
 	{
-		label: 'Outils',
-		items: [{ label: 'Chiffrage', icon: 'calculator', href: '/chiffrage' }]
-	},	{
 		label: 'Gestion',
 		items: [{ label: 'Administration', icon: 'shield', href: '/administration' }]
 	}

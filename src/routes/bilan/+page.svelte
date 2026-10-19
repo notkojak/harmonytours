@@ -10,7 +10,7 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { authState } from '$lib/auth-state.svelte';
 	import Avatar from '$lib/components/Avatar.svelte';
-	import { STYLE_URL, LIGHT_STYLE_URL } from '$lib/zones/colors.js';
+	import { STYLE_URL, LIGHT_STYLE_URL, encreLibellesLieux } from '$lib/zones/colors.js';
 	import { getTheme } from '$lib/theme';
 	import {
 		bilangmsSurPeriode,
@@ -163,20 +163,20 @@
 			label: 'Salutation',
 			value: currentGms.salutation,
 			icon: '👋',
-			badge: 'bg-sky-400/15 text-sky-400'
+			badge: 'bg-brand/12 text-brand'
 		},
 		{
 			label: 'Question posée',
 			value: currentGms.question,
 			icon: '❓',
-			badge: 'bg-emerald-400/15 text-emerald-400'
+			badge: 'bg-brand/12 text-brand'
 		},
-		{ label: 'RDV', value: currentGms.rdv, icon: '📅', badge: 'bg-sky-500/15 text-sky-400' },
+		{ label: 'RDV', value: currentGms.rdv, icon: '📅', badge: 'bg-brand/12 text-brand' },
 		{
 			label: 'Contact',
 			value: currentGms.contact,
 			icon: '🤝',
-			badge: 'bg-fuchsia-400/15 text-fuchsia-400'
+			badge: 'bg-brand/12 text-brand'
 		}
 	]);
 
@@ -264,7 +264,7 @@
 			doorStatusPin('vente'),
 			'vente_echouee',
 			doorStatusPin('vente_echouee'),
-			'rgba(148,163,184,0.85)'
+			'rgba(138,138,138,0.85)'
 		];
 	}
 
@@ -350,6 +350,9 @@
 							}
 						});
 					}
+					// Light-v11 écrit les villes en gris : en thème clair on les repasse
+					// à l'encre, à chaque chargement de style.
+					if (getTheme() === 'light') encreLibellesLieux(m);
 				} catch (err) {
 					console.error('bilan map layers setup failed', err);
 				}
@@ -429,11 +432,11 @@
 </script>
 
 <div class="space-y-5">
-	<Card class="gap-0 rounded-2xl border-line py-0 shadow-none">
+	<Card class="gap-0 rounded-2xl border-line py-0">
 		<CardHeader class="flex flex-wrap items-center justify-between gap-3 px-5 pt-5 pb-0">
 			<CardTitle class="flex items-center gap-2.5 text-[14px] font-semibold">
 				<span
-					class="grid size-8 place-items-center rounded-lg border border-line bg-card2 text-muted-foreground"
+					class="grid size-8 place-items-center rounded-full border border-brand/20 bg-brand/10 text-brand"
 				>
 					<BarChart3 class="size-4" strokeWidth={1.7} />
 				</span> Bilan
@@ -457,14 +460,14 @@
 					</Button>
 				</div>
 
-				<div class="flex items-center gap-1 rounded-lg border border-line bg-card2/60 p-0.5">
+				<div class="flex items-center gap-1 rounded-full border border-line bg-card2/60 p-0.5">
 					<button
 						type="button"
 						class={[
-							'rounded-md px-3 py-1.5 text-[12px] font-medium transition-colors',
+							'rounded-full px-3.5 py-1.5 text-[12px] font-medium transition-colors',
 							focusDay
-								? 'bg-white text-black shadow-sm dark:bg-foreground dark:text-background'
-								: 'text-muted-foreground hover:bg-primary/10'
+								? 'bg-primary text-primary-foreground shadow-sm'
+								: 'text-muted-foreground hover:bg-glass-2 hover:text-ink'
 						].join(' ')}
 						onclick={focusToday}
 					>
@@ -473,10 +476,10 @@
 					<button
 						type="button"
 						class={[
-							'rounded-md px-3 py-1.5 text-[12px] font-medium transition-colors',
+							'rounded-full px-3.5 py-1.5 text-[12px] font-medium transition-colors',
 							!focusDay
-								? 'bg-white text-black shadow-sm dark:bg-foreground dark:text-background'
-								: 'text-muted-foreground hover:bg-primary/10'
+								? 'bg-primary text-primary-foreground shadow-sm'
+								: 'text-muted-foreground hover:bg-glass-2 hover:text-ink'
 						].join(' ')}
 						onclick={() => (focusDay = null)}
 					>
@@ -492,16 +495,16 @@
 						Équipe :
 					</span>
 					<div
-						class="flex flex-wrap items-center gap-1 rounded-xl border border-line bg-card2/60 p-1"
+						class="flex flex-wrap items-center gap-1 rounded-full border border-line bg-card2/60 p-1"
 					>
 						<button
 							type="button"
 							onclick={() => (memberId = null)}
 							class={[
-								'flex items-center justify-center gap-1 rounded-lg px-3 py-1.5 text-[12px] font-medium whitespace-nowrap transition-all duration-150',
+								'flex items-center justify-center gap-1 rounded-full px-3.5 py-1.5 text-[12px] font-medium whitespace-nowrap transition-all duration-150',
 								memberId === null
-									? 'bg-white text-black shadow-md shadow-black/10 light:bg-foreground light:text-background'
-									: 'text-muted-foreground hover:bg-primary/10 hover:text-violet-200 light:hover:text-violet-600'
+									? 'bg-primary text-primary-foreground shadow-sm'
+									: 'text-muted-foreground hover:bg-glass-2 hover:text-ink'
 							].join(' ')}
 						>
 							Tous
@@ -511,10 +514,10 @@
 								type="button"
 								onclick={() => (memberId = p._id)}
 								class={[
-									'flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium whitespace-nowrap transition-all duration-150',
+									'flex items-center justify-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-medium whitespace-nowrap transition-all duration-150',
 									memberId === p._id
-										? 'bg-white text-black shadow-md shadow-black/10 light:bg-foreground light:text-background'
-										: 'text-muted-foreground hover:bg-primary/10 hover:text-violet-200 light:hover:text-violet-600'
+										? 'bg-primary text-primary-foreground shadow-sm'
+										: 'text-muted-foreground hover:bg-glass-2 hover:text-ink'
 								].join(' ')}
 							>
 								<Avatar
@@ -547,11 +550,11 @@
 				</p>
 				<div class="mb-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-5">
 					{#each pipelineRows as row}
-						<div class="rounded-xl border border-line bg-card2 px-2.5 py-2">
+						<div class="rounded-2xl border border-line bg-card2 px-2.5 py-2">
 							<div class="flex items-center gap-2">
 								<span
 									class={[
-										'grid size-6 shrink-0 place-items-center rounded-md text-[10.5px] font-bold',
+										'grid size-6 shrink-0 place-items-center rounded-full text-[10.5px] font-bold',
 										row.key === 'portesSonnees'
 											? 'bg-muted text-foreground'
 											: doorStatusBadge(row.status ?? row.key)
@@ -577,11 +580,11 @@
 					</p>
 					<div class="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
 						{#each gmsRows as row}
-							<div class="rounded-xl border border-line bg-card2 px-2.5 py-2">
+							<div class="rounded-2xl border border-line bg-card2 px-2.5 py-2">
 								<div class="flex items-center gap-2">
 									<span
 										class={[
-											'grid size-6 shrink-0 place-items-center rounded-md text-[11px]',
+											'grid size-6 shrink-0 place-items-center rounded-full text-[11px]',
 											row.badge
 										].join(' ')}
 									>
@@ -608,7 +611,7 @@
 						class={[
 							'rounded-full px-2.5 py-1 text-[11.5px] font-medium transition-colors',
 							filterStatus === null
-								? 'bg-white text-black dark:bg-foreground dark:text-background'
+								? 'bg-primary text-primary-foreground'
 								: 'bg-card2 text-muted-foreground hover:bg-glass-2'
 						].join(' ')}
 					>
@@ -622,7 +625,7 @@
 								class={[
 									'flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11.5px] font-medium transition-colors',
 									filterStatus === s.status
-										? 'bg-white text-black dark:bg-foreground dark:text-background'
+										? 'bg-primary text-primary-foreground'
 										: 'bg-card2 text-muted-foreground hover:bg-glass-2'
 								].join(' ')}
 							>
@@ -634,13 +637,13 @@
 				</div>
 
 				<!-- Carte -->
-				<div class="relative h-[30rem] overflow-hidden rounded-lg border border-line bg-card2">
+				<div class="relative h-[30rem] overflow-hidden rounded-2xl border border-line bg-card2">
 					{#if noToken}
 						<div class="absolute inset-0 grid place-items-center p-4 text-center">
 							<p class="text-[12px] leading-relaxed text-muted-foreground">
 								Token Mapbox manquant — ajoute
-								<code class="rounded bg-muted px-1 py-0.5 text-amber-400">PUBLIC_MAPBOX_TOKEN</code>
-								dans <code class="rounded bg-muted px-1 py-0.5 text-amber-400">.env</code>.
+								<code class="rounded bg-muted px-1 py-0.5 text-ink">PUBLIC_MAPBOX_TOKEN</code>
+								dans <code class="rounded bg-muted px-1 py-0.5 text-ink">.env</code>.
 							</p>
 						</div>
 					{/if}

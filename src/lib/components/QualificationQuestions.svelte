@@ -156,13 +156,13 @@
 					<Input
 						bind:value={answers.achatDetail}
 						placeholder="Quel type de rénovation ?"
-						class="mt-1.5 h-8 w-64 border-line bg-base text-[12px]"
+						class="mt-1.5 h-8 w-64 border-input bg-base text-[12px]"
 					/>
 				{:else if answers.achat === 'Autre…'}
 					<Input
 						bind:value={answers.achatDetail}
 						placeholder="Précisez…"
-						class="mt-1.5 h-8 w-56 border-line bg-base text-[12px]"
+						class="mt-1.5 h-8 w-56 border-input bg-base text-[12px]"
 					/>
 				{/if}
 			</div>
@@ -173,12 +173,12 @@
 					<Input
 						bind:value={answers.metierMme}
 						placeholder="Métier madame"
-						class="h-8 border-line bg-base text-[12px]"
+						class="h-8 border-input bg-base text-[12px]"
 					/>
 					<Input
 						bind:value={answers.metierM}
 						placeholder="Métier monsieur"
-						class="h-8 border-line bg-base text-[12px]"
+						class="h-8 border-input bg-base text-[12px]"
 					/>
 				</div>
 			</div>
@@ -201,7 +201,7 @@
 							bind:value={answers.chauffageCout}
 							inputmode="numeric"
 							placeholder="Coût mensuel"
-							class="h-8 w-40 border-line bg-base text-[12px]"
+							class="h-8 w-40 border-input bg-base text-[12px]"
 						/>
 						<span class="text-[11.5px] text-muted-foreground">€ / mois</span>
 					</div>

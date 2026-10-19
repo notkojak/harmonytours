@@ -92,7 +92,14 @@ const contacts = defineTable({
 			time: v.optional(v.string()),
 			// Commercial rattaché au RDV (nom affiché), autre que le créateur du contact.
 			commercial: v.optional(v.string()), // Statut du RDV : non renseigné = en attente (bleu).
-			status: v.optional(v.union(v.literal('annulé'), v.literal('déballé'), v.literal('vendu'))),
+			status: v.optional(
+				v.union(
+					v.literal('annulé'),
+					v.literal('déballé'),
+					v.literal('vendu'),
+					v.literal('à reprogrammer')
+				)
+			),
 			// Type de RDV placé : confortation (validation client) ou gestion dossier.
 			motif: v.optional(v.union(v.literal('confortation'), v.literal('gestion'))),
 			// Raison de non-vente renseignée quand le RDV est passé en « déballé ».
@@ -111,6 +118,10 @@ const contacts = defineTable({
 	// Horodatage (ms) de la dernière impression de la fiche contact : permet de
 	// savoir en un coup d'œil quelles fiches ont déjà été imprimées.
 	printedAt: v.optional(v.number()),
+	// Marquage « traité » : date du traitement et raison, conservées pour
+	// l'historique de la fiche (retirer le marquage ne les efface pas).
+	treatedAt: v.optional(v.number()),
+	treatedReason: v.optional(v.string()),
 	// Date du contact, corrigeable depuis la fiche web. Quand elle est renseignée,
 	// elle remplace la date de création (`_creationTime`, non modifiable) partout
 	// où le contact est daté : fiche contact, annonce de RDV, impression.
@@ -146,9 +157,21 @@ const ventes = defineTable({
 			produit: v.string(),
 			// Conservé optionnel pour les ventes existantes ; plus utilisé dans l'UI.
 			famille: v.optional(v.string()),
-			tva: v.union(v.literal(5.5), v.literal(10), v.literal(20)),
+			// Taux effectif de la ligne : 5,5 / 10 / 20 pour les ventes historiques,
+			// taux moyen (TVA / HT) pour une vente saisie en montants de TVA.
+			tva: v.number(),
 			montantHT: v.number()
 		})
+	),
+	// Détail des montants de TVA saisis, un par taux (5,5 / 10 / 20) : sert à
+	// réafficher et à modifier une vente sans perdre la répartition.
+	tvaDetail: v.optional(
+		v.array(
+			v.object({
+				taux: v.number(),
+				montant: v.number()
+			})
+		)
 	),
 	totalHT: v.number(),
 	totalTVA: v.number(),

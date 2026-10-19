@@ -87,7 +87,7 @@
 								<div class="mt-1.5 flex flex-wrap gap-1">
 									{#each vente.erreur?.manquants ?? [] as manquant}
 										<span
-											class="rounded-full bg-orange-500/15 px-2 py-0.5 text-[10px] font-medium text-orange-400"
+											class="rounded-full bg-orange-500/15 px-2 py-0.5 text-[10px] font-medium text-orange-700 dark:text-orange-300"
 										>
 											{manquant}
 										</span>

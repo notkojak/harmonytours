@@ -440,6 +440,10 @@ export const upsertBeastdoorChange = mutation({
 		// Rôle et agence de l'utilisateur connecté (pour les portes partagées :
 		// l'agence est estampillée à l'écriture, le rôle gouverne les règles).
 		const user = await db.get(userId);
+		// Un employé licencié ne peut plus rien pousser, même avec un JWT valide.
+		if ((user as { statut?: string } | null)?.statut === 'viré') {
+			throw new Error('Compte désactivé.');
+		}
 		const isShared = SHARED_ENTITY_TYPES.has(entityType);
 		const isManager = await isDoorManager(user?.role);
 		const agencyId = user?.agencyId as (Id<'agences'> | undefined) | undefined;
@@ -597,6 +601,8 @@ export const listBeastdoorChanges = query({
 		// Accès DB par nom de table dynamique (string) : on élargit le typage.
 		const db = ctx.db as any;
 		const user = await db.get(userId);
+		// Un employé licencié ne reçoit plus les données de son agence.
+		if ((user as { statut?: string } | null)?.statut === 'viré') return {};
 		const agencyId = user?.agencyId as (Id<'agences'> | undefined) | undefined;
 		const result: Record<string, unknown[]> = {};
 		for (const [entityType, table] of Object.entries(ENTITY_TABLE)) {
@@ -693,15 +699,26 @@ async function getIdentity(ctx: ActionCtx) {
 	}
 }
 
+// Refuse un compte licencié même si son JWT est encore valide : l'app
+// BeastDoor reçoit un 401 et coupe la session au lieu de synchroniser.
+async function refuserCompteVire(ctx: ActionCtx): Promise<Response | null> {
+	const identity = await getIdentity(ctx);
+	if (!identity) return json({ ok: false, error: 'Session expirée. Reconnecte-toi.' }, 401);
+	const userId = identity.subject.split('|')[0] as Id<'users'>;
+	const user = await ctx.runQuery(api.users.getById, { userId });
+	if (!user || user.statut === 'viré') {
+		return json({ ok: false, error: 'Compte désactivé. Contactez votre superviseur.' }, 401);
+	}
+	return null;
+}
+
 export const beastdoorSync = httpAction(async (ctx, request) => {
 	if (request.method === 'OPTIONS') return json({ ok: true }, 204);
 	if (request.method !== 'POST') {
 		return json({ ok: false, error: 'Méthode non autorisée.' }, 405);
 	}
-	const identity = await getIdentity(ctx);
-	if (!identity) {
-		return json({ ok: false, error: 'Session expirée. Reconnecte-toi.' }, 401);
-	}
+	const blocked = await refuserCompteVire(ctx);
+	if (blocked) return blocked;
 	let body: Record<string, unknown> | null = null;
 	try {
 		const parsed = await request.json();
@@ -766,10 +783,8 @@ export const upsertPorteDirect = httpAction(async (ctx, request) => {
 	if (request.method !== 'POST') {
 		return json({ ok: false, error: 'Méthode non autorisée.' }, 405);
 	}
-	const identity = await getIdentity(ctx);
-	if (!identity) {
-		return json({ ok: false, error: 'Session expirée. Reconnecte-toi.' }, 401);
-	}
+	const blocked = await refuserCompteVire(ctx);
+	if (blocked) return blocked;
 	let body: Record<string, unknown> | null = null;
 	try {
 		const parsed = await request.json();

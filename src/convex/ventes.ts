@@ -6,9 +6,22 @@ import type { Doc, Id } from './_generated/dataModel';
 
 const produitValidator = v.object({
 	produit: v.string(),
-	tva: v.union(v.literal(5.5), v.literal(10), v.literal(20)),
+	// Taux effectif de la ligne (5,5 / 10 / 20, ou taux moyen pour une vente
+	// saisie en montants de TVA).
+	tva: v.number(),
 	montantHT: v.number()
 });
+
+// Répartition de la TVA saisie, un montant par taux : conservée pour l'affichage
+// et la modification, les totaux restant calculés depuis `produits`.
+const tvaDetailValidator = v.optional(
+	v.array(
+		v.object({
+			taux: v.number(),
+			montant: v.number()
+		})
+	)
+);
 
 // Nom affiché d'un utilisateur (même format que celui stocké dans vendeurName).
 function userName(u: { firstName?: string; lastName?: string; email?: string }): string {
@@ -51,6 +64,7 @@ export const addVente = mutation({
 	args: {
 		contactId: v.id('contacts'),
 		produits: v.array(produitValidator),
+		tvaDetail: tvaDetailValidator,
 		vendeurId: v.optional(v.id('users')),
 		// Date de la vente (ms) : par défaut maintenant, modifiable pour saisir
 		// une vente plus ancienne.
@@ -91,6 +105,7 @@ export const addVente = mutation({
 			statut: 'en attente',
 			date: args.date ?? Date.now(),
 			produits: args.produits,
+			...(args.tvaDetail ? { tvaDetail: args.tvaDetail } : {}),
 			totalHT,
 			totalTVA,
 			totalTTC,
@@ -301,6 +316,7 @@ export const updateVente = mutation({
 	args: {
 		venteId: v.id('ventes'),
 		produits: v.array(produitValidator),
+		tvaDetail: tvaDetailValidator,
 		vendeurId: v.optional(v.id('users')),
 		// Date de la vente (ms) : corrigeable (la vente se déplace alors dans les
 		// statistiques du mois correspondant).
@@ -330,13 +346,20 @@ export const updateVente = mutation({
 
 		let patch: {
 			produits: typeof args.produits;
+			tvaDetail?: { taux: number; montant: number }[];
 			totalHT: number;
 			totalTVA: number;
 			totalTTC: number;
 			vendeurId?: Id<'users'>;
 			vendeurName?: string;
 			date?: number;
-		} = { produits: args.produits, totalHT, totalTVA, totalTTC };
+		} = {
+			produits: args.produits,
+			...(args.tvaDetail !== undefined ? { tvaDetail: args.tvaDetail } : {}),
+			totalHT,
+			totalTVA,
+			totalTTC
+		};
 
 		if (args.date !== undefined) patch.date = args.date;
 

@@ -9,7 +9,13 @@
 	import { authState } from '$lib/auth-state.svelte';
 	import { isInProspecting } from '$lib/zones/dates.js';
 	import { getZoneFillExpression } from '$lib/zones/drawStyles.js';
-	import { STYLE_URL, LIGHT_STYLE_URL, FILL_OPACITY, zoneDisplayColor } from '$lib/zones/colors.js';
+	import {
+		STYLE_URL,
+		LIGHT_STYLE_URL,
+		FILL_OPACITY,
+		zoneDisplayColor,
+		encreLibellesLieux
+	} from '$lib/zones/colors.js';
 	import { getTheme } from '$lib/theme';
 
 	import 'mapbox-gl/dist/mapbox-gl.css';
@@ -150,6 +156,9 @@
 							}
 						});
 					}
+					// Light-v11 écrit les villes en gris : en thème clair on les repasse
+					// à l'encre, à chaque chargement de style.
+					if (getTheme() === 'light') encreLibellesLieux(m);
 				} catch (err) {
 					console.error('zone preview layers setup failed', err);
 				}
@@ -233,8 +242,8 @@
 				<div class="absolute inset-0 grid place-items-center p-4 text-center">
 					<p class="text-[12px] leading-relaxed text-muted-foreground">
 						Token Mapbox manquant — ajoute
-						<code class="rounded bg-muted px-1 py-0.5 text-amber-400">PUBLIC_MAPBOX_TOKEN</code>
-						dans <code class="rounded bg-muted px-1 py-0.5 text-amber-400">.env</code>.
+						<code class="rounded bg-muted px-1 py-0.5 text-amber-700 dark:text-amber-300">PUBLIC_MAPBOX_TOKEN</code>
+						dans <code class="rounded bg-muted px-1 py-0.5 text-amber-700 dark:text-amber-300">.env</code>.
 					</p>
 				</div>
 			{/if}
