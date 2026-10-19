@@ -23,6 +23,9 @@ const tvaDetailValidator = v.optional(
 	)
 );
 
+// Mode de paiement d'une vente : comptant, ou financement (dossier FI).
+const paiementValidator = v.optional(v.union(v.literal('comptant'), v.literal('financement')));
+
 // Nom affiché d'un utilisateur (même format que celui stocké dans vendeurName).
 function userName(u: { firstName?: string; lastName?: string; email?: string }): string {
 	return `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || u.email || 'Commercial';
@@ -68,7 +71,12 @@ export const addVente = mutation({
 		vendeurId: v.optional(v.id('users')),
 		// Date de la vente (ms) : par défaut maintenant, modifiable pour saisir
 		// une vente plus ancienne.
-		date: v.optional(v.number())
+		date: v.optional(v.number()),
+		// Suivi commercial : vente confortée, mode de paiement et acceptation du
+		// financement (FI) quand le paiement est un financement.
+		confortee: v.optional(v.boolean()),
+		paiement: paiementValidator,
+		fiAccepte: v.optional(v.boolean())
 	},
 	handler: async (ctx, args) => {
 		const user = await getCurrentUser(ctx);
@@ -109,6 +117,12 @@ export const addVente = mutation({
 			totalHT,
 			totalTVA,
 			totalTTC,
+			...(args.confortee !== undefined ? { confortee: args.confortee } : {}),
+			...(args.paiement ? { paiement: args.paiement } : {}),
+			// Le FI n'a de sens que pour un financement : au comptant, rien à stocker.
+			...(args.paiement === 'financement' && args.fiAccepte !== undefined
+				? { fiAccepte: args.fiAccepte }
+				: {}),
 			agencyId: user.agencyId
 		});
 
@@ -320,7 +334,10 @@ export const updateVente = mutation({
 		vendeurId: v.optional(v.id('users')),
 		// Date de la vente (ms) : corrigeable (la vente se déplace alors dans les
 		// statistiques du mois correspondant).
-		date: v.optional(v.number())
+		date: v.optional(v.number()),
+		confortee: v.optional(v.boolean()),
+		paiement: paiementValidator,
+		fiAccepte: v.optional(v.boolean())
 	},
 	handler: async (ctx, args) => {
 		const user = await getCurrentUser(ctx);
@@ -353,6 +370,9 @@ export const updateVente = mutation({
 			vendeurId?: Id<'users'>;
 			vendeurName?: string;
 			date?: number;
+			confortee?: boolean;
+			paiement?: 'comptant' | 'financement';
+			fiAccepte?: boolean | undefined;
 		} = {
 			produits: args.produits,
 			...(args.tvaDetail !== undefined ? { tvaDetail: args.tvaDetail } : {}),
@@ -362,6 +382,12 @@ export const updateVente = mutation({
 		};
 
 		if (args.date !== undefined) patch.date = args.date;
+		if (args.confortee !== undefined) patch.confortee = args.confortee;
+		if (args.paiement !== undefined) {
+			patch.paiement = args.paiement;
+			// Repasser au comptant efface le suivi de financement.
+			patch.fiAccepte = args.paiement === 'financement' ? !!args.fiAccepte : undefined;
+		}
 
 		if (args.vendeurId && args.vendeurId !== vente.vendeurId) {
 			const vendeur = await ctx.db.get(args.vendeurId);

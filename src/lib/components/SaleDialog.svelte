@@ -41,6 +41,10 @@
 			vendeurId?: string | null;
 			// Date de la vente (ms) affichée dans le champ date.
 			date?: number | null;
+			// Suivi commercial de la vente.
+			confortee?: boolean | null;
+			paiement?: 'comptant' | 'financement' | null;
+			fiAccepte?: boolean | null;
 		} | null;
 	} = $props();
 
@@ -51,6 +55,11 @@
 	const vendeurs = useQuery(api.employes.listVendeurs, () => (open ? {} : 'skip'));
 	let vendeurId = $state<string | undefined>();
 	let venteDate = $state(msToDateInput(Date.now()));
+	// Suivi commercial : vente confortée, paiement comptant / financement, et
+	// acceptation du dossier de financement (FI) le cas échéant.
+	let confortee = $state(false);
+	let paiement = $state<'comptant' | 'financement'>('comptant');
+	let fiAccepte = $state(false);
 
 	const isEdit = $derived(!!venteId);
 	const titre = $derived(isEdit ? 'Modifier la vente' : 'Ajouter une vente');
@@ -109,12 +118,18 @@
 				};
 				vendeurId = initialVente.vendeurId ?? undefined;
 				venteDate = msToDateInput(initialVente.date ?? Date.now());
+				confortee = !!initialVente.confortee;
+				paiement = initialVente.paiement ?? 'comptant';
+				fiAccepte = !!initialVente.fiAccepte;
 			} else {
 				famille = '';
 				prixHT = '';
 				tvaMontants = vide();
 				vendeurId = undefined;
 				venteDate = msToDateInput(Date.now());
+				confortee = false;
+				paiement = 'comptant';
+				fiAccepte = false;
 			}
 		});
 	});
@@ -163,6 +178,9 @@
 					venteId: venteId as Id<'ventes'>,
 					produits,
 					tvaDetail,
+					confortee,
+					paiement,
+					...(paiement === 'financement' ? { fiAccepte } : {}),
 					...(vendeurId ? { vendeurId: vendeurId as Id<'users'> } : {}),
 					...(date ? { date } : {})
 				});
@@ -171,6 +189,9 @@
 					contactId: contactId as Id<'contacts'>,
 					produits,
 					tvaDetail,
+					confortee,
+					paiement,
+					...(paiement === 'financement' ? { fiAccepte } : {}),
 					...(vendeurId ? { vendeurId: vendeurId as Id<'users'> } : {}),
 					...(date ? { date } : {})
 				});
@@ -188,7 +209,9 @@
 </script>
 
 <Dialog bind:open>
-	<DialogContent class="rounded-2xl border-line bg-card sm:max-w-md">
+	<DialogContent
+		class="max-h-[calc(100vh-2rem)] overflow-y-auto rounded-2xl border-line bg-card sm:max-w-md"
+	>
 		<DialogHeader>
 			<DialogTitle class="flex items-center gap-2 text-[14px] font-semibold">
 				<span
@@ -251,6 +274,89 @@
 						</div>
 					{/each}
 				</div>
+			</div>
+
+			<!-- Paiement : comptant, ou financement avec suivi du dossier FI. -->
+			<div class="space-y-1">
+				<Label class="text-[11px] text-muted-foreground">Paiement</Label>
+				<div class="grid grid-cols-2 gap-1 rounded-lg border border-input bg-base p-1">
+					<button
+						type="button"
+						onclick={() => (paiement = 'comptant')}
+						class="h-8 rounded-md text-[12px] font-semibold transition-colors {paiement ===
+						'comptant'
+							? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+							: 'text-muted-foreground hover:text-foreground'}"
+					>
+						Comptant
+					</button>
+					<button
+						type="button"
+						onclick={() => (paiement = 'financement')}
+						class="h-8 rounded-md text-[12px] font-semibold transition-colors {paiement ===
+						'financement'
+							? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+							: 'text-muted-foreground hover:text-foreground'}"
+					>
+						Financement
+					</button>
+				</div>
+			</div>
+
+			{#if paiement === 'financement'}
+				<div
+					class="flex items-center justify-between gap-3 rounded-lg border border-line bg-card2/60 px-3 py-2"
+				>
+					<div class="min-w-0">
+						<p class="text-[12px] font-semibold text-ink">FI accepté</p>
+						<p class="text-[10.5px] text-muted-foreground">
+							Le dossier de financement a été accepté.
+						</p>
+					</div>
+					<button
+						type="button"
+						role="switch"
+						aria-checked={fiAccepte}
+						aria-label="Financement accepté"
+						onclick={() => (fiAccepte = !fiAccepte)}
+						class="relative h-6 w-11 shrink-0 rounded-full transition-colors {fiAccepte
+							? 'bg-emerald-500'
+							: 'bg-glass-3'}"
+					>
+						<span
+							class="absolute top-0.5 left-0.5 size-5 rounded-full bg-white shadow transition-transform {fiAccepte
+								? 'translate-x-5'
+								: 'translate-x-0'}"
+						></span>
+					</button>
+				</div>
+			{/if}
+
+			<div
+				class="flex items-center justify-between gap-3 rounded-lg border border-line bg-card2/60 px-3 py-2"
+			>
+				<div class="min-w-0">
+					<p class="text-[12px] font-semibold text-ink">Vente confortée</p>
+					<p class="text-[10.5px] text-muted-foreground">
+						Le client a confirmé la vente après réflexion.
+					</p>
+				</div>
+				<button
+					type="button"
+					role="switch"
+					aria-checked={confortee}
+					aria-label="Vente confortée"
+					onclick={() => (confortee = !confortee)}
+					class="relative h-6 w-11 shrink-0 rounded-full transition-colors {confortee
+						? 'bg-emerald-500'
+						: 'bg-glass-3'}"
+				>
+					<span
+						class="absolute top-0.5 left-0.5 size-5 rounded-full bg-white shadow transition-transform {confortee
+							? 'translate-x-5'
+							: 'translate-x-0'}"
+					></span>
+				</button>
 			</div>
 
 			<!-- Même hauteur de champ que les saisies, mais en lecture seule. -->

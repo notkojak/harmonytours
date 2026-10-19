@@ -169,6 +169,9 @@
 		produits: { produit: string; tva: number; montantHT: number }[];
 		tvaDetail?: { taux: number; montant: number }[] | null;
 		date?: number | null;
+		confortee?: boolean | null;
+		paiement?: 'comptant' | 'financement' | null;
+		fiAccepte?: boolean | null;
 	} | null>(null);
 	let erreurOpen = $state(false);
 	let erreurVente = $state<{
@@ -261,6 +264,9 @@
 		produits: { produit: string; tva: number; montantHT: number }[];
 		tvaDetail?: { taux: number; montant: number }[] | null;
 		date?: number | null;
+		confortee?: boolean | null;
+		paiement?: 'comptant' | 'financement' | null;
+		fiAccepte?: boolean | null;
 	}) {
 		editingVente = vente;
 		saleEditOpen = true;
@@ -1715,6 +1721,44 @@
 														TTC
 													</p>
 												</div>
+											</div>
+
+											<!-- Suivi commercial : vente confortée, mode de paiement, dossier FI. -->
+											<div class="mt-2 flex flex-wrap items-center gap-1.5">
+												{#if vente.confortee}
+													<span
+														class="rounded-sm bg-emerald-500/15 px-1.5 py-0.5 text-[9.5px] font-semibold text-emerald-700 dark:text-emerald-300"
+													>
+														✓ Confortée
+													</span>
+												{:else}
+													<span
+														class="rounded-sm bg-glass-2 px-1.5 py-0.5 text-[9.5px] font-semibold text-muted-foreground"
+													>
+														Non confortée
+													</span>
+												{/if}
+												<span
+													class="rounded-sm bg-glass-2 px-1.5 py-0.5 text-[9.5px] font-semibold text-muted-foreground"
+												>
+													{vente.paiement === 'financement'
+														? 'Financement'
+														: vente.paiement === 'comptant'
+															? 'Comptant'
+															: 'Paiement —'}
+												</span>
+												{#if vente.paiement === 'financement'}
+													<span
+														class={[
+															'rounded-sm px-1.5 py-0.5 text-[9.5px] font-semibold',
+															vente.fiAccepte
+																? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+																: 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
+														].join(' ')}
+													>
+														{vente.fiAccepte ? '✓ FI accepté' : 'FI en attente'}
+													</span>
+												{/if}
 											</div>
 
 											<!-- Statut (menu) à gauche, auteur de la vente à droite. -->

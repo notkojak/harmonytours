@@ -176,6 +176,13 @@ const ventes = defineTable({
 	totalHT: v.number(),
 	totalTVA: v.number(),
 	totalTTC: v.number(),
+	// Vente confortée : le client a confirmé après réflexion. Sert au suivi
+	// commercial, sans changer le calcul du CA.
+	confortee: v.optional(v.boolean()),
+	// Paiement comptant ou financement ; pour un financement, `fiAccepte`
+	// indique si le dossier de financement (FI) a été accepté.
+	paiement: v.optional(v.union(v.literal('comptant'), v.literal('financement'))),
+	fiAccepte: v.optional(v.boolean()),
 	agencyId: v.optional(v.id('agences'))
 })
 	.index('by_contact', ['contactId'])

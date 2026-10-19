@@ -114,6 +114,11 @@
 						<TableHead
 							class="px-4 py-3 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
 						>
+							Paiement
+						</TableHead>
+						<TableHead
+							class="px-4 py-3 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
+						>
 							Date
 						</TableHead>
 						<TableHead
@@ -153,14 +158,45 @@
 							onclick={() => openFiche(vente)}
 						>
 							<TableCell class="px-4 py-3">
-								<span
-									class={[
-										'rounded-sm px-2 py-0.5 text-[11.5px] font-medium whitespace-nowrap',
-										statutClass(vente.statut)
-									].join(' ')}
-								>
-									{statutLabel(vente.statut)}
-								</span>
+								<div class="flex flex-col items-start gap-1">
+									<span
+										class={[
+											'rounded-sm px-2 py-0.5 text-[11.5px] font-medium whitespace-nowrap',
+											statutClass(vente.statut)
+										].join(' ')}
+									>
+										{statutLabel(vente.statut)}
+									</span>
+									{#if vente.confortee}
+										<span
+											class="text-[9.5px] font-semibold whitespace-nowrap text-emerald-700 dark:text-emerald-300"
+										>
+											✓ Confortée
+										</span>
+									{/if}
+								</div>
+							</TableCell>
+							<TableCell class="px-4 py-3">
+								<div class="flex flex-col items-start gap-1">
+									<span
+										class="rounded-sm bg-glass-2 px-2 py-0.5 text-[11.5px] font-medium whitespace-nowrap text-muted-foreground"
+									>
+										{vente.paiement === 'financement'
+											? 'Financement'
+											: vente.paiement === 'comptant'
+												? 'Comptant'
+												: '—'}
+									</span>
+									{#if vente.paiement === 'financement'}
+										<span
+											class="text-[9.5px] font-semibold whitespace-nowrap {vente.fiAccepte
+												? 'text-emerald-700 dark:text-emerald-300'
+												: 'text-amber-700 dark:text-amber-300'}"
+										>
+											{vente.fiAccepte ? '✓ FI accepté' : 'FI en attente'}
+										</span>
+									{/if}
+								</div>
 							</TableCell>
 							<TableCell class="px-4 py-3 text-[13.5px] text-muted-foreground">
 								{formatDate(vente.date)}
@@ -197,7 +233,7 @@
 					{#if affichees.length === 0 && !ventes.isLoading}
 						<TableRow class="border-line/60 hover:bg-transparent">
 							<TableCell
-								colspan={7}
+								colspan={8}
 								class="px-4 py-8 text-center text-[13px] text-muted-foreground"
 							>
 								Aucune vente pour le moment.
@@ -206,7 +242,7 @@
 					{/if}
 					<TableRow class="bg-glass-1 hover:bg-glass-1">
 						<TableCell
-							colspan={5}
+							colspan={6}
 							class="px-4 py-3 text-[12px] font-semibold tracking-wider text-muted-foreground uppercase"
 						>
 							Total
@@ -221,15 +257,19 @@
 					{#if annulations.length > 0}
 						<TableRow class="bg-red-500/[0.04] hover:bg-red-500/[0.04]">
 							<TableCell
-								colspan={5}
-								class="px-4 py-3 text-[12px] font-semibold tracking-wider text-red-700 dark:text-red-300 uppercase"
+								colspan={6}
+								class="px-4 py-3 text-[12px] font-semibold tracking-wider text-red-700 uppercase dark:text-red-300"
 							>
 								Total annulations ({annulations.length})
 							</TableCell>
-							<TableCell class="px-4 py-3 text-right text-[13.5px] font-semibold text-red-700 dark:text-red-300">
+							<TableCell
+								class="px-4 py-3 text-right text-[13.5px] font-semibold text-red-700 dark:text-red-300"
+							>
 								{fmt(totalAnnulationsHT)} € HT
 							</TableCell>
-							<TableCell class="px-4 py-3 text-right text-[13.5px] font-bold text-red-700 dark:text-red-300">
+							<TableCell
+								class="px-4 py-3 text-right text-[13.5px] font-bold text-red-700 dark:text-red-300"
+							>
 								{fmt(totalAnnulationsTTC)} € TTC
 							</TableCell>
 						</TableRow>
