@@ -16,7 +16,6 @@
 		bilangmsSurPeriode,
 		bilanSurPeriode,
 		doorStatusBadge,
-		doorStatusDot,
 		doorStatusLabel,
 		doorStatusPin,
 		fmtEuros,
@@ -163,12 +162,6 @@
 			label: 'Salutation',
 			value: currentGms.salutation,
 			icon: '👋',
-			badge: 'bg-brand/12 text-brand'
-		},
-		{
-			label: 'Question posée',
-			value: currentGms.question,
-			icon: '❓',
 			badge: 'bg-brand/12 text-brand'
 		},
 		{ label: 'RDV', value: currentGms.rdv, icon: '📅', badge: 'bg-brand/12 text-brand' },
@@ -412,6 +405,35 @@
 		}))
 	);
 
+	// Couleurs du filtre de la carte : une teinte par statut, pour les distinguer
+	// d'un coup d'œil — gris pour l'absent, rouge pour le traité, bleu pour le
+	// RDV, violet pour le contact. Au repos la pastille est teintée ; sélectionnée,
+	// elle passe en plein.
+	const FILTRE_CARTE: Record<string, { repos: string; actif: string; point: string }> = {
+		non_present: {
+			repos:
+				'border-slate-500/30 bg-slate-500/10 text-slate-700 hover:bg-slate-500/20 dark:text-slate-300',
+			actif: 'border-slate-600 bg-slate-600 text-white',
+			point: 'bg-slate-500'
+		},
+		refus: {
+			repos: 'border-red-500/30 bg-red-500/10 text-red-700 hover:bg-red-500/20 dark:text-red-300',
+			actif: 'border-red-600 bg-red-600 text-white',
+			point: 'bg-red-500'
+		},
+		rdv: {
+			repos: 'border-sky-500/30 bg-sky-500/10 text-sky-700 hover:bg-sky-500/20 dark:text-sky-300',
+			actif: 'border-sky-600 bg-sky-600 text-white',
+			point: 'bg-sky-500'
+		},
+		contact: {
+			repos:
+				'border-violet-500/30 bg-violet-500/10 text-violet-700 hover:bg-violet-500/20 dark:text-violet-300',
+			actif: 'border-violet-600 bg-violet-600 text-white',
+			point: 'bg-violet-500'
+		}
+	};
+
 	// Émoji de chaque statut du Bilan TAP (sonnée 🔔, traité ❌, RDV 📅, Contact 🤝).
 	const TAP_STATUS_EMOJI: Record<string, string> = {
 		nonPresent: '🔔',
@@ -578,7 +600,7 @@
 					<p class="mb-2 flex items-center gap-2 text-[12px] font-semibold text-foreground">
 						🏪 Bilan GMS
 					</p>
-					<div class="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
+					<div class="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
 						{#each gmsRows as row}
 							<div class="rounded-2xl border border-line bg-card2 px-2.5 py-2">
 								<div class="flex items-center gap-2">
@@ -609,27 +631,29 @@
 						type="button"
 						onclick={() => (filterStatus = null)}
 						class={[
-							'rounded-full px-2.5 py-1 text-[11.5px] font-medium transition-colors',
+							'rounded-full border px-2.5 py-1 text-[11.5px] font-medium transition-colors',
 							filterStatus === null
-								? 'bg-primary text-primary-foreground'
-								: 'bg-card2 text-muted-foreground hover:bg-glass-2'
+								? 'border-primary bg-primary text-primary-foreground shadow-sm'
+								: 'border-line bg-card2 text-muted-foreground hover:bg-glass-2 hover:text-ink'
 						].join(' ')}
 					>
 						Tous
 					</button>
 					{#each PIPELINE_ORDER as s}
 						{#if s.key !== 'portesSonnees'}
+							{@const teinte = FILTRE_CARTE[s.status ?? '']}
+							{@const actif = filterStatus === s.status}
 							<button
 								type="button"
-								onclick={() => (filterStatus = filterStatus === s.status ? null : s.status)}
+								onclick={() => (filterStatus = actif ? null : s.status)}
 								class={[
-									'flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11.5px] font-medium transition-colors',
-									filterStatus === s.status
-										? 'bg-primary text-primary-foreground'
-										: 'bg-card2 text-muted-foreground hover:bg-glass-2'
+									'flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] font-medium transition-colors',
+									actif ? teinte?.actif : teinte?.repos
 								].join(' ')}
 							>
-								<span class={['size-2 rounded-full', doorStatusDot(s.status)].join(' ')}></span>
+								<span
+									class={['size-2 rounded-full', actif ? 'bg-white/80' : teinte?.point].join(' ')}
+								></span>
 								{doorStatusLabel(s.status)}
 							</button>
 						{/if}
