@@ -5,13 +5,14 @@
 	import { env } from '$env/dynamic/public';
 	import {
 		chantiersProgrammes,
-		chargerChantiers,
+		chargerDernierVisuel,
+		chargerVisuel,
 		distanceTexte,
 		jourDe,
 		moisAnneeDe,
 		POINTS_A_VALIDER,
 		RAYON_ZONE,
-		sauverChantiers,
+		sauverVisuel,
 		type ChantierProgramme,
 		type PointAValider
 	} from '$lib/data/regroupement';
@@ -40,6 +41,8 @@
 		centre = [0.6886, 47.3941] as [number, number],
 		adresse = $bindable(''),
 		famille = '',
+		/** rouvrir directement la dernière page présentée (mémoire de l'appareil) */
+		reprendre = false,
 		onTerminer
 	}: {
 		open?: boolean;
@@ -48,6 +51,7 @@
 		adresse?: string;
 		/** famille du book du produit vendu : les poses montrées en sont cousines */
 		famille?: string;
+		reprendre?: boolean;
 		onTerminer?: (adresse: string) => void;
 	} = $props();
 
@@ -138,6 +142,8 @@
 	let minuteur: ReturnType<typeof setInterval> | null = null;
 	let depart: ReturnType<typeof setTimeout> | null = null;
 	let enAnimation = false;
+	// Vrai quand on raffiche une page déjà présentée : aucune animation à relancer.
+	let restaure = false;
 
 	// Les maisons du visuel : mémorisées sur l'appareil pour cette adresse (et
 	// cette famille de produit), afin de revoir exactement les mêmes à chaque
@@ -145,9 +151,21 @@
 	let programmes = $state<ChantierProgramme[]>([]);
 
 	function preparerChantiers() {
-		const memorisees = chargerChantiers(adresse, famille);
-		programmes = memorisees ?? chantiersProgrammes(maison ?? centre, communeClient, famille);
-		if (!memorisees) sauverChantiers(adresse, famille, programmes);
+		const memorise = chargerVisuel(adresse, famille);
+		if (memorise) {
+			programmes = memorise.chantiers;
+			if (!maison && memorise.maison) maison = memorise.maison;
+			if (!communeClient) communeClient = memorise.commune;
+			return;
+		}
+		programmes = chantiersProgrammes(maison ?? centre, communeClient, famille);
+		sauverVisuel({
+			adresse,
+			famille,
+			chantiers: programmes,
+			maison: maison ?? null,
+			commune: communeClient
+		});
 	}
 	const allumes = $derived(programmes.slice(0, visibles));
 	const enCours = $derived(visibles < programmes.length);
@@ -166,7 +184,8 @@
 	 * finie, soit par le minuteur de secours — le garde évite de repartir deux fois.
 	 */
 	function demarrerAnimation() {
-		if (enAnimation) return;
+		// Une page restaurée est déjà remplie : la carte ne doit pas la rejouer.
+		if (enAnimation || restaure) return;
 		enAnimation = true;
 		stopper();
 		visibles = 0;
@@ -197,6 +216,7 @@
 		phase = 3;
 		stopper();
 		enAnimation = false;
+		restaure = false;
 		visibles = 0;
 		// La carte prévient quand sa plongée est finie ; ce minuteur n'est qu'un
 		// filet, au cas où elle ne répondrait pas (jeton Mapbox absent, réseau).
@@ -208,27 +228,46 @@
 		onTerminer?.(adresse);
 	}
 
-	// Repartir d'un visuel vierge à chaque ouverture. L'adresse de départ est lue
-	// hors piste : c'est une prop liée, et l'écrire (localisation) doit rester
-	// sans effet sur cette remise à zéro.
+	// À chaque ouverture : soit on repart d'un visuel vierge, soit on raffiche
+	// la dernière page présentée, telle qu'elle a été mémorisée sur l'appareil
+	// (mêmes maisons, même adresse) — sans rejouer conditions ni animation.
+	// L'adresse de départ est lue hors piste : c'est une prop liée, et l'écrire
+	// (localisation) doit rester sans effet sur cette remise à zéro.
 	$effect(() => {
 		if (open) {
 			const adresseDeDepart = untrack(() => adresse);
+			const reprendreMaintenant = reprendre;
+			const familleActuelle = untrack(() => famille);
 			points = {};
-			adresseSaisie = adresseDeDepart;
 			localisation = false;
 			adresseRatee = false;
 			secoue = 0;
-			maison = null;
-			communeClient = '';
-			programmes = [];
-			phase = 1;
-			visibles = 0;
 			stopper();
 			enAnimation = false;
+			// On ne raffiche que si le visuel mémorisé correspond au devis courant.
+			const memo = reprendreMaintenant ? chargerDernierVisuel() : null;
+			if (memo && memo.famille === familleActuelle) {
+				adresse = memo.adresse;
+				adresseSaisie = memo.adresse;
+				maison = memo.maison ?? centre;
+				communeClient = memo.commune;
+				programmes = memo.chantiers;
+				phase = 3;
+				visibles = programmes.length;
+				restaure = true;
+			} else {
+				adresseSaisie = adresseDeDepart;
+				maison = null;
+				communeClient = '';
+				programmes = [];
+				phase = 1;
+				visibles = 0;
+				restaure = false;
+			}
 		} else {
 			stopper();
 			enAnimation = false;
+			restaure = false;
 		}
 	});
 

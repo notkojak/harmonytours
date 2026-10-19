@@ -400,6 +400,17 @@ export function distanceTexte(m: number): string {
 const CLE_REGROUPEMENT = 'harmony-regroupement';
 const VERSION_REGROUPEMENT = 1;
 
+/** Tout ce qu'il faut pour rafficher la dernière page du visuel telle quelle. */
+export type VisuelMemorise = {
+	adresse: string;
+	famille: string;
+	chantiers: ChantierProgramme[];
+	/** position de la maison du client, quand elle a pu être localisée */
+	maison: [number, number] | null;
+	/** commune du client : on ne montre jamais de pose chez lui */
+	commune: string;
+};
+
 /** Une maison mémorisée n'est reprise que si elle est complète. */
 function estChantier(valeur: unknown): valeur is ChantierProgramme {
 	if (typeof valeur !== 'object' || valeur === null) return false;
@@ -417,12 +428,16 @@ function estChantier(valeur: unknown): valeur is ChantierProgramme {
 	);
 }
 
-/**
- * Les maisons déjà montrées pour cette adresse et cette famille de produit, ou
- * null s'il n'y a rien de valable à reprendre. Un changement d'adresse repart
- * donc d'un tirage neuf, comme demandé.
- */
-export function chargerChantiers(adresse: string, famille: string): ChantierProgramme[] | null {
+function estPoint(valeur: unknown): valeur is [number, number] {
+	return (
+		Array.isArray(valeur) &&
+		valeur.length === 2 &&
+		valeur.every((n) => typeof n === 'number' && Number.isFinite(n))
+	);
+}
+
+/** Le visuel gardé sur l'appareil, ou null si rien d'exploitable. */
+function lireMemoire(): VisuelMemorise | null {
 	if (typeof localStorage === 'undefined') return null;
 	try {
 		const brut = localStorage.getItem(CLE_REGROUPEMENT);
@@ -433,35 +448,48 @@ export function chargerChantiers(adresse: string, famille: string): ChantierProg
 			data.version !== VERSION_REGROUPEMENT ||
 			typeof data.adresse !== 'string' ||
 			typeof data.famille !== 'string' ||
-			normaliser(data.adresse) !== normaliser(adresse) ||
-			data.famille !== famille ||
 			!Array.isArray(data.chantiers)
 		) {
 			return null;
 		}
 		const chantiers = data.chantiers.filter(estChantier).slice(0, MAX_CHANTIERS_PROGRAMMES);
-		return chantiers.length ? chantiers : null;
+		if (!chantiers.length) return null;
+		return {
+			adresse: data.adresse,
+			famille: data.famille,
+			chantiers,
+			maison: estPoint(data.maison) ? data.maison : null,
+			commune: typeof data.commune === 'string' ? data.commune : ''
+		};
 	} catch {
 		return null;
 	}
 }
 
-/** Mémorise les maisons du visuel pour cette adresse et cette famille. */
-export function sauverChantiers(
-	adresse: string,
-	famille: string,
-	chantiers: ChantierProgramme[]
-): void {
-	if (typeof localStorage === 'undefined' || !chantiers.length) return;
+/**
+ * Le visuel déjà montré pour cette adresse et cette famille de produit, ou null
+ * s'il n'y a rien de valable à reprendre. Un changement d'adresse repart donc
+ * d'un tirage neuf, comme demandé.
+ */
+export function chargerVisuel(adresse: string, famille: string): VisuelMemorise | null {
+	const visuel = lireMemoire();
+	if (!visuel) return null;
+	if (normaliser(visuel.adresse) !== normaliser(adresse) || visuel.famille !== famille) return null;
+	return visuel;
+}
+
+/** Le dernier visuel présenté, quelle que soit l'adresse : sert à le rafficher. */
+export function chargerDernierVisuel(): VisuelMemorise | null {
+	return lireMemoire();
+}
+
+/** Mémorise le visuel (maisons, adresse, maison du client) pour le rafficher. */
+export function sauverVisuel(visuel: VisuelMemorise): void {
+	if (typeof localStorage === 'undefined' || !visuel.chantiers.length) return;
 	try {
 		localStorage.setItem(
 			CLE_REGROUPEMENT,
-			JSON.stringify({
-				version: VERSION_REGROUPEMENT,
-				adresse,
-				famille,
-				chantiers
-			})
+			JSON.stringify({ version: VERSION_REGROUPEMENT, ...visuel })
 		);
 	} catch {
 		// Stockage refusé (navigation privée, quota) : le visuel reste utilisable,

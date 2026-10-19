@@ -272,29 +272,15 @@
 				</p>
 			</div>
 		{:else if visuelFait}
-			<!-- Le visuel client a été montré : la DO peut être engagée, hors de sa vue. -->
+			<!-- Le visuel a été montré : la DO peut être engagée, et la dernière page
+			     du regroupement se raffiche telle quelle depuis la mémoire de l'appareil. -->
 			<div class="space-y-1.5">
-				<div class={['rounded-2xl border px-2.5 py-2', CARTE_SUCCES].join(' ')}>
-					<p class="flex items-center gap-1.5 text-[12px] font-semibold text-ink">
-						<Check class="size-3.5 {TEXTE_SUCCES}" strokeWidth={2.8} /> Regroupement présenté au client
-					</p>
-					<p class="mt-0.5 truncate text-[10.5px] text-ink-mute">
-						{adresseClient || 'Adresse non renseignée'}
-					</p>
-				</div>
-				<div class="flex gap-1.5">
-					<Button class="flex-1" onclick={() => (doOuverte = true)}>
-						<PhoneCall class="size-4" strokeWidth={2} /> Appeler le responsable
-					</Button>
-					<Button
-						variant="outline"
-						size="icon"
-						title="Revoir le visuel client"
-						onclick={() => (visuelOuvert = true)}
-					>
-						<Route class="size-4" strokeWidth={1.9} />
-					</Button>
-				</div>
+				<Button class="w-full" onclick={() => (doOuverte = true)}>
+					<PhoneCall class="size-4" strokeWidth={2} /> Appeler le responsable
+				</Button>
+				<Button variant="outline" class="w-full" onclick={() => (visuelOuvert = true)}>
+					<Route class="size-4" strokeWidth={1.9} /> Revoir le regroupement
+				</Button>
 			</div>
 		{:else}
 			<Button class="w-full" onclick={() => (visuelOuvert = true)}>
@@ -346,6 +332,7 @@
 	bind:open={visuelOuvert}
 	bind:adresse={adresseClient}
 	famille={familleClient}
+	reprendre={visuelFait}
 	onTerminer={finirVisuel}
 />
 
