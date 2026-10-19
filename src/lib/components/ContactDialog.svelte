@@ -308,14 +308,9 @@
 	const commercialName = (c: { firstName?: string; lastName?: string } | null | undefined) =>
 		`${c?.firstName ?? ''} ${c?.lastName ?? ''}`.trim();
 
-	// Commerciaux rattachables en binôme : tous sauf celui qui a pris le RDV
-	// (le créateur du contact ne peut pas être son propre binôme).
-	const rattachables = $derived.by(() => {
-		const creator = (contact?.createdByName ?? '').trim().toLowerCase();
-		return (commerciaux.data ?? []).filter(
-			(c) => commercialName(c).trim().toLowerCase() !== creator
-		);
-	});
+	// Personnes rattachables au RDV : toutes les personnes actives du périmètre,
+	// connecté compris. Le créateur du contact peut suivre le RDV lui-même.
+	const rattachables = $derived(commerciaux.data ?? []);
 
 	// Initiales d'un nom (secours des avatars quand aucune photo n'est trouvée).
 	const initialsOf = (name: string | null | undefined): string =>

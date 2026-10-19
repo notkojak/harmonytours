@@ -1,4 +1,4 @@
-import { type MutationCtx, type QueryCtx, mutation, query } from './_generated/server';
+import { type QueryCtx, mutation, query } from './_generated/server';
 import { v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { canManageEmployes, canReassignContact, getCurrentUser } from './permissions';
@@ -46,25 +46,6 @@ function assertRdvNotOnSunday(
 	throw new Error('Les RDV ne peuvent pas être planifiés un dimanche.');
 }
 
-// Le commercial rattaché (binôme) ne peut pas être celui qui a pris le RDV :
-// le créateur du contact ne peut pas être son propre binôme. On tolère le cas
-// hérité où le commercial déjà enregistré est le créateur (aucun changement).
-async function assertCommercialNotCreator(
-	ctx: MutationCtx,
-	contact: { createdBy?: Id<'users'> | null; followUp?: { commercial?: string } | null },
-	commercial: string | undefined
-) {
-	if (!commercial || !commercial.trim()) return;
-	if (commercial === contact.followUp?.commercial) return;
-	const creator = contact.createdBy ? await ctx.db.get(contact.createdBy) : null;
-	const creatorName = creator
-		? `${creator.firstName ?? ''} ${creator.lastName ?? ''}`.trim().toLowerCase()
-		: '';
-	if (creatorName && commercial.trim().toLowerCase() === creatorName) {
-		throw new Error('Le commercial rattaché ne peut pas être celui qui a pris le RDV.');
-	}
-}
-
 // Création d'un contact (client potentiel) par l'utilisateur connecté.
 export const create = mutation({
 	args: {
@@ -110,7 +91,6 @@ export const recontact = mutation({
 			throw new Error('Non autorisé.');
 		}
 		assertRdvNotOnSunday(args.followUp, contact.followUp);
-		if (args.followUp) await assertCommercialNotCreator(ctx, contact, args.followUp.commercial);
 		// Historique RDV : un nouveau RDV est compté, ou la raison du passage en rappel
 		// est enregistrée sur le dernier RDV lorsqu'on le remplace par un rappel.
 		let rdvHistory: { at: number; reason?: string }[] | undefined;
@@ -202,7 +182,6 @@ export const setFollowUpFields = mutation({
 			}
 		};
 		if (args.commercial) {
-			await assertCommercialNotCreator(ctx, contact, args.commercial);
 			// Rejette un commercial hors de l'agence du contact (même périmètre que list).
 			const users = await ctx.db.query('users').collect();
 			const target =
@@ -533,7 +512,6 @@ export const update = mutation({
 			throw new Error('Non autorisé.');
 		}
 		assertRdvNotOnSunday(args.followUp, contact.followUp);
-		if (args.followUp) await assertCommercialNotCreator(ctx, contact, args.followUp.commercial);
 		if (!isCreator && !canEditScope) {
 			// Commercial lié au RDV : autorisé uniquement à déplacer le RDV.
 			const keys = Object.keys(args).filter((k) => k !== 'contactId');

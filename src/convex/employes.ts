@@ -324,8 +324,9 @@ export const resetPassword = action({
 	}
 });
 
-// Commerciaux disponibles pour rattacher un RDV : même périmètre que le connecté,
-// actifs, hors administrateurs et hors l'utilisateur lui-même.
+// Personnes disponibles pour rattacher un RDV : même périmètre que le connecté,
+// actives. L'utilisateur connecté et les administrateurs en font partie : un
+// manager qui suit lui-même un rendez-vous doit pouvoir se rattacher.
 export const listRdvCommerciaux = query({
 	args: {},
 	handler: async (ctx) => {
@@ -334,9 +335,7 @@ export const listRdvCommerciaux = query({
 		const scopeAll = user.role === 'administrateur' || user.role === 'directeur de zone';
 		return users
 			.filter((u) => {
-				if (u._id === user._id) return false;
 				if (u.statut === 'viré') return false;
-				if (u.role === 'administrateur') return false;
 				if (!scopeAll && u.agencyId !== user.agencyId) return false;
 				return true;
 			})
