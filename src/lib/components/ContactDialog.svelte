@@ -194,14 +194,16 @@
 	// Émojis et couleurs pour mettre en évidence les ventes dans la fiche.
 	const venteEmoji = (s: string | undefined | null): string =>
 		s === 'erreur' ? '⚠️' : s === 'annulée' ? '❌' : s === 'en attente' ? '⏳' : '✅';
+	// Fond de la carte assorti au statut, toujours très dilué : la vente validée
+	// est verte, les autres gardent leur teinte (orange, rouge, bleu).
 	const venteCardClass = (s: string | undefined | null): string =>
 		s === 'erreur'
-			? 'border-orange-500/30'
+			? 'border-orange-500/30 bg-orange-500/8'
 			: s === 'annulée'
-				? 'border-red-500/30'
+				? 'border-red-500/30 bg-red-500/8'
 				: s === 'en attente'
-					? 'border-sky-500/30'
-					: 'border-emerald-500/30';
+					? 'border-sky-500/30 bg-sky-500/8'
+					: 'border-emerald-500/35 bg-emerald-500/8';
 	const venteTotalClass = (s: string | undefined | null): string =>
 		s === 'erreur'
 			? 'text-orange-700 dark:text-orange-300'
@@ -1673,7 +1675,7 @@
 											.join(' + ')}
 										<div
 											class={[
-												'rounded-xl border bg-card2/60 px-3 py-2.5 transition-colors hover:bg-card2',
+												'rounded-xl border px-3 py-2.5 transition-colors',
 												venteCardClass(vente.statut)
 											].join(' ')}
 										>
@@ -1726,8 +1728,9 @@
 														onValueChange={(v) => onVenteStatutChange(vente, v)}
 													>
 														<SelectTrigger
+															size="xs"
 															class={[
-																'h-6 w-fit shrink-0 gap-0.5 rounded-full border-0 px-2 text-[10.5px] font-semibold shadow-none [&>svg]:size-3 [&>svg]:opacity-60',
+																'w-fit shrink-0 rounded-md font-semibold [&>svg]:opacity-60',
 																venteStatutClass(vente.statut)
 															].join(' ')}
 														>

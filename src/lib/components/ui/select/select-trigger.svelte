@@ -10,7 +10,7 @@
 		size = 'default',
 		...restProps
 	}: WithoutChild<SelectPrimitive.TriggerProps> & {
-		size?: 'sm' | 'default';
+		size?: 'xs' | 'sm' | 'default';
 	} = $props();
 </script>
 
@@ -19,7 +19,7 @@
 	data-slot="select-trigger"
 	data-size={size}
 	class={cn(
-		"flex w-fit items-center justify-between gap-2 rounded-md border border-input bg-card py-2 pr-3 pl-3.5 text-[15px] whitespace-nowrap transition-[border-color,box-shadow] outline-none focus-visible:border-brand focus-visible:ring-4 focus-visible:ring-brand/15 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-4 aria-invalid:ring-destructive/15 data-placeholder:text-ink-mute data-[size=default]:h-11 data-[size=sm]:h-9 *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-1.5 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+		"flex w-fit items-center justify-between gap-2 rounded-md border border-input bg-card py-2 pr-3 pl-3.5 text-[15px] whitespace-nowrap transition-[border-color,box-shadow] outline-none focus-visible:border-brand focus-visible:ring-4 focus-visible:ring-brand/15 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-4 aria-invalid:ring-destructive/15 data-placeholder:text-ink-mute data-[size=default]:h-11 data-[size=sm]:h-9 data-[size=xs]:h-7 data-[size=xs]:gap-1.5 data-[size=xs]:py-0 data-[size=xs]:pr-2 data-[size=xs]:pl-2.5 data-[size=xs]:text-[11.5px] *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-1.5 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 data-[size=xs]:[&>svg]:size-3.5",
 		className
 	)}
 	{...restProps}
