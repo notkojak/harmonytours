@@ -534,8 +534,10 @@ export const listTeamMembers = query({
 		const binome = (vendeurId: Id<'users'> | undefined, contact: Doc<'contacts'> | undefined) =>
 			partners(contact?.createdBy, commercialRattache(contact) ?? vendeurId);
 
-		// RDV : suivi courant de type RDV, contacts non traités. Les compteurs
-		// RDV TAP / GMS / total sont rattachés à la DATE DE PRISE du RDV
+		// RDV : suivi courant de type RDV, contacts traités compris. Un dossier marqué
+		// « traité » garde ses RDV dans les chiffres : le RDV a bien été pris puis
+		// traité pendant la période, seul son rangement dans les onglets change.
+		// Les compteurs RDV TAP / GMS / total sont rattachés à la DATE DE PRISE du RDV
 		// (dernière entrée de `rdvHistory`, posée par la fiche contact), et non
 		// plus à sa date de planification : un RDV pris le 30 pour le mois
 		// suivant compte le 30. Un RDV reporté ne compte qu'une fois, seul le
@@ -547,7 +549,7 @@ export const listTeamMembers = query({
 		// sont partagés dans la boucle ventes ci-dessous.
 		for (const c of contacts) {
 			const fu = c.followUp;
-			if (!fu || fu.type !== 'rdv' || c.statut === 'traité') continue;
+			if (!fu || fu.type !== 'rdv') continue;
 			const treated = fu.status === 'vendu' || fu.status === 'déballé';
 			// Date de prise : dernière prise de RDV enregistrée. Repli sur la date
 			// du contact pour les RDV antérieurs à la mise en place de l'historique.
@@ -594,12 +596,13 @@ export const listTeamMembers = query({
 			if (v.date < startTs || v.date >= endTs) continue;
 			const contact = contactById.get(v.contactId);
 			const fu = contact?.followUp;
+			// Le RDV est déjà compté par la boucle RDV (contact traité compris) : la
+			// vente ne doit pas ajouter une seconde fois le même dossier.
 			const rdvDejaCompte =
 				fu?.type === 'rdv' &&
 				fu.date >= startISO &&
 				fu.date < endISO &&
-				(fu.status === 'vendu' || fu.status === 'déballé') &&
-				contact?.statut !== 'traité';
+				(fu.status === 'vendu' || fu.status === 'déballé');
 			if (rdvDejaCompte) continue;
 			const { ids, share } = binome(v.vendeurId, contact);
 			for (const id of ids) get(id).rdvTraites += share;
