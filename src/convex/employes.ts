@@ -387,7 +387,8 @@ export const listVendeurs = query({
 //
 // « Traité » compte aussi les ventes de la période qui ne tombent pas sur la
 // date d'un RDV déjà compté (client sans RDV, ou vente datée un autre jour) :
-// +1, ou 0,5 pour chacun en binôme (vendeur + créateur du contact).
+// +1, ou 0,5 pour chacun en binôme (créateur du contact + commercial rattaché
+// au RDV, à défaut le vendeur de la vente).
 export const listTeamMembers = query({
 	args: {
 		period: v.union(v.literal('mois'), v.literal('semaine'), v.literal('jour')),
@@ -495,13 +496,29 @@ export const listTeamMembers = query({
 			return s;
 		};
 
-		// Les 2 personnes liées à un élément, parmi les membres visibles.
-		// S'il y en a 2, chacun compte pour 0,5 ; sinon 1 pour le seul visible.
+		// Les personnes liées à un élément, parmi les membres visibles. Le total
+		// se partage entre elles (0,5 chacun à deux, 1/3 à trois) : un compteur
+		// ne peut pas valoir plus que l'élément qu'il compte.
 		const partners = (...ids: Array<Id<'users'> | undefined>) => {
 			const uniq = [...new Set(ids.filter((id): id is Id<'users'> => id !== undefined))];
 			const visiblePartners = uniq.filter((id) => visibleIds.has(id));
-			return { ids: visiblePartners, share: visiblePartners.length >= 2 ? 0.5 : 1 };
+			return {
+				ids: visiblePartners,
+				share: visiblePartners.length > 0 ? 1 / visiblePartners.length : 1
+			};
 		};
+
+		// Commercial rattaché au RDV du contact (nom affiché dans followUp).
+		const commercialRattache = (contact: Doc<'contacts'> | undefined) =>
+			byName.get((contact?.followUp?.commercial ?? '').trim());
+
+		// Binôme d'une vente : le binôme, c'est toujours la personne qui a créé le
+		// contact (elle le reste même si la fiche est modifiée par quelqu'un
+		// d'autre) et le commercial rattaché au RDV. Sans commercial rattaché, le
+		// vendeur de la vente occupe la seconde place — c'est le cas d'une vente
+		// sans RDV placé, ou conclue par quelqu'un qui n'était pas rattaché.
+		const binome = (vendeurId: Id<'users'> | undefined, contact: Doc<'contacts'> | undefined) =>
+			partners(contact?.createdBy, commercialRattache(contact) ?? vendeurId);
 
 		// RDV : suivi courant de type RDV, contacts non traités. Les compteurs
 		// RDV TAP / GMS / total sont rattachés à la DATE DE PRISE du RDV
@@ -543,7 +560,7 @@ export const listTeamMembers = query({
 					ventes.find((v) => v.contactId === c._id && v.statut !== 'annulée') ??
 					ventes.find((v) => v.contactId === c._id)
 				)?.vendeurId;
-				const { ids, share } = partners(c.createdBy, byName.get(fu.commercial ?? ''), saleVendeur);
+				const { ids, share } = binome(saleVendeur, c);
 				for (const id of ids) {
 					get(id).rdvTraites += share;
 				}
@@ -554,8 +571,9 @@ export const listTeamMembers = query({
 		// client peut acheter sans RDV placé (ou la vente être datée un autre jour
 		// que le RDV). Sans ça, ces ventes n'apparaîtraient nulle part dans la
 		// colonne « traité ». Chacune compte +1, ou 0,5 pour chaque personne en
-		// binôme (vendeur + créateur du contact) — et une vente à la date d'un RDV
-		// déjà compté dans la période n'est jamais recomptée (pas de doublon).
+		// binôme (créateur du contact + commercial rattaché au RDV, à défaut le
+		// vendeur) — et une vente à la date d'un RDV déjà compté dans la période
+		// n'est jamais recomptée (pas de doublon).
 		for (const v of ventes) {
 			// Une vente annulée ne prouve pas qu'un RDV a été traité.
 			if (v.statut === 'annulée') continue;
@@ -569,13 +587,13 @@ export const listTeamMembers = query({
 				(fu.status === 'vendu' || fu.status === 'déballé') &&
 				contact?.statut !== 'traité';
 			if (rdvDejaCompte) continue;
-			const { ids, share } = partners(v.vendeurId, contact?.createdBy);
+			const { ids, share } = binome(v.vendeurId, contact);
 			for (const id of ids) get(id).rdvTraites += share;
 		}
 
-		// Le CA est basé sur le HT. Quand un commercial accompagnateur est ajouté à la vente,
-		// ça crée un binôme : la vente est divisée par 2 entre le vendeur et la personne
-		// qui a pris le contact (createdBy). Sans accompagnateur, le vendeur compte pour 1.
+		// Le CA est basé sur le HT. Une vente conclue en binôme est divisée par deux
+		// entre les deux personnes du binôme : le créateur du contact et le
+		// commercial rattaché au RDV (à défaut, le vendeur de la vente).
 
 		// CA total de la période sélectionnée (colonne TOTAL HT) : seules les ventes
 		// VALIDÉES comptent. Les ventes « en attente » (pas encore validées), « erreur »
@@ -584,7 +602,7 @@ export const listTeamMembers = query({
 		for (const v of ventes) {
 			if (v.statut !== 'valide') continue;
 			if (v.date < startTs || v.date >= endTs) continue;
-			const { ids, share } = partners(v.vendeurId, contactById.get(v.contactId)?.createdBy);
+			const { ids, share } = binome(v.vendeurId, contactById.get(v.contactId));
 			for (const id of ids) get(id).caTotal += v.totalHT * share;
 		}
 
@@ -594,7 +612,7 @@ export const listTeamMembers = query({
 		// attente (non validées) sont suivies à part dans caAttente.
 		for (const v of ventes) {
 			if (v.date < startTs || v.date >= endTs) continue;
-			const { ids, share } = partners(v.vendeurId, contactById.get(v.contactId)?.createdBy);
+			const { ids, share } = binome(v.vendeurId, contactById.get(v.contactId));
 			for (const id of ids) {
 				const s = get(id);
 				s.ventes += share;
@@ -607,7 +625,7 @@ export const listTeamMembers = query({
 		// Annulations de la période : CA (HT) des ventes annulées, partagé comme le CA.
 		for (const v of ventes) {
 			if (v.statut !== 'annulée' || v.date < startTs || v.date >= endTs) continue;
-			const { ids, share } = partners(v.vendeurId, contactById.get(v.contactId)?.createdBy);
+			const { ids, share } = binome(v.vendeurId, contactById.get(v.contactId));
 			for (const id of ids) get(id).caAnnulations += v.totalHT * share;
 		}
 
@@ -622,12 +640,21 @@ export const listTeamMembers = query({
 		for (const o of objectifs) objectifByUser.set(o.userId, { ca: o.ca, rdv: o.rdv });
 
 		// Superviseurs de zone (animateur de zone, directeur de zone) : absents du
-		// tableau par défaut — ils n'apparaissent que s'ils ont du CA sur la
-		// période (même rattachés à un RDV).
-		const hasCa = (s: Stats) => s.caTotal > 0;
+		// tableau par défaut — ils n'apparaissent que s'ils ont compté quelque
+		// chose sur la période : CA, vente en attente, RDV ou RDV traité (un
+		// animateur de zone qui prospecte doit apparaître, même avant validation).
+		const aDeLActivite = (s: Stats) =>
+			s.caTotal > 0 ||
+			s.caPeriode > 0 ||
+			s.caAttente > 0 ||
+			s.caErreur > 0 ||
+			s.caAnnulations > 0 ||
+			s.ventes > 0 ||
+			s.total > 0 ||
+			s.rdvTraites > 0;
 
 		return visible
-			.filter((u) => !isZoneManager(u) || hasCa(stats.get(u._id) ?? empty()))
+			.filter((u) => !isZoneManager(u) || aDeLActivite(stats.get(u._id) ?? empty()))
 			.map((u) => {
 				const s = stats.get(u._id) ?? empty();
 				const obj = objectifByUser.get(u._id);

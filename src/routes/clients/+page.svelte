@@ -43,11 +43,14 @@
 		return [...set].join(', ');
 	}
 
-	// Commerciaux liés au client (sans doublons) : créateur du contact + vendeurs
-	// des ventes (le binôme).
+	// Commerciaux liés au client (sans doublons) : le binôme, c'est-à-dire le
+	// créateur du contact et le commercial rattaché au RDV à qui la vente est
+	// partagée (à défaut le vendeur de la vente).
 	function vendeurNamesOf(client: { contact: ContactRow; ventes: { vendeurName: string }[] }) {
 		const set = new Set<string>();
 		if (client.contact.createdByName) set.add(client.contact.createdByName);
+		const rattache = client.contact.followUp?.commercial?.trim();
+		if (rattache) set.add(rattache);
 		for (const v of client.ventes) if (v.vendeurName) set.add(v.vendeurName);
 		return [...set];
 	}

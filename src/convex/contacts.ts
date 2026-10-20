@@ -158,7 +158,15 @@ export const setFollowUpFields = mutation({
 		if (!fu || fu.type !== 'rdv') {
 			throw new Error('Aucun RDV à mettre à jour sur ce contact.');
 		}
-		const status = args.status == null || args.status === '' ? undefined : args.status;
+		// Statut absent de l'appel = on n'y touche pas : l'attribution d'un RDV à un
+		// commercial (« Attribuer à… ») ne doit pas effacer son statut vendu /
+		// déballé / annulé, sinon le RDV traité disparaît des chiffres.
+		const status =
+			args.status === undefined
+				? fu.status
+				: args.status === ''
+					? undefined
+					: args.status;
 		const patch: { followUp: typeof fu } = {
 			followUp: {
 				type: fu.type,

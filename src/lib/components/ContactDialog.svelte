@@ -152,11 +152,14 @@
 	const ventes = useQuery(api.ventes.getVentes, () =>
 		contact?._id && open ? { contactId: contact._id as Id<'contacts'> } : 'skip'
 	);
-	// Commerciaux liés au client : le créateur du contact + les vendeurs des
-	// ventes (le binôme), sans doublons.
+	// Commerciaux liés au client : le binôme, c'est-à-dire le créateur du contact
+	// et le commercial rattaché au RDV (à qui la vente est partagée), plus les
+	// vendeurs des ventes, sans doublons.
 	const commerciauxLies = $derived.by(() => {
 		const set = new Set<string>();
 		if (contact?.createdByName) set.add(contact.createdByName);
+		const rattache = contact?.followUp?.commercial?.trim();
+		if (rattache) set.add(rattache);
 		for (const v of ventes.data ?? []) if (v.vendeurName) set.add(v.vendeurName);
 		return [...set];
 	});

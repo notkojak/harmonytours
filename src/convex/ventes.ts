@@ -48,17 +48,17 @@ async function creatorNames(
 }
 
 // Nom affiché du vendeur d'une vente : « X » seul, ou « X et Y » quand la vente
-// est conclue en binôme (le vendeur diffère du commercial qui a créé le contact).
+// est conclue en binôme. Le binôme est celui des chiffres : le commercial
+// rattaché au RDV (le vendeur de la vente à défaut) et le créateur du contact.
 function vendeurLabel(
 	vente: Doc<'ventes'>,
 	contact: Doc<'contacts'> | undefined,
 	userNames: Map<Id<'users'>, string>
 ): string {
-	if (contact?.createdBy && contact.createdBy !== vente.vendeurId) {
-		const binomeName = userNames.get(contact.createdBy);
-		if (binomeName) return `${vente.vendeurName} et ${binomeName}`;
-	}
-	return vente.vendeurName;
+	const principal = contact?.followUp?.commercial?.trim() || vente.vendeurName;
+	const createur = contact?.createdBy ? userNames.get(contact.createdBy) : undefined;
+	if (createur && createur !== principal) return `${principal} et ${createur}`;
+	return principal;
 }
 
 // Ajoute une vente à un contact : le contact devient un client.
