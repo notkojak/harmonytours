@@ -2447,10 +2447,11 @@
 								class={itemAction}
 								onclick={() => {
 									actionsOuvertes = false;
-									// Traiter demande une raison (journalisée) ; retirer le marquage
-									// se fait directement.
+									// Traiter ne demande plus de raison : un clic suffit, la raison
+									// reste possible via l'entrée suivante. Retirer le marquage se
+									// fait aussi directement.
 									if (contact?.statut === 'traité') handleMarkTreated(false);
-									else openTraiteDialog();
+									else handleMarkTreated(true);
 								}}
 							>
 								{#if contact?.statut === 'traité'}
@@ -2461,6 +2462,19 @@
 									Marquer comme traité
 								{/if}
 							</button>
+							{#if contact?.statut !== 'traité'}
+								<button
+									type="button"
+									class={itemAction}
+									onclick={() => {
+										actionsOuvertes = false;
+										openTraiteDialog();
+									}}
+								>
+									<Pencil class="size-3.5 text-muted-foreground" />
+									Traiter avec une raison…
+								</button>
+							{/if}
 						{/if}
 						{#if canDelete}
 							<div class="my-1 h-px bg-line"></div>
@@ -2680,9 +2694,8 @@
 				</Button>
 			</DialogFooter>
 		</DialogContent>
-	</Dialog>
-
-	<!-- Popup de saisie de la raison du marquage « traité » -->
+	</Dialog>		<!-- Popup de saisie de la raison du marquage « traité » : facultative, le
+		     marquage lui-même se fait sans passer par ici. -->
 	<Dialog bind:open={traiteOpen}>
 		<DialogContent
 			class="max-w-sm rounded-xl border-line bg-card"
@@ -2695,7 +2708,7 @@
 					>
 						✅
 					</span>
-					Pourquoi ce contact est-il traité ?
+					Traiter ce contact
 				</DialogTitle>
 			</DialogHeader>
 
@@ -2708,7 +2721,7 @@
 			{/if}
 
 			<div class="space-y-1.5">
-				<Label for="traiteReason">Raison du traitement</Label>
+				<Label for="traiteReason">Raison du traitement (facultatif)</Label>
 				<Textarea
 					id="traiteReason"
 					rows={3}
@@ -2729,7 +2742,7 @@
 				>
 					Annuler
 				</Button>
-				<Button onclick={confirmTraite} disabled={quickBusy || !traiteReason.trim()}>
+				<Button onclick={confirmTraite} disabled={quickBusy}>
 					{#if quickBusy}
 						<LoaderCircle class="size-4 animate-spin" />
 					{/if}
