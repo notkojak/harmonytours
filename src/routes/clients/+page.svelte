@@ -16,6 +16,7 @@
 		TableRow
 	} from '$lib/components/ui/table/index.js';
 	import { formatPhone } from '$lib/data/phone';
+	import { commerciauxLies } from '$lib/data/commercial';
 	import ContactDialog, { type ContactRow } from '$lib/components/ContactDialog.svelte';
 	import PersonTabs from '$lib/components/PersonTabs.svelte';
 	import Avatar from '$lib/components/Avatar.svelte';
@@ -47,12 +48,11 @@
 	// créateur du contact et le commercial rattaché au RDV à qui la vente est
 	// partagée (à défaut le vendeur de la vente).
 	function vendeurNamesOf(client: { contact: ContactRow; ventes: { vendeurName: string }[] }) {
-		const set = new Set<string>();
-		if (client.contact.createdByName) set.add(client.contact.createdByName);
-		const rattache = client.contact.followUp?.commercial?.trim();
-		if (rattache) set.add(rattache);
-		for (const v of client.ventes) if (v.vendeurName) set.add(v.vendeurName);
-		return [...set];
+		return commerciauxLies(
+			client.contact.createdByName,
+			client.contact,
+			client.ventes.map((v) => v.vendeurName)
+		);
 	}
 	function vendeursOf(client: { contact: ContactRow; ventes: { vendeurName: string }[] }) {
 		return vendeurNamesOf(client).join(', ');

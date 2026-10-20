@@ -509,8 +509,22 @@ export const listTeamMembers = query({
 		};
 
 		// Commercial rattaché au RDV du contact (nom affiché dans followUp).
-		const commercialRattache = (contact: Doc<'contacts'> | undefined) =>
-			byName.get((contact?.followUp?.commercial ?? '').trim());
+		// Quand le RDV est repassé en rappel, le suivi courant ne porte plus le
+		// commercial : on reprend celui du RDV, tracé dans l'historique, pour ne
+		// pas déplacer la vente d'un commercial à l'autre.
+		const commercialRattache = (contact: Doc<'contacts'> | undefined) => {
+			const nom = (contact?.followUp?.commercial ?? '').trim();
+			if (nom) return byName.get(nom);
+			if (contact?.followUp?.type !== 'rappel') return undefined;
+			const history = contact.rdvHistory ?? [];
+			for (let i = history.length - 1; i >= 0; i--) {
+				const trace = history[i];
+				const nomHistorique =
+					typeof trace === 'object' ? (trace.commercial ?? '').trim() : '';
+				if (nomHistorique) return byName.get(nomHistorique);
+			}
+			return undefined;
+		};
 
 		// Binôme d'une vente : le binôme, c'est toujours la personne qui a créé le
 		// contact (elle le reste même si la fiche est modifiée par quelqu'un

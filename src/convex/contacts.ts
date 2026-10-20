@@ -27,6 +27,33 @@ const followUpValidator = v.object({
 	annulationDate: v.optional(v.number())
 });
 
+type Suivi = NonNullable<Doc<'contacts'>['followUp']>;
+
+// Trace laissée dans l'historique quand un RDV passe en rappel : l'issue du RDV
+// (statut, raisons, motif, commercial, date planifiée) est recopiée sur l'entrée
+// d'historique. Le passage en rappel ne l'efface donc pas : un RDV déballé garde
+// sa raison de non-vente, un RDV annulé sa raison d'annulation.
+function traceRdvClos(fu: Suivi | undefined) {
+	const trace: {
+		status?: Suivi['status'];
+		nonVenteReason?: string;
+		annulationReason?: string;
+		annulationDate?: number;
+		motif?: Suivi['motif'];
+		commercial?: string;
+		date?: string;
+	} = {};
+	if (!fu) return trace;
+	if (fu.status) trace.status = fu.status;
+	if (fu.nonVenteReason) trace.nonVenteReason = fu.nonVenteReason;
+	if (fu.annulationReason) trace.annulationReason = fu.annulationReason;
+	if (fu.annulationDate != null) trace.annulationDate = fu.annulationDate;
+	if (fu.motif) trace.motif = fu.motif;
+	if (fu.commercial) trace.commercial = fu.commercial;
+	if (fu.date) trace.date = fu.date;
+	return trace;
+}
+
 // Un RDV ne peut pas être planifié un dimanche : l'agenda (web et mobile)
 // affiche du lundi au samedi, un RDV du dimanche y serait invisible.
 // En édition, on tolère le cas hérité : un RDV déjà posé un dimanche reste
@@ -93,7 +120,7 @@ export const recontact = mutation({
 		assertRdvNotOnSunday(args.followUp, contact.followUp);
 		// Historique RDV : un nouveau RDV est compté, ou la raison du passage en rappel
 		// est enregistrée sur le dernier RDV lorsqu'on le remplace par un rappel.
-		let rdvHistory: { at: number; reason?: string }[] | undefined;
+		let rdvHistory: Doc<'contacts'>['rdvHistory'] | undefined;
 		if (args.followUp?.type === 'rdv') {
 			rdvHistory = [...(contact.rdvHistory ?? []), { at: Date.now() }];
 		} else if (args.followUp?.type === 'rappel' && contact.followUp?.type === 'rdv') {
@@ -103,7 +130,11 @@ export const recontact = mutation({
 				const lastAt = typeof last === 'number' ? last : last.at;
 				rdvHistory = [
 					...history.slice(0, -1),
-					{ at: lastAt, reason: args.rdvSwitchReason || undefined }
+					{
+						at: lastAt,
+						reason: args.rdvSwitchReason || undefined,
+						...traceRdvClos(contact.followUp)
+					}
 				];
 			}
 		}
@@ -584,12 +615,19 @@ export const update = mutation({
 		if (args.followUp !== undefined) {
 			// La modification ne fournit pas les raisons/date d'annulation : on les
 			// conserve depuis le suivi existant (sinon éditer le RDV les effacerait).
-			patch.followUp = {
-				...args.followUp,
-				nonVenteReason: args.followUp.nonVenteReason ?? contact.followUp?.nonVenteReason,
-				annulationReason: args.followUp.annulationReason ?? contact.followUp?.annulationReason,
-				annulationDate: args.followUp.annulationDate ?? contact.followUp?.annulationDate
-			};
+			// Un rappel, lui, n'a pas d'issue de RDV : les raisons restent dans
+			// l'historique (traceRdvClos) et ne sont pas recopiées sur le rappel,
+			// comme lors d'un recontact.
+			patch.followUp =
+				args.followUp.type === 'rdv'
+					? {
+							...args.followUp,
+							nonVenteReason: args.followUp.nonVenteReason ?? contact.followUp?.nonVenteReason,
+							annulationReason:
+								args.followUp.annulationReason ?? contact.followUp?.annulationReason,
+							annulationDate: args.followUp.annulationDate ?? contact.followUp?.annulationDate
+						}
+					: args.followUp;
 		}
 		// Historique RDV : un nouveau RDV est compté quand le suivi passe de rappel à RDV,
 		// et la raison du passage en rappel est enregistrée sur le dernier RDV sinon.
@@ -603,7 +641,11 @@ export const update = mutation({
 				const lastAt = typeof last === 'number' ? last : last.at;
 				patch.rdvHistory = [
 					...history.slice(0, -1),
-					{ at: lastAt, reason: args.rdvSwitchReason || undefined }
+					{
+						at: lastAt,
+						reason: args.rdvSwitchReason || undefined,
+						...traceRdvClos(contact.followUp)
+					}
 				];
 			}
 		}

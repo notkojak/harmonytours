@@ -111,8 +111,32 @@ const contacts = defineTable({
 		})
 	),
 	// Historique des RDV placés : conservé même si le suivi courant repasse en rappel.
-	// Chaque entrée peut garder la raison du passage en rappel.
-	rdvHistory: v.optional(v.array(v.object({ at: v.number(), reason: v.optional(v.string()) }))),
+	// Chaque entrée garde la raison du passage en rappel et, quand le RDV était
+	// clos avant ce passage, son issue complète (statut, raison de non-vente,
+	// annulation, motif, commercial, date planifiée) : repasser un RDV déballé en
+	// rappel ne l'efface donc pas, il reste lisible dans l'historique.
+	rdvHistory: v.optional(
+		v.array(
+			v.object({
+				at: v.number(),
+				reason: v.optional(v.string()),
+				status: v.optional(
+					v.union(
+						v.literal('annulé'),
+						v.literal('déballé'),
+						v.literal('vendu'),
+						v.literal('à reprogrammer')
+					)
+				),
+				nonVenteReason: v.optional(v.string()),
+				annulationReason: v.optional(v.string()),
+				annulationDate: v.optional(v.number()),
+				motif: v.optional(v.union(v.literal('confortation'), v.literal('gestion'))),
+				commercial: v.optional(v.string()),
+				date: v.optional(v.string())
+			})
+		)
+	),
 	// Le contact devient un client dès qu'une vente lui est rattachée.
 	isClient: v.optional(v.boolean()),
 	// Horodatage (ms) de la dernière impression de la fiche contact : permet de

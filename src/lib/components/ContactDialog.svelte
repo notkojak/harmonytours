@@ -24,7 +24,20 @@
 			annulationReason?: string | null;
 			annulationDate?: number | null;
 		} | null;
-		rdvHistory?: { at: number; reason?: string }[] | null;
+		// Historique des RDV : la raison du passage en rappel et, quand le RDV était
+		// clos avant ce passage, son issue (statut, raisons, motif, commercial,
+		// date planifiée) — rien n'est effacé par le retour en rappel.
+		rdvHistory?: {
+			at: number;
+			reason?: string | null;
+			status?: 'annulé' | 'déballé' | 'vendu' | 'à reprogrammer' | null;
+			nonVenteReason?: string | null;
+			annulationReason?: string | null;
+			annulationDate?: number | null;
+			motif?: 'confortation' | 'gestion' | null;
+			commercial?: string | null;
+			date?: string | null;
+		}[] | null;
 		// Date et raison du marquage « traité » : rejouées dans l'historique.
 		treatedAt?: number | null;
 		treatedReason?: string | null;
@@ -86,6 +99,7 @@
 	import { Textarea } from '$lib/components/ui/textarea/index.js';
 	import { contactSources, sourceClass, type ContactSource } from '$lib/data/sources';
 	import { FAMILLES } from '$lib/data/catalogue';
+	import { commerciauxLies as listeCommerciauxLies } from '$lib/data/commercial';
 	import { formatPhone, onPhoneInput } from '$lib/data/phone';
 	import AddressInput from './AddressInput.svelte';
 	import ErreurVenteDialog from './ErreurVenteDialog.svelte';
@@ -153,16 +167,15 @@
 		contact?._id && open ? { contactId: contact._id as Id<'contacts'> } : 'skip'
 	);
 	// Commerciaux liés au client : le binôme, c'est-à-dire le créateur du contact
-	// et le commercial rattaché au RDV (à qui la vente est partagée), plus les
-	// vendeurs des ventes, sans doublons.
-	const commerciauxLies = $derived.by(() => {
-		const set = new Set<string>();
-		if (contact?.createdByName) set.add(contact.createdByName);
-		const rattache = contact?.followUp?.commercial?.trim();
-		if (rattache) set.add(rattache);
-		for (const v of ventes.data ?? []) if (v.vendeurName) set.add(v.vendeurName);
-		return [...set];
-	});
+	// et le commercial rattaché au RDV (à qui la vente est partagée, y compris
+	// quand le RDV est repassé en rappel), plus les vendeurs des ventes.
+	const commerciauxLies = $derived(
+		listeCommerciauxLies(
+			contact?.createdByName,
+			contact,
+			(ventes.data ?? []).map((v) => v.vendeurName)
+		)
+	);
 
 	let saleOpen = $state(false);
 	let saleEditOpen = $state(false);
@@ -833,9 +846,24 @@
 			entries.push({
 				at: h.at,
 				label: '📅 RDV pris',
-				detail: h.reason ? `→ passage en rappel : ${h.reason}` : undefined,
+				// Qui suivait le RDV et, s'il a été repassé en rappel, la raison de
+				// ce passage : les deux restent lisibles après coup.
+				detail:
+					[h.commercial?.trim(), h.reason ? `→ passage en rappel : ${h.reason}` : null]
+						.filter(Boolean)
+						.join(' · ') || undefined,
 				dotClass: 'bg-blue-400'
 			});
+			// RDV clos avant de repasser en rappel : son issue reste dans
+			// l'historique, à la date planifiée du RDV, avec sa raison.
+			const issue = issueRdvEntry(
+				h.status,
+				jourMs(h.date, h.at),
+				h.nonVenteReason,
+				h.annulationReason,
+				h.annulationDate
+			);
+			if (issue) entries.push(issue);
 		}
 		for (const r of contact?.recontacts ?? []) {
 			entries.push({
@@ -882,35 +910,14 @@
 					dotClass: rdvDot
 				});
 				// L'issue du RDV reste dans l'historique, avec sa raison quand il y en a une.
-				// Annulation : date d'annulation, repli sur la date du RDV pour les cas
-				// antérieurs à ce champ.
-				if (fu.status === 'annulé') {
-					entries.push({
-						at: fu.annulationDate ?? at,
-						label: '❌ Annulé',
-						detail: fu.annulationReason ?? undefined,
-						dotClass: 'bg-red-400'
-					});
-				} else if (fu.status === 'déballé') {
-					entries.push({
-						at,
-						label: '📦 Déballé',
-						detail: fu.nonVenteReason ?? undefined,
-						dotClass: 'bg-violet-400'
-					});
-				} else if (fu.status === 'vendu') {
-					entries.push({
-						at,
-						label: '💰 Vendu',
-						dotClass: 'bg-emerald-400'
-					});
-				} else if (fu.status === 'à reprogrammer') {
-					entries.push({
-						at,
-						label: '🔁 À reprogrammer',
-						dotClass: 'bg-orange-400'
-					});
-				}
+				const issue = issueRdvEntry(
+					fu.status,
+					at,
+					fu.nonVenteReason,
+					fu.annulationReason,
+					fu.annulationDate
+				);
+				if (issue) entries.push(issue);
 			} else if (fu.type === 'rappel' && !suiviOuvert) {
 				entries.push({
 					at,
@@ -963,6 +970,41 @@
 	function rdvMotifLabel(motif: string | null | undefined): string | null {
 		if (motif === 'confortation') return 'Confortation';
 		if (motif === 'gestion') return 'Gestion dossier';
+		return null;
+	}
+
+	/** Minuit local d'une date ISO `AAAA-MM-JJ`, avec repli sur un horodatage. */
+	function jourMs(iso: string | null | undefined, repli: number): number {
+		const [y, m, d] = (iso ?? '').split('-').map(Number);
+		if (!y || !m || !d) return repli;
+		return new Date(y, m - 1, d).getTime();
+	}
+
+	/** Issue d'un RDV clos, telle qu'elle s'affiche dans l'historique. */
+	function issueRdvEntry(
+		status: string | null | undefined,
+		at: number,
+		nonVenteReason?: string | null,
+		annulationReason?: string | null,
+		annulationDate?: number | null
+	) {
+		if (status === 'annulé')
+			return {
+				at: annulationDate ?? at,
+				label: '❌ Annulé',
+				detail: annulationReason ?? undefined,
+				dotClass: 'bg-red-400'
+			};
+		if (status === 'déballé')
+			return {
+				at,
+				label: '📦 Déballé',
+				detail: nonVenteReason ?? undefined,
+				dotClass: 'bg-violet-400'
+			};
+		if (status === 'vendu') return { at, label: '💰 Vendu', dotClass: 'bg-emerald-400' };
+		if (status === 'à reprogrammer')
+			return { at, label: '🔁 À reprogrammer', dotClass: 'bg-orange-400' };
 		return null;
 	}
 
