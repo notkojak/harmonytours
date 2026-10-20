@@ -190,6 +190,9 @@
 		fiAccepte?: boolean | null;
 	} | null>(null);
 	let erreurOpen = $state(false);
+	// Échec du dernier changement de statut : affiché dans la carte de la vente
+	// concernée (en production, Convex masque le détail du message serveur).
+	let venteStatutError = $state<{ venteId: string; message: string } | null>(null);
 	let erreurVente = $state<{
 		_id: string;
 		vendeurName?: string;
@@ -235,10 +238,15 @@
 	const fmtMoney = (n: number | null | undefined): string =>
 		(n ?? 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 	async function changeVenteStatut(venteId: string, statut: VenteStatut) {
+		venteStatutError = null;
 		try {
 			await updateVenteStatut({ venteId: venteId as Id<'ventes'>, statut });
 		} catch (e) {
 			console.error(e);
+			venteStatutError = {
+				venteId,
+				message: 'Changement de statut impossible. Réessaie ou demande au manager de l’agence.'
+			};
 		}
 	}
 
@@ -1862,6 +1870,12 @@
 													{/if}
 												</div>
 											</div>
+
+											{#if venteStatutError?.venteId === vente._id}
+												<p class="mt-1 text-[11px] font-medium text-destructive">
+													{venteStatutError.message}
+												</p>
+											{/if}
 
 											{#if vente.statut === 'erreur' && vente.erreur}
 												<div class="mt-2 rounded-md bg-orange-500/5 px-2.5 py-2">

@@ -139,8 +139,9 @@ export const addVente = mutation({
 });
 
 // Change le statut d'une vente : en attente (non validée), valide, erreur ou
-// annulée. Seul le vendeur de la vente ou le créateur du contact lié peut le
-// modifier.
+// annulée. Le vendeur de la vente, le créateur du contact lié ou un manager
+// (administrateur, directeur de zone, directeur d'agence) peut le modifier —
+// mêmes droits que la modification de la vente (`updateVente`).
 export const updateStatut = mutation({
 	args: {
 		venteId: v.id('ventes'),
@@ -158,11 +159,19 @@ export const updateStatut = mutation({
 			throw new Error('Vente introuvable.');
 		}
 		const contact = await ctx.db.get(vente.contactId);
-		const allowed = vente.vendeurId === user._id || (contact && contact.createdBy === user._id);
+		const allowed =
+			vente.vendeurId === user._id ||
+			(contact && contact.createdBy === user._id) ||
+			canManageEmployes(user);
 		if (!allowed) {
 			throw new Error('Non autorisé.');
 		}
-		await ctx.db.patch(args.venteId, { statut: args.statut });
+		// Sortir de l'erreur efface aussi le dossier d'erreur : sinon la fiche
+		// garderait les documents manquants d'un dossier désormais validé.
+		await ctx.db.patch(args.venteId, {
+			statut: args.statut,
+			...(args.statut === 'erreur' ? {} : { erreur: undefined })
+		});
 	}
 });
 
