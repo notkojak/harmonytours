@@ -1,5 +1,5 @@
 import { httpAction } from './_generated/server';
-import { api } from './_generated/api';
+import { api, internal } from './_generated/api';
 import { invalidateSessions } from '@convex-dev/auth/server';
 import type { Id } from './_generated/dataModel';
 
@@ -111,12 +111,12 @@ export const signin = httpAction(async (ctx, request) => {
 
 		let user = null;
 		if (result?.userId) {
-			user = await ctx.runQuery(api.users.getById, {
+			user = await ctx.runQuery(internal.users.getByIdInternal, {
 				userId: result.userId as any
 			});
 		}
 		if (!user) {
-			user = await ctx.runQuery(api.users.getByEmail, { email });
+			user = await ctx.runQuery(internal.users.getByEmailInternal, { email });
 		}
 		// Compte licencié : pas de token utilisable, l'app est bloquée elle aussi.
 		if (await revoquerSiVire(ctx, user as any)) {
@@ -129,7 +129,7 @@ export const signin = httpAction(async (ctx, request) => {
 		// pour ne pas révéler l'existence d'un compte : on distingue côté
 		// serveur un e-mail inconnu d'un mot de passe incorrect.
 		if (/invalid credentials/i.test(message)) {
-			const existing = await ctx.runQuery(api.users.getByEmail, { email }).catch(() => null);
+			const existing = await ctx.runQuery(internal.users.getByEmailInternal, { email }).catch(() => null);
 			if (!existing) {
 				return json({ ok: false, error: 'Aucun compte associé à cette adresse e-mail.' }, 401);
 			}
@@ -159,7 +159,7 @@ export const me = httpAction(async (ctx, request) => {
 
 	// subject = « userId|sessionId » (séparateur « | » de Convex Auth).
 	const userId = identity.subject.split('|')[0];
-	const user = await ctx.runQuery(api.users.getById, {
+	const user = await ctx.runQuery(internal.users.getByIdInternal, {
 		userId: userId as any
 	});
 	// Un token encore valide d'un employé licencié ne donne accès à rien.

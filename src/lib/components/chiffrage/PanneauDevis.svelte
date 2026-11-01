@@ -3,7 +3,6 @@
 		Check,
 		Copy,
 		PhoneCall,
-		RefreshCw,
 		RotateCcw,
 		Route,
 		ShoppingCart,
@@ -12,6 +11,7 @@
 	} from '@lucide/svelte';
 	import {
 		euro,
+		FAMILLE_BY_ID,
 		familleDeGrille,
 		nombre,
 		PRODUIT_BY_ID,
@@ -21,28 +21,31 @@
 		TVA_LABEL,
 		type LigneDevis
 	} from '$lib/data/book';
-	import { supervisionRequise, type Opportunite } from '$lib/data/opportunite';
+	import { REMISE_MAX, RESPONSABLE_POSES, type Deblocage } from '$lib/data/deblocage';
 	import { effacerChantiers } from '$lib/data/regroupement';
-	import { CARTE_SUCCES, TEXTE_ALERTE, TEXTE_SUCCES } from '$lib/chiffrage-style';
+	import { CARTE_SUCCES, TEXTE_SUCCES } from '$lib/chiffrage-style';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import DialogOpportunite from './DialogOpportunite.svelte';
+	import { useQuery } from 'convex-svelte';
+	import { api } from '../../../convex/_generated/api.js';
+	import { authState } from '$lib/auth-state.svelte';
+	import { isAdministrateur } from '$lib/data/roles';
 	import RegroupementClient from './RegroupementClient.svelte';
 	import Anneau from './Anneau.svelte';
 
 	let {
 		lignes = $bindable<LigneDevis[]>([]),
 		remise = $bindable(0),
-		opportunite = $bindable<Opportunite | null>(null),
+		deblocage = $bindable<Deblocage | null>(null),
 		flash = null,
 		onQte,
 		onSupprimer,
 		onVider
 	}: {
 		lignes: LigneDevis[];
-		/** remise effective du devis, toujours issue d'une DO négociée */
+		/** remise effective du devis, toujours issue d'un déblocage */
 		remise: number;
-		/** DO validée qui débloque la remise, ou null tant qu'aucune DO n'est faite */
-		opportunite: Opportunite | null;
+		/** place ouverte par le responsable (code saisi), ou null tant qu'aucune */
+		deblocage: Deblocage | null;
 		/** uid de la dernière ligne ajoutée, mise en avant quelques instants. */
 		flash?: string | null;
 		onQte: (uid: string, q: number) => void;
@@ -50,10 +53,20 @@
 		onVider: () => void;
 	} = $props();
 
+	// Le regroupement (et donc le déblocage d'une place) reste réservé aux
+	// administrateurs : les autres rôles chiffrent sans l'ouvrir.
+	const profile = useQuery(api.users.getProfile, () => (authState.isAuthenticated ? {} : 'skip'));
+	const peutValider = $derived(isAdministrateur(profile.data?.role));
+
 	const totaux = $derived(totauxDevis(lignes, remise));
+	/** Les totaux pleins, pour montrer d'où part la remise. */
+	const totauxPlein = $derived(totauxDevis(lignes, 0));
+	/** Le chiffre final avant remise : c'est lui que le code remise. */
+	const totalPlein = $derived(totauxPlein.totalTTC);
+	const montantOffert = $derived((totalPlein * (deblocage?.remise ?? 0)) / 100);
+	const remiseHT = $derived(totauxPlein.totalHT - totaux.totalHT);
 	const rates = $derived([...totaux.parTva.keys()].sort((a, b) => a - b));
 	let copied = $state(false);
-	let doOuverte = $state(false);
 	/** visuel client (points à valider puis chantiers programmés) */
 	let visuelOuvert = $state(false);
 	/** le regroupement a été présenté : la DO peut alors être engagée */
@@ -75,8 +88,6 @@
 		avaitDesLignes = aDesLignes;
 	});
 
-	const projet = $derived(lignes[0]?.designation ?? '');
-
 	/**
 	 * Famille du book du premier article du devis. Les chantiers programmés
 	 * montrés au client en seront les cousins : un client volets voit des volets,
@@ -88,9 +99,13 @@
 		return PRODUIT_BY_ID.get(ref)?.famille ?? familleDeGrille(ref) ?? '';
 	});
 
-	function recevoirDo(o: Opportunite) {
-		opportunite = o;
-		remise = o.remise;
+	/** Gamme lisible du produit du devis, pour le message de DO copié. */
+	const gammeClient = $derived(FAMILLE_BY_ID.get(familleClient)?.nom ?? familleClient);
+
+	/** Le code a ouvert une place dans le regroupement : la remise s'applique. */
+	function debloquer(taux: number) {
+		deblocage = { remise: taux, le: Date.now() };
+		remise = taux;
 	}
 
 	/** L'adresse validée devant le client resert à la DO : une seule saisie. */
@@ -99,8 +114,8 @@
 		visuelFait = true;
 	}
 
-	function retirerDo() {
-		opportunite = null;
+	function retirerDeblocage() {
+		deblocage = null;
 		remise = 0;
 	}
 
@@ -220,69 +235,66 @@
 			{/each}
 		</div>
 
-		<!-- La remise ne se saisit pas : elle se négocie par la DO, contre des contreparties. -->
-		{#if opportunite}
+		<!-- La remise ne se saisit pas : elle s'ouvre avec le code du responsable
+		     des poses, saisi dans le regroupement présenté au client. -->
+		{#if deblocage}
 			<div class={['rounded-2xl border px-2.5 py-2', CARTE_SUCCES].join(' ')}>
 				<div class="flex items-center gap-2">
-					<Anneau
-						progres={opportunite.remise / 40}
-						taille={40}
-						epaisseur={3}
-						ton={supervisionRequise(opportunite.remise) ? 'danger' : 'brand'}
-					>
-						<span class="text-[11px] font-black {TEXTE_SUCCES}">DO</span>
+					<Anneau progres={deblocage.remise / REMISE_MAX} taille={40} epaisseur={3} ton="brand">
+						<span class="text-[10.5px] font-black {TEXTE_SUCCES}">−{deblocage.remise}%</span>
 					</Anneau>
 					<div class="min-w-0 flex-1">
-						<p class="text-[12.5px] font-bold text-ink">
-							−{opportunite.remise} % négociés
-						</p>
+						<p class="text-[12.5px] font-bold text-ink">Place de pose débloquée</p>
 						<p class="truncate text-[10.5px] text-ink-soft">
-							{opportunite.secteur || opportunite.adresse || 'Opportunité créée'} ·
-							{jourDo(opportunite.le)}
+							{euro.format(montantOffert)} offerts · {jourDo(deblocage.le)}
 						</p>
 					</div>
 					<button
 						type="button"
-						onclick={() => (doOuverte = true)}
-						title="Refaire la DO"
-						class="shrink-0 rounded-full p-1 text-ink-soft transition-colors hover:text-brand"
-					>
-						<RefreshCw class="size-3.5" strokeWidth={2} />
-					</button>
-					<button
-						type="button"
-						onclick={retirerDo}
-						title="Retirer la DO"
+						onclick={retirerDeblocage}
+						title="Retirer la remise"
 						class="shrink-0 rounded-full p-1 text-ink-mute transition-colors hover:text-destructive"
 					>
 						<X class="size-3.5" strokeWidth={2} />
 					</button>
 				</div>
 				<p class="mt-1.5 text-[10.5px] leading-snug text-ink-mute">
-					{opportunite.chantiers.length} chantier{opportunite.chantiers.length > 1 ? 's' : ''} regroupé{opportunite
-						.chantiers.length > 1
-						? 's'
-						: ''}
-					{#if opportunite.valideePar}
-						· assumée par <span class="font-semibold {TEXTE_ALERTE}">{opportunite.valideePar}</span>
-					{:else}
-						· accordée par <span class="font-semibold text-ink-soft">{opportunite.responsable}</span
-						>
-					{/if}
+					Ouverte par {RESPONSABLE_POSES.nom}, {RESPONSABLE_POSES.role.toLowerCase()}
 				</p>
 			</div>
-		{:else if visuelFait}
-			<!-- Le visuel a été montré : la DO peut être engagée, et la dernière page
-			     du regroupement se raffiche telle quelle depuis la mémoire de l'appareil. -->
+		{/if}
+
+		<!-- Le regroupement se revoit à tout moment une fois présenté. Sans place
+		     ouverte, le numéro du responsable est rappelé à côté. -->
+		{#if peutValider && (visuelFait || deblocage)}
 			<div class="space-y-1.5">
-				<Button class="w-full" onclick={() => (doOuverte = true)}>
-					<PhoneCall class="size-4" strokeWidth={2} /> Appeler le responsable
-				</Button>
+				{#if !deblocage}
+					<div class="rounded-2xl border border-line bg-card2 px-3 py-2.5">
+						<a href={RESPONSABLE_POSES.telLien} class="group flex items-center gap-2.5">
+							<span class="grid size-9 shrink-0 place-items-center rounded-full bg-ink text-white">
+								<PhoneCall class="size-4" strokeWidth={2.2} />
+							</span>
+							<span class="min-w-0 flex-1">
+								<span class="block text-[9.5px] font-bold tracking-wider text-ink-mute uppercase">
+									{RESPONSABLE_POSES.role}
+								</span>
+								<span class="block truncate text-[12.5px] font-semibold text-ink">
+									{RESPONSABLE_POSES.nom}
+								</span>
+							</span>
+							<span
+								class="shrink-0 text-[13px] font-black text-ink tabular-nums underline decoration-brand/40 decoration-2 underline-offset-4 transition-colors group-hover:text-brand"
+							>
+								{RESPONSABLE_POSES.tel}
+							</span>
+						</a>
+					</div>
+				{/if}
 				<Button variant="outline" class="w-full" onclick={() => (visuelOuvert = true)}>
 					<Route class="size-4" strokeWidth={1.9} /> Revoir le regroupement
 				</Button>
 			</div>
-		{:else}
+		{:else if peutValider}
 			<Button class="w-full" onclick={() => (visuelOuvert = true)}>
 				<Sparkles class="size-4" strokeWidth={2.1} /> Valider le devis
 			</Button>
@@ -296,8 +308,21 @@
 		<div class="space-y-1 rounded-2xl border border-line bg-card2 px-3 py-2.5">
 			<div class="flex items-center justify-between text-[12.5px]">
 				<span class="font-medium text-ink-soft">Total HT</span>
-				<span class="font-bold text-ink tabular-nums">{euro.format(totaux.totalHT)}</span>
+				<span class="flex items-baseline gap-1.5 tabular-nums">
+					{#if remise > 0}
+						<span class="text-[11.5px] font-medium text-ink-mute line-through">
+							{euro.format(totauxPlein.totalHT)}
+						</span>
+					{/if}
+					<span class="font-bold text-ink">{euro.format(totaux.totalHT)}</span>
+				</span>
 			</div>
+			{#if remise > 0}
+				<div class="flex items-center justify-between text-[12.5px]">
+					<span class="font-semibold {TEXTE_SUCCES}">Remise −{remise} %</span>
+					<span class="font-bold {TEXTE_SUCCES} tabular-nums">−{euro.format(remiseHT)}</span>
+				</div>
+			{/if}
 			{#each rates as rate (rate)}
 				{@const g = totaux.parTva.get(rate)!}
 				<div class="flex items-center justify-between text-[12.5px]">
@@ -315,7 +340,14 @@
 			{/if}
 			<div class="flex items-center justify-between border-t border-line pt-1.5 text-[14px]">
 				<span class="font-semibold text-ink">Total TTC</span>
-				<span class="font-bold text-primary tabular-nums">{euro.format(totaux.totalTTC)}</span>
+				<span class="flex items-baseline gap-1.5 tabular-nums">
+					{#if remise > 0}
+						<span class="text-[12px] font-medium text-ink-mute line-through">
+							{euro.format(totauxPlein.totalTTC)}
+						</span>
+					{/if}
+					<span class="font-bold text-primary">{euro.format(totaux.totalTTC)}</span>
+				</span>
 			</div>
 		</div>
 
@@ -332,14 +364,11 @@
 	bind:open={visuelOuvert}
 	bind:adresse={adresseClient}
 	famille={familleClient}
-	reprendre={visuelFait}
+	gamme={gammeClient}
+	totalTTC={totalPlein}
+	debloque={deblocage !== null}
+	remiseDebloquee={deblocage?.remise ?? null}
+	reprendre={visuelFait || deblocage !== null}
 	onTerminer={finirVisuel}
-/>
-
-<DialogOpportunite
-	bind:open={doOuverte}
-	{projet}
-	adresseInitiale={adresseClient}
-	totalTTC={totaux.totalTTC}
-	onValider={recevoirDo}
+	onDebloquer={debloquer}
 />

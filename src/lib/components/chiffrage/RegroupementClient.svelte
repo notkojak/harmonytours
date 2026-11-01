@@ -1,6 +1,16 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
-	import { ChevronRight, MapPin, Search, Sparkles, TriangleAlert } from '@lucide/svelte';
+	import {
+		ChevronRight,
+		LockOpen,
+		MapPin,
+		PhoneCall,
+		Search,
+		Sparkles,
+		TriangleAlert
+	} from '@lucide/svelte';
+	import { remiseDuCode, RESPONSABLE_POSES, texteDemandeDo } from '$lib/data/deblocage';
+	import { euro0 } from '$lib/data/book';
 	import { Dialog, DialogContent } from '$lib/components/ui/dialog/index.js';
 	import { env } from '$env/dynamic/public';
 	import {
@@ -35,15 +45,25 @@
 	//   3 · la carte qui s'anime — sa maison, le rond de la zone, et les chantiers
 	//       programmés du quartier qui s'allument un à un.
 	// Rien de la mécanique interne n'apparaît ici : ni objection, ni thème, ni
-	// seuil, ni remise, ni appel de responsable.
+	// seuil. Quand le regroupement est complet, le responsable des poses est
+	// appelé et son code ouvre la place, avec le taux de remise qu'il dicte.
 	let {
 		open = $bindable(false),
 		centre = [0.6886, 47.3941] as [number, number],
 		adresse = $bindable(''),
 		famille = '',
+		/** gamme lisible du produit vendu, pour le message de DO copié */
+		gamme = '',
+		/** total TTC du devis, base de la remise */
+		totalTTC = 0,
+		/** place déjà ouverte par le responsable : la remise est acquise */
+		debloque = false,
+		/** taux réellement appliqué au devis quand la place est ouverte */
+		remiseDebloquee = null,
 		/** rouvrir directement la dernière page présentée (mémoire de l'appareil) */
 		reprendre = false,
-		onTerminer
+		onTerminer,
+		onDebloquer
 	}: {
 		open?: boolean;
 		/** repli quand l'adresse du client n'a pas pu être localisée */
@@ -51,9 +71,56 @@
 		adresse?: string;
 		/** famille du book du produit vendu : les poses montrées en sont cousines */
 		famille?: string;
+		gamme?: string;
+		totalTTC?: number;
+		debloque?: boolean;
+		remiseDebloquee?: number | null;
 		reprendre?: boolean;
 		onTerminer?: (adresse: string) => void;
+		/** le code est passé : la remise ouverte remonte jusqu'au devis */
+		onDebloquer?: (remise: number) => void;
 	} = $props();
+
+	// ------------------------------------------- Le déblocage d'une place
+	/** Aperçu de la photo d'une condition (le panneau de chantier). */
+	let photoOuverte = $state(false);
+	let photoSrc = $state('');
+
+	/** Le champ de code ne s'ouvre qu'une fois le responsable touché. */
+	let codeOuvert = $state(false);
+	let codeSaisi = $state('');
+	let erreurCode = $state('');
+	let secousseCode = $state(0);
+
+	/** Le taux vient du code, une place ouverte garde celui qu'elle a obtenu. */
+	const tauxApplique = $derived(remiseDebloquee ?? 0);
+	const montantRemise = $derived((totalTTC * tauxApplique) / 100);
+	const nouveauPrix = $derived(totalTTC - montantRemise);
+
+	// ------------------------------- La demande de DO, préparée en coulisses
+	// Les deux premiers chantiers programmés portent une demande de DO à 10 %
+	// puis 20 %. Rien ne se voit ni ne s'applique : le message part au presse-
+	// papier, prêt à coller dans WhatsApp.
+
+	/** Taux proposé par le n-ième chantier (0 → 10 %, 1 → 20 %). */
+	const remiseDuChantier = (i: number) => (i === 0 ? 10 : 20);
+
+	function copierDo(remise: number) {
+		navigator.clipboard?.writeText(texteDemandeDo({ gamme, totalTTC, remise })).catch(() => {});
+	}
+
+	/** Le responsable a dicté le code : la place s'ouvre au taux qu'il porte. */
+	function validerLeCode() {
+		const taux = remiseDuCode(codeSaisi);
+		if (taux === null) {
+			erreurCode = 'Code refusé. Vérifiez-le auprès du responsable.';
+			secousseCode += 1;
+			return;
+		}
+		erreurCode = '';
+		codeSaisi = '';
+		onDebloquer?.(taux);
+	}
 
 	// ------------------------------------------------- Étape 1 · les conditions
 	let points = $state<Record<string, boolean>>({});
@@ -169,6 +236,9 @@
 	}
 	const allumes = $derived(programmes.slice(0, visibles));
 	const enCours = $derived(visibles < programmes.length);
+	// Une place ouverte par le responsable s'ajoute au compteur du regroupement.
+	const placesTotal = $derived(programmes.length + (debloque ? 1 : 0));
+	const placesPrises = $derived(allumes.length + (debloque ? 1 : 0));
 	const premierJour = $derived(allumes.length ? Math.min(...allumes.map((c) => c.pose)) : 0);
 	const plusProche = $derived(allumes.length ? allumes[0].distance : 0);
 
@@ -242,6 +312,11 @@
 			localisation = false;
 			adresseRatee = false;
 			secoue = 0;
+			codeOuvert = false;
+			photoOuverte = false;
+			codeSaisi = '';
+			erreurCode = '';
+			secousseCode = 0;
 			stopper();
 			enAnimation = false;
 			// On ne raffiche que si le visuel mémorisé correspond au devis courant.
@@ -253,7 +328,9 @@
 				communeClient = memo.commune;
 				programmes = memo.chantiers;
 				phase = 3;
-				visibles = programmes.length;
+				// On compte sur la valeur mémorisée, pas sur `programmes` : relire un
+				// état que l'on vient d'écrire dans ce même effet le relancerait en boucle.
+				visibles = memo.chantiers.length;
 				restaure = true;
 			} else {
 				adresseSaisie = adresseDeDepart;
@@ -357,21 +434,48 @@
 				<div class="space-y-2.5">
 					{#each POINTS_A_VALIDER as p, i (p.id)}
 						{@const actif = !!points[p.id]}
-						<button
-							type="button"
+						<!-- Une ligne se valide au clic ; l'icône porte l'aperçu quand il y en a
+						     un (photo du panneau), sans valider la condition au passage. -->
+						<div
+							role="button"
+							tabindex="0"
 							onclick={() => basculer(p)}
-							class="flex w-full animate-in items-start gap-3 rounded-2xl border p-3.5 text-left transition-colors duration-300 fade-in slide-in-from-bottom-2 {actif
+							onkeydown={(e) => {
+								if (e.key === 'Enter' || e.key === ' ') {
+									e.preventDefault();
+									basculer(p);
+								}
+							}}
+							class="flex w-full animate-in cursor-pointer items-start gap-3 rounded-2xl border p-3.5 text-left transition-colors duration-300 fade-in slide-in-from-bottom-2 {actif
 								? CARTE_SUCCES
 								: 'border-line bg-card2/60 hover:bg-glass-2/60'}"
 							style="animation-delay:{i * 70}ms;animation-fill-mode:both"
 						>
-							<span
-								class="grid size-10 shrink-0 place-items-center rounded-full border text-lg transition-colors {actif
-									? 'border-brand/40 bg-brand/15'
-									: 'border-input bg-base'}"
-							>
-								{p.emoji}
-							</span>
+							{#if p.photo}
+								<button
+									type="button"
+									title="Voir le panneau de chantier"
+									aria-label="Voir le panneau de chantier"
+									onclick={(e) => {
+										e.stopPropagation();
+										photoSrc = p.photo ?? '';
+										photoOuverte = true;
+									}}
+									class="grid size-10 shrink-0 place-items-center rounded-full border text-lg transition-transform hover:scale-105 {actif
+										? 'border-brand/40 bg-brand/15'
+										: 'border-input bg-base'}"
+								>
+									{p.emoji}
+								</button>
+							{:else}
+								<span
+									class="grid size-10 shrink-0 place-items-center rounded-full border text-lg transition-colors {actif
+										? 'border-brand/40 bg-brand/15'
+										: 'border-input bg-base'}"
+								>
+									{p.emoji}
+								</span>
+							{/if}
 							<span class="min-w-0 flex-1">
 								<span class="block text-[13px] font-bold text-ink">{p.titre}</span>
 								<span class="mt-0.5 block text-[11.5px] leading-snug text-ink-soft">{p.aide}</span>
@@ -392,7 +496,7 @@
 									stroke-linejoin="round"><path d="m5 13 4 4L19 7" /></svg
 								>
 							</span>
-						</button>
+						</div>
 					{/each}
 				</div>
 
@@ -522,8 +626,8 @@
 								Chantiers programmés
 							</p>
 							<p class="mt-0.5 text-[22px] leading-none font-extrabold text-ink tabular-nums">
-								{visibles}
-								<span class="text-[13px] font-bold text-ink-mute">/{programmes.length}</span>
+								{placesPrises}
+								<span class="text-[13px] font-bold text-ink-mute">/{placesTotal}</span>
 							</p>
 						</div>
 						<div
@@ -583,7 +687,7 @@
 						<div class="flex items-center justify-between gap-3">
 							<p class="text-[12px] font-semibold text-ink">Les poses prévues dans votre zone</p>
 							<span class="text-[11px] font-semibold text-ink-mute tabular-nums">
-								{allumes.length}/{programmes.length}
+								{placesPrises}/{placesTotal}
 							</span>
 						</div>
 						<div
@@ -595,14 +699,16 @@
 								class="h-full rounded-full transition-all duration-500 {enCours
 									? 'bg-brand'
 									: 'bg-destructive'}"
-								style="width:{programmes.length ? (allumes.length / programmes.length) * 100 : 0}%"
+								style="width:{placesTotal ? (placesPrises / placesTotal) * 100 : 0}%"
 							></div>
 						</div>
 						<div class="mt-2.5 space-y-1.5">
-							{#each allumes as c (c.id)}
+							{#each allumes as c, i (c.id)}
 								{@const j = jourDe(c.pose)}
+								<!-- Les deux premiers chantiers emportent une demande de DO (10 % puis
+								     20 %) : toute la ligne est cliquable, sans rien afficher. -->
 								<div
-									class="flex animate-in items-center gap-2.5 rounded-2xl border border-line bg-base px-2.5 py-2 fade-in slide-in-from-bottom-2"
+									class="relative flex animate-in items-center gap-2.5 rounded-2xl border border-line bg-base px-2.5 py-2 fade-in slide-in-from-bottom-2"
 								>
 									<span
 										class="grid size-8 shrink-0 place-items-center rounded-full bg-brand/15 text-[10px] font-extrabold text-brand"
@@ -621,39 +727,177 @@
 									>
 										programmé
 									</span>
+									{#if i < 2}
+										<button
+											type="button"
+											class="absolute inset-0 rounded-2xl"
+											title={`Copier la demande de DO à ${remiseDuChantier(i)} %`}
+											aria-label={`Copier la demande de DO à ${remiseDuChantier(i)} %`}
+											onclick={() => copierDo(remiseDuChantier(i))}
+										></button>
+									{/if}
 								</div>
 							{/each}
+							{#if debloque}
+								<!-- La place ouverte par le responsable : la pose du client rejoint
+								     le regroupement, juste après les chantiers déjà programmés. -->
+								<div
+									class="flex animate-in items-center gap-2.5 rounded-2xl border border-brand/45 bg-brand/8 px-2.5 py-2 fade-in slide-in-from-bottom-2"
+								>
+									<span
+										class="grid size-8 shrink-0 place-items-center rounded-full bg-brand text-white"
+									>
+										<MapPin class="size-3.5" strokeWidth={2.3} />
+									</span>
+									<span class="min-w-0 flex-1">
+										<span class="block truncate text-[12px] font-semibold text-ink">
+											Votre pose
+										</span>
+										<span class="block text-[10.5px] text-ink-soft">
+											Ajoutée au regroupement avec votre remise
+										</span>
+									</span>
+									<span
+										class="shrink-0 rounded-full bg-brand px-2 py-0.5 text-[10px] font-bold text-white"
+									>
+										place ouverte
+									</span>
+								</div>
+							{/if}
 						</div>
 					</div>
 
 					<!-- Conclusion : le temps fort, une fois la carte remplie. Le constat
 					     doit sauter aux yeux : bandeau rouge plein, titre en capitales. -->
 					{#if !enCours}
-						<div
-							class="animate-in overflow-hidden rounded-2xl border-2 border-destructive/45 shadow-lg shadow-destructive/10 fade-in slide-in-from-bottom-2"
-						>
-							<div class="flex items-center gap-2.5 bg-destructive px-4 py-3 text-white">
-								<span class="grid size-7 shrink-0 place-items-center rounded-full bg-white/20">
-									<TriangleAlert class="size-4" strokeWidth={2.8} />
-								</span>
-								<div class="min-w-0">
-									<p class="text-[14px] leading-tight font-black tracking-[0.04em] uppercase">
-										Plus de place
-									</p>
-									<p class="text-[11px] font-semibold text-white/85">
-										{programmes.length}/{programmes.length} sur le prochain regroupement
-									</p>
+						<div class="space-y-2.5">
+							{#if debloque}
+								<!-- Place ouverte par le responsable : le geste commercial est le
+								     dernier argument, il prend la largeur et le prix final en gros. -->
+								<div
+									class="animate-in overflow-hidden rounded-2xl border-2 border-brand/45 shadow-xl shadow-brand/15 fade-in slide-in-from-bottom-2"
+								>
+									<div class="flex items-center gap-2.5 bg-brand px-4 py-3 text-white">
+										<span class="grid size-7 shrink-0 place-items-center rounded-full bg-white/20">
+											<LockOpen class="size-4" strokeWidth={2.6} />
+										</span>
+										<div class="min-w-0">
+											<p class="text-[14px] leading-tight font-black tracking-[0.04em] uppercase">
+												Place débloquée
+											</p>
+											<p class="text-[11px] font-semibold text-white/85">
+												Votre pose rejoint le regroupement
+											</p>
+										</div>
+										<p class="ml-auto text-[26px] leading-none font-black tabular-nums">
+											−{tauxApplique} %
+										</p>
+									</div>
+									<div class="space-y-1.5 bg-brand/8 px-4 py-3">
+										<div class="flex items-center justify-between text-[12px] text-ink-soft">
+											<span>Prix du devis</span>
+											<span class="tabular-nums line-through">{euro0.format(totalTTC)}</span>
+										</div>
+										<div
+											class="flex items-center justify-between text-[12px] font-semibold {TEXTE_SUCCES}"
+										>
+											<span>Remise regroupement</span>
+											<span class="tabular-nums">−{euro0.format(montantRemise)}</span>
+										</div>
+										<div class="flex items-end justify-between border-t border-brand/25 pt-1.5">
+											<span class="text-[12px] font-bold text-ink">Nouveau prix TTC</span>
+											<span class="text-[22px] leading-none font-black text-brand tabular-nums">
+												{euro0.format(nouveauPrix)}
+											</span>
+										</div>
+										<p class="text-[10.5px] leading-snug text-ink-mute">
+											Remise ouverte par le responsable des poses, appliquée au devis.
+										</p>
+									</div>
 								</div>
-							</div>
-							<div class="bg-destructive/8 px-4 py-3">
-								<p class="text-[12.5px] leading-snug font-semibold {TEXTE_ALERTE}">
-									Les {programmes.length} places du prochain regroupement sont déjà prises : votre demande
-									ne peut pas être acceptée.
-								</p>
-								<p class="mt-1 text-[11.5px] leading-snug text-ink-soft">
-									Contactez la supervision pour étudier votre dossier.
-								</p>
-							</div>
+							{:else}
+								<div
+									class="animate-in overflow-hidden rounded-2xl border-2 border-destructive/45 shadow-lg shadow-destructive/10 fade-in slide-in-from-bottom-2"
+								>
+									<div class="flex items-center gap-2.5 bg-destructive px-4 py-3 text-white">
+										<span class="grid size-7 shrink-0 place-items-center rounded-full bg-white/20">
+											<TriangleAlert class="size-4" strokeWidth={2.8} />
+										</span>
+										<div class="min-w-0">
+											<p class="text-[14px] leading-tight font-black tracking-[0.04em] uppercase">
+												Plus de place
+											</p>
+											<p class="text-[11px] font-semibold text-white/85">
+												{placesPrises}/{placesTotal} sur le prochain regroupement
+											</p>
+										</div>
+									</div>
+									<div class="bg-destructive/8 px-4 py-3">
+										<p class="text-[12.5px] leading-snug font-semibold {TEXTE_ALERTE}">
+											Les {programmes.length} places du prochain regroupement sont déjà prises : votre
+											demande ne peut pas être acceptée.
+										</p>
+									</div>
+								</div>
+
+								<!-- Le responsable et son numéro : un appui ouvre le code de déblocage. -->
+								<button
+									type="button"
+									onclick={() => (codeOuvert = !codeOuvert)}
+									class="flex w-full items-center gap-2.5 rounded-2xl bg-ink px-3 py-2.5 text-left text-white transition-opacity hover:opacity-90"
+								>
+									<span class="grid size-8 shrink-0 place-items-center rounded-full bg-white/15">
+										<PhoneCall class="size-4" strokeWidth={2.2} />
+									</span>
+									<span class="min-w-0 flex-1">
+										<span
+											class="block text-[9.5px] font-bold tracking-wider text-white/60 uppercase"
+										>
+											{RESPONSABLE_POSES.role}
+										</span>
+										<span class="block truncate text-[12.5px] font-semibold">
+											{RESPONSABLE_POSES.nom}
+										</span>
+									</span>
+									<span class="shrink-0 text-[13px] font-black tabular-nums">
+										{RESPONSABLE_POSES.tel}
+									</span>
+									<ChevronRight
+										class="size-4 shrink-0 transition-transform {codeOuvert ? 'rotate-90' : ''}"
+										strokeWidth={2.4}
+									/>
+								</button>
+
+								{#if codeOuvert}
+									<div class="rounded-2xl border border-line bg-card2 px-3 py-2.5">
+										<p class="text-[12px] font-bold text-ink">Code de déblocage</p>
+										{#key secousseCode}
+											<div class={secousseCode > 0 ? 'secouer mt-2 flex gap-2' : 'mt-2 flex gap-2'}>
+												<input
+													type="text"
+													inputmode="numeric"
+													bind:value={codeSaisi}
+													onkeydown={(e) => e.key === 'Enter' && validerLeCode()}
+													placeholder="Code du responsable"
+													class="min-w-0 flex-1 rounded-xl border border-input bg-base px-3 py-2 text-[13px] font-bold tracking-[0.2em] text-ink uppercase transition-[border-color,box-shadow] outline-none placeholder:font-normal placeholder:tracking-normal placeholder:normal-case focus:border-brand focus:ring-4 focus:ring-brand/15"
+												/>
+												<Button
+													class="shrink-0"
+													disabled={!codeSaisi.trim()}
+													onclick={validerLeCode}
+												>
+													Confirmer
+												</Button>
+											</div>
+										{/key}
+										{#if erreurCode}
+											<p class="mt-1.5 text-[11px] font-semibold {TEXTE_ALERTE}">
+												{erreurCode}
+											</p>
+										{/if}
+									</div>
+								{/if}
+							{/if}
 						</div>
 					{:else}
 						<p class="flex items-center gap-2 px-1 text-[11.5px] text-ink-soft">
@@ -694,6 +938,19 @@
 				</Button>
 			{/if}
 		</footer>
+	</DialogContent>
+</Dialog>
+
+<!-- Aperçu de la photo d'une condition : le panneau de chantier réel. -->
+<Dialog bind:open={photoOuverte}>
+	<DialogContent class="max-h-[92vh] gap-3 overflow-hidden rounded-3xl p-3 sm:max-w-2xl">
+		{#if photoSrc}
+			<img
+				src={photoSrc}
+				alt="Panneau de chantier Bravaux posé chez un client"
+				class="max-h-[82vh] w-full rounded-2xl bg-base object-contain"
+			/>
+		{/if}
 	</DialogContent>
 </Dialog>
 

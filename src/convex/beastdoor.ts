@@ -2,7 +2,7 @@ import { action, httpAction, internalMutation, mutation, query } from './_genera
 import type { ActionCtx } from './_generated/server';
 import { getAuthUserId } from '@convex-dev/auth/server';
 import { v } from 'convex/values';
-import { api } from './_generated/api';
+import { api, internal } from './_generated/api';
 import { getCurrentUser } from './permissions';
 import type { Doc, Id } from './_generated/dataModel';
 
@@ -705,7 +705,7 @@ async function refuserCompteVire(ctx: ActionCtx): Promise<Response | null> {
 	const identity = await getIdentity(ctx);
 	if (!identity) return json({ ok: false, error: 'Session expirée. Reconnecte-toi.' }, 401);
 	const userId = identity.subject.split('|')[0] as Id<'users'>;
-	const user = await ctx.runQuery(api.users.getById, { userId });
+	const user = await ctx.runQuery(internal.users.getByIdInternal, { userId });
 	if (!user || user.statut === 'viré') {
 		return json({ ok: false, error: 'Compte désactivé. Contactez votre superviseur.' }, 401);
 	}

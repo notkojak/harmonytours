@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Pencil, Search, Users } from '@lucide/svelte';
+	import { Download, Pencil, Search, Users } from '@lucide/svelte';
 	import { useQuery } from 'convex-svelte';
 	import { api } from '../../convex/_generated/api.js';
 	import type { Id } from '../../convex/_generated/dataModel.js';
@@ -20,6 +20,8 @@
 	import ContactDialog, { type ContactRow } from '$lib/components/ContactDialog.svelte';
 	import PersonTabs from '$lib/components/PersonTabs.svelte';
 	import Avatar from '$lib/components/Avatar.svelte';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { datedName, downloadCsv } from '$lib/csv';
 
 	// Onglet « par personne » (réservé aux managers) : undefined = Tout.
 	let person = $state<Id<'users'> | undefined>(undefined);
@@ -100,6 +102,27 @@
 		selected = client.contact;
 		dialogOpen = true;
 	}
+
+	// Export comptable / paie : un CSV des clients affichés (filtre et recherche
+	// compris), lisible directement dans Excel.
+	function exporter() {
+		const rows: (string | number)[][] = [
+			['Nom', 'Téléphone', 'Adresse', 'Commercial', 'Produits', 'Total HT', 'Total TTC']
+		];
+		for (const client of filtered) {
+			const totalHT = client.ventes.reduce((s, v) => s + v.totalHT, 0);
+			rows.push([
+				client.contact.name,
+				client.contact.phone ?? '',
+				client.contact.address ?? '',
+				vendeursOf(client),
+				produitsOf(client),
+				Math.round(totalHT * 100) / 100,
+				Math.round(client.totalTTC * 100) / 100
+			]);
+		}
+		downloadCsv(datedName('harmony-clients'), rows);
+	}
 </script>
 
 <div class="space-y-5">
@@ -130,6 +153,9 @@
 				<Badge variant="secondary" class="rounded-full px-2">
 					{filtered.length}
 				</Badge>
+				<Button variant="outline" size="sm" class="gap-1.5" onclick={exporter}>
+					<Download class="size-3.5" /> CSV
+				</Button>
 			</div>
 		</CardHeader>
 		<CardContent class="px-5 pt-3 pb-5">

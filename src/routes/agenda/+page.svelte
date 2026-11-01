@@ -4,19 +4,24 @@
 		Check,
 		ChevronLeft,
 		ChevronRight,
+		LoaderCircle,
 		MapPin,
 		Plus,
-		Trash2
+		Trash2,
+		Wrench
 	} from '@lucide/svelte';
 	import { useMutation, useQuery } from 'convex-svelte';
 	import { api } from '../../convex/_generated/api.js';
 	import type { Id } from '../../convex/_generated/dataModel.js';
 	import { authState } from '$lib/auth-state.svelte';
 	import {
+		CONFORTATION_EMOJI,
+		DATE_POSE_STYLE,
 		EVENT_EMOJI,
 		EVENT_STYLE,
 		EVENT_TYPE_LABEL,
 		REUNION_FIXED_SLOT,
+		rdvBlockTitle,
 		rdvGhostClass,
 		rdvStatusClass,
 		rdvStatusLabel
@@ -34,6 +39,7 @@
 	} from '$lib/components/ui/dialog/index.js';
 	import ContactDialog, { type ContactRow } from '$lib/components/ContactDialog.svelte';
 	import AgendaEventDialog, { type MembreRow } from '$lib/components/AgendaEventDialog.svelte';
+	import PoseDateDialog, { type VentePoseOption } from '$lib/components/PoseDateDialog.svelte';
 	import Avatar from '$lib/components/Avatar.svelte';
 	import { formatPhone } from '$lib/data/phone';
 
@@ -44,6 +50,11 @@
 	);
 	const profile = useQuery(api.users.getProfile, () => (authState.isAuthenticated ? {} : 'skip'));
 	const updateContact = useMutation(api.contacts.update);
+
+	// Dates de pose rattachées aux ventes : elles vivent sur la vente et
+	// s'affichent dans l'agenda, sans compter comme des RDV.
+	const ventes = useQuery(api.ventes.listVentes, () => (authState.isAuthenticated ? {} : 'skip'));
+	const removeDatePose = useMutation(api.ventes.removeDatePose);
 
 	// Seul le créateur du RDV (ou le commercial lié, en binôme) peut le déplacer.
 	const myName = $derived(
@@ -110,16 +121,6 @@
 	// d'agenda et le planning du tableau de bord.
 	const RDV_EMOJI = '💼';
 
-	// Légende de la barre d'outils : les couleurs portent le statut du RDV,
-	// encore faut-il pouvoir les relire.
-	const LEGENDE = [
-		{ label: 'Programmé', cls: rdvStatusClass(null) },
-		{ label: 'Déballé', cls: rdvStatusClass('déballé') },
-		{ label: 'À reprogrammer', cls: rdvStatusClass('à reprogrammer') },
-		{ label: 'Vendu', cls: rdvStatusClass('vendu') },
-		{ label: 'Annulé', cls: rdvStatusClass('annulé') }
-	];
-
 	const eventsByDate = $derived.by(() => {
 		const map = new Map<string, EventRow[]>();
 		for (const e of events) {
@@ -133,21 +134,59 @@
 		return map;
 	});
 
+	// Dates de pose : une entrée par date, rattachée à sa vente.
+	const poses = $derived.by((): PoseRow[] =>
+		(ventes.data ?? []).flatMap((v) =>
+			(v.datesPoses ?? []).map((p) => ({
+				id: p.id,
+				venteId: v._id,
+				date: p.date,
+				time: p.time ?? null,
+				note: p.note ?? null,
+				contactName: v.contactName,
+				vendeur: v.vendeurDisplay ?? v.vendeurName ?? null
+			}))
+		)
+	);
+	const posesByDate = $derived.by(() => {
+		const map = new Map<string, PoseRow[]>();
+		for (const p of poses) {
+			const list = map.get(p.date) ?? [];
+			list.push(p);
+			map.set(p.date, list);
+		}
+		for (const list of map.values()) {
+			list.sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''));
+		}
+		return map;
+	});
+
 	// Réunion : créneau fixe lundi et vendredi matin 8h30–9h30.
 	function isReunionDay(day: Date): boolean {
 		const d = day.getDay();
 		return d === 1 || d === 5;
 	}
 
+	type PoseRow = {
+		id: string;
+		venteId: string;
+		date: string;
+		time?: string | null;
+		note?: string | null;
+		contactName: string;
+		vendeur?: string | null;
+	};
+
 	type AgendaBlock = {
 		id: string;
-		kind: 'rdv' | 'evenement' | 'gestion' | 'reunion';
+		kind: 'rdv' | 'evenement' | 'gestion' | 'reunion' | 'pose';
 		startSlot: number;
 		endSlot: number;
 		lane: number;
 		totalLanes: number;
 		rdv?: ContactRow;
 		evenement?: EventRow;
+		pose?: PoseRow;
 	};
 
 	// Répartit les blocs d'un jour en « lanes », par cluster d'overlap : seuls
@@ -236,6 +275,21 @@
 			});
 			map.set(date, [...(map.get(date) ?? []), ...blocks]);
 		}
+		for (const [date, list] of posesByDate) {
+			const blocks: AgendaBlock[] = list.map((p) => {
+				const startSlot = timeToSlot(p.time ?? '08:00');
+				return {
+					id: `pose-${p.venteId}-${p.id}`,
+					kind: 'pose',
+					startSlot,
+					endSlot: Math.min(timeSlots.length, startSlot + 2),
+					lane: 0,
+					totalLanes: 1,
+					pose: p
+				};
+			});
+			map.set(date, [...(map.get(date) ?? []), ...blocks]);
+		}
 		// Créneau fixe « Réunion » (lundi et vendredi matin 8h30–9h30).
 		for (const day of gridDays) {
 			if (isReunionDay(day)) {
@@ -283,6 +337,50 @@
 	let editEvent = $state<EventRow | null>(null);
 	let previewOpen = $state(false);
 	let previewEvent = $state<EventRow | null>(null);
+
+	// Dates de pose : ajout (vente + date) et aperçu/suppression.
+	let poseOpen = $state(false);
+	let poseDate = $state('');
+	let posePreviewOpen = $state(false);
+	let posePreview = $state<PoseRow | null>(null);
+	let poseBusy = $state(false);
+
+	const ventesPose = $derived<VentePoseOption[]>(
+		(ventes.data ?? []).map((v) => ({
+			_id: v._id,
+			contactName: v.contactName,
+			date: v.date,
+			statut: v.statut ?? null
+		}))
+	);
+
+	function openPoseDialog(date: string) {
+		poseDate = date;
+		poseOpen = true;
+	}
+
+	function openPosePreview(pose: PoseRow) {
+		posePreview = pose;
+		posePreviewOpen = true;
+	}
+
+	async function supprimerPose() {
+		const p = posePreview;
+		if (!p || poseBusy) return;
+		poseBusy = true;
+		try {
+			await removeDatePose({
+				venteId: p.venteId as Id<'ventes'>,
+				datePoseId: p.id
+			});
+			posePreviewOpen = false;
+			posePreview = null;
+		} catch (e) {
+			console.error('Suppression date de pose', e);
+		} finally {
+			poseBusy = false;
+		}
+	}
 
 	function openEditEvent(ev: EventRow) {
 		if (!canCreateEvents) return;
@@ -382,6 +480,18 @@
 	);
 	const gridMinW = $derived(view === 'jour' ? 'min-w-[300px]' : 'min-w-[880px] max-md:min-w-0');
 
+	// Légende de l'agenda : rappelle la teinte de chaque famille de bloc.
+	const legendItems = [
+		{ label: 'Réunion', dot: 'bg-violet-500' },
+		{ label: 'Formation', dot: 'bg-emerald-500' },
+		{ label: 'Prospection', dot: 'bg-amber-500' },
+		{ label: 'Gestion', dot: 'bg-sky-500' },
+		{ label: 'RDV', dot: 'bg-brand' },
+		{ label: 'Confortation', dot: 'bg-fuchsia-500' },
+		{ label: 'Pose', dot: 'bg-orange-500' },
+		{ label: 'Annulé', dot: 'bg-red-500' }
+	];
+
 	const monthCells = $derived.by(() => {
 		const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
 		const start = new Date(first);
@@ -399,6 +509,7 @@
 	type MonthItem =
 		| { id: string; kind: 'rdv'; time: string; rdv: ContactRow }
 		| { id: string; kind: 'evenement'; time: string; evenement: EventRow }
+		| { id: string; kind: 'pose'; time: string; pose: PoseRow }
 		| { id: string; kind: 'gestion'; time: string }
 		| { id: string; kind: 'reunion'; time: string };
 
@@ -421,6 +532,15 @@
 				kind: 'evenement' as const,
 				time: e.start,
 				evenement: e
+			}));
+			map.set(date, [...(map.get(date) ?? []), ...items]);
+		}
+		for (const [date, list] of posesByDate) {
+			const items: MonthItem[] = list.map((p) => ({
+				id: `pose-${p.venteId}-${p.id}`,
+				kind: 'pose' as const,
+				time: p.time ?? '',
+				pose: p
 			}));
 			map.set(date, [...(map.get(date) ?? []), ...items]);
 		}
@@ -638,7 +758,7 @@
 		dialogOpen = true;
 	}
 
-	const chipBase = 'overflow-hidden rounded-lg text-left text-[11px] font-medium transition-colors';
+	const chipBase = 'overflow-hidden rounded-sm text-left text-[11px] font-medium transition-colors';
 	const chipWeek = `${chipBase} absolute right-1 left-1 z-10 flex flex-col items-start gap-1 px-2 py-1.5 max-md:gap-0 max-md:px-1 max-md:py-1 max-md:text-[10px]`;
 	// Vue mois : heure, nom, et de quoi lire le statut. Le détail (projet,
 	// téléphone, commercial) reste dans l'infobulle et dans la fiche ouverte au
@@ -814,13 +934,16 @@
 					{label}
 				</span>
 				<div class="ml-auto flex items-center gap-2">
-					<div class="hidden items-center gap-1.5 lg:flex">
-						{#each LEGENDE as l (l.label)}
-							<span class={['rounded-full px-2 py-0.5 text-[10px] font-medium', l.cls].join(' ')}>
-								{l.label}
-							</span>
-						{/each}
-					</div>
+					<Button
+						variant="outline"
+						size="sm"
+						class="rounded-full px-3.5"
+						onclick={() => openPoseDialog(toISO(today))}
+						title="Ajouter une date de pose liée à une vente"
+					>
+						<Wrench class="size-3.5" />
+						Date de pose
+					</Button>
 					{#if canCreateEvents}
 						<Button
 							variant="default"
@@ -833,6 +956,16 @@
 						</Button>
 					{/if}
 				</div>
+			</div>
+
+			<!-- Légende : une teinte par famille de bloc. -->
+			<div class="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[10.5px] text-muted-foreground">
+				{#each legendItems as item}
+					<span class="inline-flex items-center gap-1.5">
+						<span class={['size-2.5 rounded-[3px]', item.dot].join(' ')}></span>
+						{item.label}
+					</span>
+				{/each}
 			</div>
 
 			{#if view === 'jour'}
@@ -963,8 +1096,12 @@
 														<span
 															class="min-w-0 overflow-hidden text-[11px] font-medium text-ellipsis whitespace-nowrap max-md:overflow-visible max-md:text-[9.5px] max-md:whitespace-normal"
 														>
-															<span class="hidden sm:inline">{RDV_EMOJI}</span>
-															{rdv.name}
+															<span class="hidden sm:inline">
+																{rdv.followUp?.motif === 'confortation'
+																	? CONFORTATION_EMOJI
+																	: RDV_EMOJI}
+															</span>
+															{rdvBlockTitle(rdv.name, rdv.followUp?.motif)}
 														</span>
 													</div>
 													<Avatar
@@ -995,7 +1132,8 @@
 														{rdvCommercialLabel(rdv)}
 													</span>
 												{/if}
-												{#if rdv.followUp?.status || rdv.followUp?.motif}
+												{#if rdv.followUp?.status ||
+													(rdv.followUp?.motif && rdv.followUp.motif !== 'confortation')}
 													<span
 														class="hidden w-full truncate text-[10px] font-normal opacity-80 sm:block"
 													>
@@ -1004,11 +1142,15 @@
 												{/if}
 											{:else}
 												<div class="flex w-full min-w-0 items-center gap-1 overflow-hidden">
-													<span class="hidden shrink-0 sm:inline">{RDV_EMOJI}</span>
+													<span class="hidden shrink-0 sm:inline">
+														{rdv.followUp?.motif === 'confortation'
+															? CONFORTATION_EMOJI
+															: RDV_EMOJI}
+													</span>
 													<span
 														class="min-w-0 overflow-hidden text-[10.5px] font-semibold text-ellipsis whitespace-nowrap"
 													>
-														{rdv.name}
+														{rdvBlockTitle(rdv.name, rdv.followUp?.motif)}
 													</span>
 												</div>
 												<span class="font-mono text-[9px] leading-none opacity-70">
@@ -1098,10 +1240,31 @@
 												</button>
 											{/if}
 										</div>
+									{:else if block.kind === 'pose' && block.pose}
+										{@const pose = block.pose}
+										<button
+											type="button"
+											onclick={() => openPosePreview(pose)}
+											class={[
+												'absolute z-10 flex flex-col items-start gap-0.5 overflow-hidden rounded-sm px-2 py-1 text-left text-[11px] font-medium',
+												DATE_POSE_STYLE
+											].join(' ')}
+											style={blockStyle(block)}
+											title={`Pose — ${pose.contactName}${pose.note ? ` · ${pose.note}` : ''}`}
+										>
+											<span
+												class="w-full overflow-hidden font-semibold text-ellipsis whitespace-nowrap max-md:overflow-visible max-md:text-[9.5px] max-md:whitespace-normal"
+											>
+												🔧 Pose · {pose.contactName}
+											</span>
+											<span class="hidden font-mono text-[10px] leading-none opacity-80 sm:block">
+												{pose.time ?? 'Journée'}
+											</span>
+										</button>
 									{:else if block.kind === 'reunion'}
 										<div
 											class={[
-												'absolute z-10 flex flex-col items-start gap-0.5 overflow-hidden rounded-lg px-2 py-1 text-[11px] font-medium max-md:text-[9.5px]',
+												'absolute z-10 flex flex-col items-start gap-0.5 overflow-hidden rounded-sm px-2 py-1 text-[11px] font-medium max-md:text-[9.5px]',
 												REUNION_FIXED_SLOT
 											].join(' ')}
 											style={blockStyle(block)}
@@ -1220,7 +1383,9 @@
 														{rdv.followUp?.time}
 													</span>
 												{/if}
-												<span class="min-w-0 flex-1 truncate">{rdv.name}</span>
+												<span class="min-w-0 flex-1 truncate">
+													{rdvBlockTitle(rdv.name, rdv.followUp?.motif)}
+												</span>
 												{#if rdv.followUp?.status === 'vendu'}
 													<Check class="size-3 shrink-0" strokeWidth={2.5} />
 												{:else if rdv.followUp?.status === 'annulé'}
@@ -1316,6 +1481,21 @@
 													</button>
 												{/if}
 											</div>
+										{:else if item.kind === 'pose' && item.pose}
+											<button
+												type="button"
+												onclick={(e) => {
+													e.stopPropagation();
+												openPosePreview(item.pose);
+												}}
+												class={[chipMonth, DATE_POSE_STYLE].join(' ')}
+												title={`Pose — ${item.pose.contactName}${item.pose.note ? ` · ${item.pose.note}` : ''}`}
+											>
+												<span class="hidden font-mono text-[10px] opacity-70 sm:block">
+													{item.pose.time ?? ''}
+												</span>
+												<span class="min-w-0 flex-1 truncate">🔧 Pose · {item.pose.contactName}</span>
+											</button>
 										{:else if item.kind === 'reunion'}
 											<div
 												data-static-chip
@@ -1378,7 +1558,7 @@
 
 			<div class="space-y-3 text-[13px]">
 				<span
-					class="inline-flex w-fit items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${EVENT_STYLE[
+					class="inline-flex w-fit items-center rounded-sm px-2.5 py-0.5 text-[11px] font-semibold ${EVENT_STYLE[
 						previewEvent.type
 					] ?? EVENT_STYLE.gestion}"
 				>
@@ -1455,6 +1635,60 @@
 		</DialogContent>
 	</Dialog>
 {/if}
+<Dialog bind:open={posePreviewOpen}>
+	<DialogContent class="max-w-md rounded-xl border-line bg-card">
+		<DialogHeader>
+			<DialogTitle class="flex items-center gap-2 text-[14px] font-semibold">
+				<span
+					class="grid size-8 place-items-center rounded-lg border border-line bg-card2 text-muted-foreground"
+				>
+					<Wrench class="size-4" strokeWidth={1.7} />
+				</span>
+				Date de pose
+			</DialogTitle>
+		</DialogHeader>
+		{#if posePreview}
+			<dl class="space-y-2 text-[13px]">
+				<div class="flex gap-2">
+					<dt class="w-24 shrink-0 text-muted-foreground">Client</dt>
+					<dd class="min-w-0 flex-1 font-medium text-foreground">{posePreview.contactName}</dd>
+				</div>
+				<div class="flex gap-2">
+					<dt class="w-24 shrink-0 text-muted-foreground">Date</dt>
+					<dd class="min-w-0 flex-1 text-foreground">
+						{fmtDate(posePreview.date)}{posePreview.time ? ` · ${posePreview.time}` : ''}
+					</dd>
+				</div>
+				{#if posePreview.vendeur}
+					<div class="flex gap-2">
+						<dt class="w-24 shrink-0 text-muted-foreground">Vente</dt>
+						<dd class="min-w-0 flex-1 text-foreground">{posePreview.vendeur}</dd>
+					</div>
+				{/if}
+				{#if posePreview.note}
+					<div class="flex gap-2">
+						<dt class="w-24 shrink-0 text-muted-foreground">Précision</dt>
+						<dd class="min-w-0 flex-1 whitespace-pre-wrap text-foreground">{posePreview.note}</dd>
+					</div>
+				{/if}
+			</dl>
+		{/if}
+		<DialogFooter class="gap-2">
+			<Button variant="outline" onclick={() => (posePreviewOpen = false)}>Fermer</Button>
+			<Button variant="destructive" onclick={supprimerPose} disabled={poseBusy}>
+				{#if poseBusy}
+					<LoaderCircle class="size-4 animate-spin" />
+				{:else}
+					<Trash2 class="size-4" />
+				{/if}
+				Supprimer
+			</Button>
+		</DialogFooter>
+	</DialogContent>
+</Dialog>
+
+<PoseDateDialog bind:open={poseOpen} initialDate={poseDate} ventes={ventesPose} />
+
 <AgendaEventDialog
 	bind:open={createOpen}
 	initialDate={createDate}

@@ -25,6 +25,7 @@
 	import { FAMILLES } from '$lib/data/catalogue';
 	import { contactSources, type ContactSource } from '$lib/data/sources';
 	import { formatPhone, onPhoneInput } from '$lib/data/phone';
+	import { useQuery } from 'convex-svelte';
 	import { initialQualification, qualifAnswered, toQualifDoc } from '$lib/data/qualification';
 	import AddressInput from './AddressInput.svelte';
 	import AgendaApercuDialog from './agenda-apercu-dialog.svelte';
@@ -73,10 +74,22 @@
 		].join(' ');
 	}
 	let address = $state('');
+	// Composantes BAN de l'adresse, pour les zones, la carte et les doublons.
+	let addressStreet = $state('');
+	let addressPostalCode = $state('');
+	let addressCity = $state('');
+	let latitude = $state<number | undefined>();
+	let longitude = $state<number | undefined>();
 	let phone = $state('');
 	let projet = $state('');
 	let source = $state('');
 	let note = $state('');
+
+	// Doublons probables : même téléphone dans l'agence (mise en garde, pas blocage —
+	// un couple peut partager une ligne).
+	const doublons = useQuery(api.contacts.findDoublons, () =>
+		phone.replace(/\D/g, '').length >= 8 ? { phone } : 'skip'
+	);
 	let followUpType = $state<'rappel' | 'rdv'>('rdv');
 	let followUpTime = $state('10:00');
 	let busy = $state(false);
@@ -106,6 +119,11 @@
 		name = '';
 		civilites = [];
 		address = '';
+		addressStreet = '';
+		addressPostalCode = '';
+		addressCity = '';
+		latitude = undefined;
+		longitude = undefined;
 		phone = '';
 		projet = '';
 		source = '';
@@ -152,6 +170,11 @@
 						? (civilites as ('M.' | 'Mme' | 'Melle')[])
 						: undefined,
 				address: address.trim() || undefined,
+				addressStreet: addressStreet || undefined,
+				addressPostalCode: addressPostalCode || undefined,
+				addressCity: addressCity || undefined,
+				latitude,
+				longitude,
 				phone: phone.trim() || undefined,
 				projet: projet || undefined,
 				source: (source || undefined) as ContactSource | undefined,
@@ -217,9 +240,18 @@
 					/>
 				</div>
 
-				<div class="space-y-1.5">
+					<div class="space-y-1.5">
 					<Label for="contactAddress">Adresse</Label>
-					<AddressInput bind:value={address} />
+					<AddressInput
+						bind:value={address}
+						onPickDetails={(d) => {
+							addressStreet = d.street ?? '';
+							addressPostalCode = d.postalCode ?? '';
+							addressCity = d.city ?? '';
+							latitude = d.latitude;
+							longitude = d.longitude;
+						}}
+					/>
 				</div>
 
 				<div class="space-y-1.5">
@@ -252,6 +284,19 @@
 						</SelectContent>
 					</Select>
 				</div>
+
+				{#if (doublons.data?.length ?? 0) > 0}
+					<div
+						class="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11.5px] leading-snug text-amber-800 md:col-span-2 dark:text-amber-200"
+					>
+						<span class="font-semibold">Doublon probable :</span>
+						ce numéro est déjà sur
+						{#each doublons.data ?? [] as d, i}
+							{i > 0 ? ', ' : ''}{d.name}
+						{/each}
+						. Vérifie qu'il ne s'agit pas du même client.
+					</div>
+				{/if}
 
 				<div class="space-y-1.5 md:col-span-2">
 					<Label for="contactProjet">Projet</Label>

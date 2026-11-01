@@ -9,6 +9,7 @@
 		placeholder = 'Adresse',
 		max = 0,
 		onPick,
+		onPickDetails,
 		onEnter
 	}: {
 		value?: string;
@@ -17,11 +18,22 @@
 		max?: number;
 		/** appelée avec le libellé retenu quand on clique une suggestion */
 		onPick?: (label: string) => void;
+		/** appelée avec le détail BAN (rue, CP, ville, coordonnées) */
+		onPickDetails?: (details: AddressDetails) => void;
 		/** appelée sur la touche Entrée */
 		onEnter?: () => void;
 	} = $props();
 
-	type Suggestion = { label: string };
+	type AddressDetails = {
+		label: string;
+		street?: string;
+		postalCode?: string;
+		city?: string;
+		latitude?: number;
+		longitude?: number;
+	};
+
+	type Suggestion = AddressDetails;
 
 	let local = $state(value);
 	let suggestions = $state<Suggestion[]>([]);
@@ -61,19 +73,35 @@
 	const ZONE_LIMIT = 20;
 	const AILLEURS_LIMIT = 10;
 
-	async function charger(url: string): Promise<string[]> {
+	async function charger(url: string): Promise<Suggestion[]> {
 		try {
 			const res = await fetch(url);
 			if (!res.ok) return [];
 			const data = (await res.json()) as {
-				features?: { properties?: { label?: string } }[];
+				features?: {
+					properties?: {
+						label?: string;
+						name?: string;
+						postcode?: string;
+						city?: string;
+					};
+					geometry?: { coordinates?: [number, number] };
+				}[];
 			};
-			const libelles: string[] = [];
+			const resultats: Suggestion[] = [];
 			for (const f of data.features ?? []) {
 				const label = f.properties?.label;
-				if (label) libelles.push(label);
+				if (!label) continue;
+				const coords = f.geometry?.coordinates;
+				resultats.push({
+					label,
+					...(f.properties?.name ? { street: f.properties.name } : {}),
+					...(f.properties?.postcode ? { postalCode: f.properties.postcode } : {}),
+					...(f.properties?.city ? { city: f.properties.city } : {}),
+					...(coords ? { longitude: coords[0], latitude: coords[1] } : {})
+				});
 			}
-			return libelles;
+			return resultats;
 		} catch {
 			return [];
 		}
@@ -97,18 +125,17 @@
 			const i = DEPARTEMENTS.indexOf(departementDe(label) ?? '');
 			return i < 0 ? DEPARTEMENTS.length : i;
 		};
-		const ordonnees = [...zone].sort((a, b) => rang(a) - rang(b));
+		const ordonnees = [...zone].sort((a, b) => rang(a.label) - rang(b.label));
 
-		// Quelques dizaines de libellés au plus : un simple `includes` suffit à
+		// Quelques dizaines de suggestions au plus : un simple `includes` suffit à
 		// écarter les doublons entre la zone et le reste de la France.
-		const fusion: string[] = [];
-		for (const label of [...ordonnees, ...ailleurs]) {
-			if (fusion.includes(label)) continue;
-			fusion.push(label);
+		const fusion: Suggestion[] = [];
+		for (const suggestion of [...ordonnees, ...ailleurs]) {
+			if (fusion.some((s) => s.label === suggestion.label)) continue;
+			fusion.push(suggestion);
 		}
 
-		const retenues = max > 0 ? fusion.slice(0, max) : fusion;
-		return retenues.map((label) => ({ label }));
+		return max > 0 ? fusion.slice(0, max) : fusion;
 	}
 
 	function pick(suggestion: Suggestion) {
@@ -117,6 +144,9 @@
 		suggestions = [];
 		open = false;
 		onPick?.(suggestion.label);
+		// Rue/CP/ville et coordonnées alimentent la version structurée de
+		// l'adresse, utilisée pour rattacher la fiche à une zone et la géolocaliser.
+		onPickDetails?.(suggestion);
 	}
 </script>
 

@@ -79,8 +79,22 @@ const contacts = defineTable({
 	// Ancien champ mono-valeur : conservé pour les données déjà saisies.
 	civilite: v.optional(v.union(v.literal('M.'), v.literal('Mme'), v.literal('Melle'))),
 	address: v.optional(v.string()),
+	// Adresse structurée : le libellé BAN reste dans `address` (affichage),
+	// les composantes servent au rattachement aux zones, aux doublons et aux
+	// tournées.
+	addressStreet: v.optional(v.string()),
+	addressPostalCode: v.optional(v.string()),
+	addressCity: v.optional(v.string()),
+	latitude: v.optional(v.number()),
+	longitude: v.optional(v.number()),
 	phone: v.optional(v.string()),
+	// Téléphone normalisé (chiffres seuls) : détection de doublons.
+	phoneKey: v.optional(v.string()),
 	projet: v.optional(v.string()),
+	// Suppression douce : la fiche et ses ventes restent en base et
+	// réapparaissent tant que la purge n'est pas demandée.
+	deletedAt: v.optional(v.number()),
+	deletedBy: v.optional(v.id('users')),
 	source: v.optional(v.union(v.literal('TAP'), v.literal('GMS'), v.literal('PHONE'))),
 	note: v.optional(v.string()),
 	statut: v.optional(v.union(v.literal('actif'), v.literal('traité'))),
@@ -91,7 +105,11 @@ const contacts = defineTable({
 			date: v.string(),
 			time: v.optional(v.string()),
 			// Commercial rattaché au RDV (nom affiché), autre que le créateur du contact.
-			commercial: v.optional(v.string()), // Statut du RDV : non renseigné = en attente (bleu).
+			commercial: v.optional(v.string()),
+			// Lien fiable vers le commercial (le nom ci-dessus reste l'affichage
+			// historique ; il ne sert plus de clé de calcul).
+			commercialId: v.optional(v.id('users')),
+			// Statut du RDV : non renseigné = en attente (bleu).
 			status: v.optional(
 				v.union(
 					v.literal('annulé'),
@@ -104,8 +122,12 @@ const contacts = defineTable({
 			motif: v.optional(v.union(v.literal('confortation'), v.literal('gestion'))),
 			// Raison de non-vente renseignée quand le RDV est passé en « déballé ».
 			nonVenteReason: v.optional(v.string()),
+			// Code normalisé de la raison (taxonomie partagée, agrégée dans les
+			// bilans) : le texte libre reste dans `nonVenteReason`.
+			nonVenteCode: v.optional(v.string()),
 			// Raison d'annulation renseignée quand le RDV est passé en « annulé ».
 			annulationReason: v.optional(v.string()),
+			annulationCode: v.optional(v.string()),
 			// Horodatage (ms) de la mise en « annulé » du RDV.
 			annulationDate: v.optional(v.number())
 		})
@@ -129,7 +151,9 @@ const contacts = defineTable({
 					)
 				),
 				nonVenteReason: v.optional(v.string()),
+				nonVenteCode: v.optional(v.string()),
 				annulationReason: v.optional(v.string()),
+				annulationCode: v.optional(v.string()),
 				annulationDate: v.optional(v.number()),
 				motif: v.optional(v.union(v.literal('confortation'), v.literal('gestion'))),
 				commercial: v.optional(v.string()),
@@ -154,7 +178,8 @@ const contacts = defineTable({
 	createdBy: v.optional(v.id('users'))
 })
 	.index('by_agency', ['agencyId'])
-	.index('by_createdBy', ['createdBy']); // Ventes : un contact devient client via une ou plusieurs ventes. Chaque vente
+	.index('by_createdBy', ['createdBy'])
+	.index('by_phone_key', ['phoneKey']); // Ventes : un contact devient client via une ou plusieurs ventes. Chaque vente
 // contient plusieurs produits (TVA + montant HT) et son vendeur.
 // Le statut de la vente peut être : en attente (défaut — pas encore
 // validée), valide, erreur ou annulée.
@@ -200,6 +225,18 @@ const ventes = defineTable({
 	totalHT: v.number(),
 	totalTVA: v.number(),
 	totalTTC: v.number(),
+	// Dates de pose (installation, livraison) rattachées à la vente : elles
+	// apparaissent dans l'agenda et ne comptent dans aucune statistique de RDV.
+	datesPoses: v.optional(
+		v.array(
+			v.object({
+				id: v.string(),
+				date: v.string(),
+				time: v.optional(v.string()),
+				note: v.optional(v.string())
+			})
+		)
+	),
 	// Vente confortée : le client a confirmé après réflexion. Sert au suivi
 	// commercial, sans changer le calcul du CA.
 	confortee: v.optional(v.boolean()),
@@ -207,10 +244,18 @@ const ventes = defineTable({
 	// indique si le dossier de financement (FI) a été accepté.
 	paiement: v.optional(v.union(v.literal('comptant'), v.literal('financement'))),
 	fiAccepte: v.optional(v.boolean()),
+	// Date du dernier changement de statut : sert à mesurer l'ancienneté d'une
+	// vente « en attente » (relance du manager).
+	statutChangedAt: v.optional(v.number()),
+	// Suppression douce : une vente supprimée n'apparaît plus mais reste
+	// auditable et restaurable.
+	deletedAt: v.optional(v.number()),
+	deletedBy: v.optional(v.id('users')),
 	agencyId: v.optional(v.id('agences'))
 })
 	.index('by_contact', ['contactId'])
-	.index('by_vendeur', ['vendeurId']);
+	.index('by_vendeur', ['vendeurId'])
+	.index('by_agency_date', ['agencyId', 'date']);
 
 // Schéma final du projet Harmony. Les tables d'authentification (users,
 // authAccounts, authSessions, authVerifiers) sont fournies par Convex Auth.
@@ -501,6 +546,86 @@ export default defineSchema({
 		.index('by_user', ['userId'])
 		.index('by_user_date', ['userId', 'date'])
 		.index('by_user_updated', ['userId', 'updatedAt']),
+
+	// Devis enregistrés : le chiffrage ne vit plus seulement dans le navigateur.
+	// Ils sont rattachables à un contact et convertibles en vente.
+	devis: defineTable({
+		numero: v.string(),
+		clientName: v.string(),
+		contactId: v.optional(v.id('contacts')),
+		lignes: v.array(
+			v.object({
+				uid: v.string(),
+				ref: v.string(),
+				designation: v.string(),
+				detail: v.optional(v.string()),
+				prixUnitaireHT: v.number(),
+				quantite: v.number(),
+				unite: v.string(),
+				tva: v.number()
+			})
+		),
+		remise: v.number(),
+		totalHT: v.number(),
+		totalTVA: v.number(),
+		totalTTC: v.number(),
+		// La DO négociée (conditions, remise, validation) est conservée telle quelle.
+		opportunite: v.optional(v.any()),
+		statut: v.union(
+			v.literal('brouillon'),
+			v.literal('envoyé'),
+			v.literal('accepté'),
+			v.literal('refusé')
+		),
+		venteId: v.optional(v.id('ventes')),
+		createdBy: v.id('users'),
+		agencyId: v.optional(v.id('agences')),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+		deletedAt: v.optional(v.number())
+	})
+		.index('by_contact', ['contactId'])
+		.index('by_numero', ['numero'])
+		.index('by_agency_updated', ['agencyId', 'updatedAt']),
+
+	// Pièces jointes (devis signé, plan, photo de chantier, justificatif FI…).
+	documents: defineTable({
+		name: v.string(),
+		storageId: v.string(),
+		mimeType: v.optional(v.string()),
+		size: v.optional(v.number()),
+		category: v.string(),
+		contactId: v.optional(v.id('contacts')),
+		venteId: v.optional(v.id('ventes')),
+		devisId: v.optional(v.id('devis')),
+		uploadedBy: v.id('users'),
+		uploadedAt: v.number(),
+		deletedAt: v.optional(v.number())
+	})
+		.index('by_contact', ['contactId'])
+		.index('by_vente', ['venteId'])
+		.index('by_devis', ['devisId'])
+		.index('by_uploaded', ['uploadedAt']),
+
+	// Absences et indisponibilités : sans elles, l'agenda et la capacité de
+	// l'équipe sont faux (un commercial en congé reste « disponible »).
+	absences: defineTable({
+		userId: v.id('users'),
+		type: v.union(
+			v.literal('congé'),
+			v.literal('maladie'),
+			v.literal('formation'),
+			v.literal('autre')
+		),
+		start: v.string(), // 'YYYY-MM-DD'
+		end: v.string(), // 'YYYY-MM-DD' (inclus)
+		note: v.optional(v.string()),
+		createdBy: v.id('users'),
+		agencyId: v.optional(v.id('agences')),
+		createdAt: v.number()
+	})
+		.index('by_agency_start', ['agencyId', 'start'])
+		.index('by_user_start', ['userId', 'start']),
 
 	// Tables métier du projet.
 	stats: defineTable({

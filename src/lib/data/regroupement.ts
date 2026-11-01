@@ -11,6 +11,8 @@ export type PointAValider = {
 	emoji: string;
 	titre: string;
 	aide: string;
+	/** aperçu montrable au client quand on touche l'icône (photo du panneau…) */
+	photo?: string;
 };
 
 /**
@@ -28,7 +30,8 @@ export const POINTS_A_VALIDER: PointAValider[] = [
 		id: 'panneau',
 		emoji: '🪧',
 		titre: 'Un panneau de chantier pendant 2 mois',
-		aide: 'Le panneau reste sur place deux mois après la pose : de la visibilité pour votre quartier.'
+		aide: 'Le panneau reste sur place deux mois après la pose : de la visibilité pour votre quartier.',
+		photo: '/panneau-chantier.jpg'
 	},
 	{
 		id: 'avant-apres',

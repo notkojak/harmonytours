@@ -5,7 +5,6 @@
 		BarChart3,
 		Calculator,
 		CalendarDays,
-		Clock,
 		Contact,
 		KeyRound,
 		LayoutDashboard,
@@ -29,7 +28,7 @@
 	import { page } from '$app/state';
 	import { authState } from '$lib/auth-state.svelte';
 	import { signOut } from '$lib/convex-auth';
-	import { canAccessAdministration, capitalizeRole } from '$lib/data/roles';
+	import { canAccessAdministration, canViewPilotage, capitalizeRole } from '$lib/data/roles';
 	import AgencySwitcher from './AgencySwitcher.svelte';
 	import NewContactDialog from './NewContactDialog.svelte';
 	import Avatar from './Avatar.svelte';
@@ -65,7 +64,6 @@
 		chart: BarChart3,
 		plus: Plus,
 		library: Library,
-		clock: Clock,
 		terminal: Terminal,
 		logIn: LogIn
 	};
@@ -93,11 +91,13 @@
 		handleSignOut();
 	});
 
-	const contacts = useQuery(api.contacts.list, () => (authState.isAuthenticated ? {} : 'skip'));
-	const contactsCount = $derived(contacts.data?.length ?? 0);
-
-	const clients = useQuery(api.ventes.listClients, () => (authState.isAuthenticated ? {} : 'skip'));
-	const clientsCount = $derived(clients.data?.length ?? 0);
+	// Deux compteurs, une requête : la barre latérale ne charge plus toutes les
+	// fiches et tous les clients à chaque page.
+	const counts = useQuery(api.contacts.counts, () =>
+		authState.isAuthenticated ? {} : 'skip'
+	);
+	const contactsCount = $derived(counts.data?.contacts ?? 0);
+	const clientsCount = $derived(counts.data?.clients ?? 0);
 
 	let contactOpen = $state(false);
 </script>
@@ -141,7 +141,9 @@
 					<nav class="space-y-0.5">
 						{#each section.items as item}
 							{@const ItemIcon = icons[item.icon]}
-							{#if item.href === '/administration' && !canAccessAdministration(profile.data?.role)}
+							{#if (item as { managerOnly?: boolean }).managerOnly && !canViewPilotage(profile.data?.role)}
+								<!-- Direction : réservée aux managers de périmètre -->
+							{:else if item.href === '/administration' && !canAccessAdministration(profile.data?.role)}
 								<!-- Administration : réservé aux managers -->
 							{:else}
 								<a

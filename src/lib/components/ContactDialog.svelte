@@ -7,6 +7,11 @@
 		civilite?: 'M.' | 'Mme' | 'Melle' | null;
 		printedAt?: number | null;
 		address?: string | null;
+		addressStreet?: string | null;
+		addressPostalCode?: string | null;
+		addressCity?: string | null;
+		latitude?: number | null;
+		longitude?: number | null;
 		phone?: string | null;
 		projet?: string | null;
 		source?: string | null;
@@ -18,10 +23,13 @@
 			date: string;
 			time?: string | null;
 			commercial?: string | null;
+			commercialId?: string | null;
 			status?: string | null;
 			motif?: 'confortation' | 'gestion' | null;
 			nonVenteReason?: string | null;
+			nonVenteCode?: string | null;
 			annulationReason?: string | null;
+			annulationCode?: string | null;
 			annulationDate?: number | null;
 		} | null;
 		// Historique des RDV : la raison du passage en rappel et, quand le RDV était
@@ -55,6 +63,7 @@
 	import {
 		AlertTriangle,
 		CalendarDays,
+		CalendarPlus,
 		Check,
 		CheckCircle2,
 		Copy,
@@ -117,6 +126,9 @@
 	} from '$lib/data/qualification';
 	import QualificationQuestions from './QualificationQuestions.svelte';
 	import ContactPrintSheet from './ContactPrintSheet.svelte';
+	import ContactJournal from './ContactJournal.svelte';
+	import ConfortationDialog from './ConfortationDialog.svelte';
+	import { ANNULATION_REASONS, NON_VENTE_REASONS, reasonLabel } from '$lib/data/reasons';
 
 	let {
 		contact = $bindable(null),
@@ -125,7 +137,6 @@
 
 	const updateContact = useMutation(api.contacts.update);
 	const removeContact = useMutation(api.contacts.remove);
-	const recontactContact = useMutation(api.contacts.recontact);
 	const markContactTreated = useMutation(api.contacts.markTreated);
 	const markContactPrinted = useMutation(api.contacts.markPrinted);
 	const setFollowUpFields = useMutation(api.contacts.setFollowUpFields);
@@ -179,6 +190,13 @@
 
 	let saleOpen = $state(false);
 	let saleEditOpen = $state(false);
+
+	// RDV de confortation : rendez-vous de suivi après la vente, hors stats RDV.
+	let confortationOpen = $state(false);
+	function confortationCreated(followUp: unknown) {
+		if (!contact) return;
+		contact = { ...contact, followUp: followUp as ContactRow['followUp'] };
+	}
 	let editingVente = $state<{
 		_id: string;
 		vendeurId?: string | null;
@@ -373,27 +391,12 @@
 		'19:30'
 	];
 
-	let mode = $state<'view' | 'edit' | 'recontact'>('view');
+	let mode = $state<'view' | 'edit'>('view');
 	let copied = $state('');
 	let annonceCopied = $state(false);
 	let editBusy = $state(false);
 	let editError = $state('');
 	let editSwitchReason = $state('');
-
-	let recontactResponse = $state('');
-	let recontactFollowUpType = $state<'rappel' | 'rdv'>('rappel');
-	let recontactFollowUpTime = $state('10:00');
-	let recontactRdvCommercial = $state(NONE);
-	let recontactRdvStatus = $state(NONE);
-	let recontactFollowUpDate = $state(
-		(() => {
-			const d = new Date();
-			return new CalendarDate(d.getFullYear(), d.getMonth() + 1, d.getDate());
-		})()
-	);
-	let recontactBusy = $state(false);
-	let recontactError = $state('');
-	let recontactSwitchReason = $state('');
 
 	let editAgendaOpen = $state(false);
 	let editName = $state('');
@@ -414,6 +417,11 @@
 		].join(' ');
 	}
 	let editAddress = $state('');
+	let editAddressStreet = $state('');
+	let editAddressPostalCode = $state('');
+	let editAddressCity = $state('');
+	let editLatitude = $state<number | undefined>();
+	let editLongitude = $state<number | undefined>();
 	let editPhone = $state('');
 	let editProjet = $state('');
 	let editSource = $state('');
@@ -452,6 +460,11 @@
 					? [contact.civilite]
 					: [];
 			editAddress = contact.address ?? '';
+			editAddressStreet = contact.addressStreet ?? '';
+			editAddressPostalCode = contact.addressPostalCode ?? '';
+			editAddressCity = contact.addressCity ?? '';
+			editLatitude = contact.latitude ?? undefined;
+			editLongitude = contact.longitude ?? undefined;
 			editPhone = contact.phone ?? '';
 			editProjet = contact.projet ?? '';
 			editSource = contact.source ?? '';
@@ -477,117 +490,6 @@
 			}
 		}
 	});
-
-	function openRecontact() {
-		if (!contact) return;
-		mode = 'recontact';
-		recontactResponse = '';
-		recontactFollowUpType = contact.followUp?.type ?? 'rappel';
-		recontactFollowUpTime = contact.followUp?.time ?? '10:00';
-		recontactRdvCommercial = contact.followUp?.commercial ?? NONE;
-		recontactRdvStatus = contact.followUp?.status ?? NONE;
-		if (contact.followUp?.date) {
-			const [y, m, d] = contact.followUp.date.split('-').map(Number);
-			recontactFollowUpDate = new CalendarDate(y, m, d);
-		}
-		recontactSwitchReason = '';
-		recontactError = '';
-	}
-
-	async function handleRecontact() {
-		if (!contact) return;
-		if (!recontactResponse.trim()) {
-			recontactError = 'Écris une réponse au recontact.';
-			return;
-		}
-		if (
-			recontactFollowUpType === 'rappel' &&
-			contact.followUp?.type === 'rdv' &&
-			!recontactSwitchReason.trim()
-		) {
-			recontactError = 'Renseigne la raison du passage en rappel.';
-			return;
-		}
-		if (
-			recontactFollowUpType === 'rdv' &&
-			isSunday(recontactFollowUpDate) &&
-			!keepsLegacySunday(recontactFollowUpDate)
-		) {
-			recontactError = 'Les RDV ne peuvent pas être planifiés un dimanche.';
-			return;
-		}
-		recontactBusy = true;
-		recontactError = '';
-		try {
-			await recontactContact({
-				contactId: contact._id as Id<'contacts'>,
-				response: recontactResponse.trim(),
-				rdvSwitchReason:
-					recontactFollowUpType === 'rappel' && contact.followUp?.type === 'rdv'
-						? recontactSwitchReason.trim()
-						: undefined,
-				followUp: {
-					type: recontactFollowUpType,
-					date: recontactFollowUpDate.toString(),
-					time: recontactFollowUpType === 'rdv' ? recontactFollowUpTime : undefined,
-					// On conserve le type du RDV existant quand on le repositionne.
-					motif:
-						recontactFollowUpType === 'rdv' && contact.followUp?.type === 'rdv'
-							? (contact.followUp?.motif ?? undefined)
-							: undefined,
-					...(recontactFollowUpType === 'rdv'
-						? {
-								commercial: recontactRdvCommercial !== NONE ? recontactRdvCommercial : undefined,
-								status:
-									recontactRdvStatus !== NONE
-										? (recontactRdvStatus as 'annulé' | 'déballé' | 'vendu' | 'à reprogrammer')
-										: undefined
-							}
-						: {})
-				}
-			});
-			contact = {
-				...contact,
-				recontacts: [
-					...(contact.recontacts ?? []),
-					{ date: Date.now(), response: recontactResponse.trim() }
-				],
-				followUp: {
-					type: recontactFollowUpType,
-					date: recontactFollowUpDate.toString(),
-					time: recontactFollowUpType === 'rdv' ? recontactFollowUpTime : null,
-					motif:
-						recontactFollowUpType === 'rdv' && contact.followUp?.type === 'rdv'
-							? (contact.followUp?.motif ?? null)
-							: null,
-					...(recontactFollowUpType === 'rdv'
-						? {
-								commercial: recontactRdvCommercial !== NONE ? recontactRdvCommercial : null,
-								status:
-									recontactRdvStatus !== NONE
-										? (recontactRdvStatus as 'annulé' | 'déballé' | 'vendu' | 'à reprogrammer')
-										: null
-							}
-						: {})
-				},
-				rdvHistory:
-					recontactFollowUpType === 'rdv'
-						? [...(contact.rdvHistory ?? []), { at: Date.now() }]
-						: contact.followUp?.type === 'rdv'
-							? (contact.rdvHistory ?? []).map((entry, i, arr) =>
-									i === arr.length - 1
-										? { ...entry, reason: recontactSwitchReason.trim() || undefined }
-										: entry
-								)
-							: (contact.rdvHistory ?? [])
-			};
-			mode = 'view';
-		} catch (e) {
-			recontactError = e instanceof Error ? e.message : 'Recontact impossible.';
-		} finally {
-			recontactBusy = false;
-		}
-	}
 
 	// treated = false : on annule le marquage, le contact revient dans son état
 	// principal (RDV, rappel ou actif) — son suivi est conservé tel quel.
@@ -618,43 +520,27 @@
 		}
 	}
 
-	// Popup de saisie de la raison du traitement (marquage « traité »).
-	function openTraiteDialog() {
-		traiteReason = contact?.treatedReason ?? '';
-		traiteError = '';
-		traiteOpen = true;
-	}
-
-	async function confirmTraite() {
-		quickBusy = true;
-		const ok = await handleMarkTreated(true, traiteReason.trim());
-		quickBusy = false;
-		// En cas de refus, la popup reste ouverte avec le message du serveur.
-		if (!ok) return;
-		traiteOpen = false;
-		traiteReason = '';
-	}
-
 	// Mise à jour rapide depuis la fiche (sans ouvrir « Modifier ») : le statut du
 	// RDV et/ou le commercial rattaché.
 	let quickBusy = $state(false);
 	// Popup de saisie de la raison de non-vente (statut « déballé »).
 	let nonVenteOpen = $state(false);
 	let nonVenteReason = $state('');
-	// Popup de saisie de la raison du marquage « traité ».
-	let traiteOpen = $state(false);
-	let traiteReason = $state('');
+	let nonVenteCode = $state('');
 	// Message du serveur quand le marquage « traité » est refusé.
 	let traiteError = $state('');
 	// Popup de saisie de la raison d'annulation (statut « annulé »).
 	let annulationOpen = $state(false);
 	let annulationReason = $state('');
+	let annulationCode = $state('');
 
 	function patchFollowUp(patch: {
 		commercial?: string | null;
 		status?: string | null;
 		nonVenteReason?: string | null;
+		nonVenteCode?: string | null;
 		annulationReason?: string | null;
+		annulationCode?: string | null;
 	}) {
 		if (!contact?.followUp) return;
 		const fu = contact.followUp;
@@ -670,10 +556,14 @@
 				motif: fu.motif ?? null,
 				nonVenteReason:
 					patch.nonVenteReason !== undefined ? patch.nonVenteReason : (fu.nonVenteReason ?? null),
+				nonVenteCode:
+					patch.nonVenteCode !== undefined ? patch.nonVenteCode : (fu.nonVenteCode ?? null),
 				annulationReason:
 					patch.annulationReason !== undefined
 						? patch.annulationReason
 						: (fu.annulationReason ?? null),
+				annulationCode:
+					patch.annulationCode !== undefined ? patch.annulationCode : (fu.annulationCode ?? null),
 				// Date d'annulation : posée à la première mise en « annulé », conservée
 				// ensuite (même logique que le serveur).
 				annulationDate:
@@ -691,6 +581,7 @@
 	function quickSetDeballe() {
 		if (!contact) return;
 		nonVenteReason = contact.followUp?.nonVenteReason ?? '';
+		nonVenteCode = contact.followUp?.nonVenteCode ?? '';
 		nonVenteOpen = true;
 	}
 
@@ -701,9 +592,14 @@
 			await setFollowUpFields({
 				contactId: contact._id as Id<'contacts'>,
 				status: 'déballé',
-				nonVenteReason: nonVenteReason.trim() || undefined
+				nonVenteReason: nonVenteReason.trim() || undefined,
+				nonVenteCode: nonVenteCode || undefined
 			});
-			patchFollowUp({ status: 'déballé', nonVenteReason: nonVenteReason.trim() || null });
+			patchFollowUp({
+				status: 'déballé',
+				nonVenteReason: nonVenteReason.trim() || null,
+				nonVenteCode: nonVenteCode || null
+			});
 			nonVenteOpen = false;
 		} catch (e) {
 			console.error(e);
@@ -716,6 +612,7 @@
 	function quickSetAnnule() {
 		if (!contact) return;
 		annulationReason = contact.followUp?.annulationReason ?? '';
+		annulationCode = contact.followUp?.annulationCode ?? '';
 		annulationOpen = true;
 	}
 
@@ -726,9 +623,14 @@
 			await setFollowUpFields({
 				contactId: contact._id as Id<'contacts'>,
 				status: 'annulé',
-				annulationReason: annulationReason.trim() || undefined
+				annulationReason: annulationReason.trim() || undefined,
+				annulationCode: annulationCode || undefined
 			});
-			patchFollowUp({ status: 'annulé', annulationReason: annulationReason.trim() || null });
+			patchFollowUp({
+				status: 'annulé',
+				annulationReason: annulationReason.trim() || null,
+				annulationCode: annulationCode || null
+			});
 			annulationOpen = false;
 		} catch (e) {
 			console.error(e);
@@ -873,14 +775,6 @@
 			);
 			if (issue) entries.push(issue);
 		}
-		for (const r of contact?.recontacts ?? []) {
-			entries.push({
-				at: r.date,
-				label: '📞 Recontact',
-				detail: r.response,
-				dotClass: 'bg-amber-400'
-			});
-		}
 		for (const v of ventes.data ?? []) {
 			entries.push({
 				at: v.date,
@@ -951,15 +845,6 @@
 
 	const formattedDate = $derived(
 		editFollowUpDate.toDate(getLocalTimeZone()).toLocaleDateString('fr-FR', {
-			weekday: 'short',
-			day: 'numeric',
-			month: 'short',
-			year: 'numeric'
-		})
-	);
-
-	const formattedRecontactDate = $derived(
-		recontactFollowUpDate.toDate(getLocalTimeZone()).toLocaleDateString('fr-FR', {
 			weekday: 'short',
 			day: 'numeric',
 			month: 'short',
@@ -1074,18 +959,6 @@
 		return `${pris} · échangé ${depuis(dernierEchange)}`;
 	});
 
-	/** L'action la plus utile maintenant, selon l'état du contact. */
-	const actionPrincipale = $derived.by(
-		(): { id: 'annonce' | 'recontact'; label: string } | null => {
-			const c = contact;
-			if (!c || c.isClient) return null;
-			if (c.followUp?.type === 'rdv' && !c.followUp.status) {
-				return { id: 'annonce', label: 'Annoncer le RDV' };
-			}
-			return { id: 'recontact', label: 'Recontacter' };
-		}
-	);
-
 	/** Menu des actions secondaires de la fiche. */
 	let actionsOuvertes = $state(false);
 	const itemAction =
@@ -1150,13 +1023,14 @@
 		status: string | null | undefined,
 		motif?: string | null | undefined
 	): string {
-		if (status === 'déballé') return 'bg-violet-500/15 text-violet-700 dark:text-violet-300';
-		if (status === 'à reprogrammer') return 'bg-orange-500/15 text-orange-700 dark:text-orange-300';
+		if (status === 'déballé') return 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300';
+		if (status === 'à reprogrammer') return 'bg-amber-500/20 text-amber-800 dark:text-amber-300';
 		if (status === 'annulé') return 'bg-red-500/15 text-red-700 dark:text-red-300';
 		if (status === 'vendu') return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300';
-		// RDV « Confortation » / « Gestion dossier » : violet comme une réunion.
-		if (rdvMotifLabel(motif)) return 'bg-violet-500/15 text-violet-700 dark:text-violet-300';
-		return 'bg-blue-500/15 text-blue-700 dark:text-blue-300';
+		// RDV « Confortation » / « Gestion dossier » : teintes de l'agenda.
+		if (motif === 'confortation') return 'bg-fuchsia-500/15 text-fuchsia-700 dark:text-fuchsia-300';
+		if (motif === 'gestion') return 'bg-slate-500/12 text-slate-700 dark:text-slate-300';
+		return 'bg-brand/15 text-brand dark:text-brand';
 	}
 
 	async function copyValue(key: 'address' | 'phone' | 'date') {
@@ -1213,7 +1087,6 @@
 		if (prenom) lines.push(`🔔 Contact: ${prenom.toUpperCase()}`);
 		if (c.source) lines.push(`${annonceSourceEmoji(c.source)} Source : ${c.source.toUpperCase()}`);
 		if (c.name) lines.push(`👤 Nom du client : ${c.name}`);
-		// Date du contact corrigée si elle a été renseignée, sinon date de création.
 		const dateContact = c.dateContact ?? c._creationTime;
 		if (dateContact) lines.push(`🕐 Date de prise du rdv : ${annonceDdMm(dateContact)}`);
 		if (c.projet) lines.push(`💰 Produit : ${c.projet}`);
@@ -1279,6 +1152,11 @@
 				name: editName.trim(),
 				civilites: editCivilites as ('M.' | 'Mme' | 'Melle')[],
 				address: editAddress.trim() || undefined,
+				addressStreet: editAddressStreet || undefined,
+				addressPostalCode: editAddressPostalCode || undefined,
+				addressCity: editAddressCity || undefined,
+				latitude: editLatitude,
+				longitude: editLongitude,
 				phone: editPhone.trim() || undefined,
 				projet: editProjet || undefined,
 				source: (editSource || undefined) as ContactSource | undefined,
@@ -1584,6 +1462,11 @@
 								>
 									🛑 Raison de non-vente
 								</p>
+								{#if contact.followUp.nonVenteCode}
+									<p class="text-[12px] font-semibold text-violet-700 dark:text-violet-300">
+										{reasonLabel(NON_VENTE_REASONS, contact.followUp.nonVenteCode)}
+									</p>
+								{/if}
 								<p class="text-[13px] whitespace-pre-wrap text-foreground">
 									{contact.followUp.nonVenteReason}
 								</p>
@@ -1597,6 +1480,11 @@
 								>
 									❌ Raison d'annulation
 								</p>
+								{#if contact.followUp.annulationCode}
+									<p class="text-[12px] font-semibold text-red-700 dark:text-red-300">
+										{reasonLabel(ANNULATION_REASONS, contact.followUp.annulationCode)}
+									</p>
+								{/if}
 								<p class="text-[13px] whitespace-pre-wrap text-foreground">
 									{contact.followUp.annulationReason}
 								</p>
@@ -1694,6 +1582,23 @@
 							</p>
 						</div>
 
+						<ContactJournal
+							contactId={contact._id}
+							recontacts={contact.recontacts}
+							onAdded={(entry) =>
+								contact &&
+								(contact = {
+									...contact,
+									recontacts: [...(contact.recontacts ?? []), entry]
+								})}
+							onRemoved={(date) =>
+								contact &&
+								(contact = {
+									...contact,
+									recontacts: (contact.recontacts ?? []).filter((r) => r.date !== date)
+								})}
+						/>
+
 						<div class="rounded-lg border border-line bg-card2/60 px-3 py-2.5">
 							<div class="mb-1 flex items-center justify-between gap-2">
 								<p class="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
@@ -1706,15 +1611,28 @@
 										</span>
 									{/if}
 								</p>
-								<!-- Sans vente, le bouton est plein : c'est l'action à faire. -->
-								<Button
-									variant={(ventes.data?.length ?? 0) > 0 ? 'outline' : 'default'}
-									size="sm"
-									onclick={() => (saleOpen = true)}
-								>
-									<Plus class="size-3.5" />
-									Ajouter une vente
-								</Button>
+								<div class="flex items-center gap-1.5">
+									{#if contact.isClient || (ventes.data?.length ?? 0) > 0}
+										<Button
+											variant="outline"
+											size="sm"
+											onclick={() => (confortationOpen = true)}
+											title="RDV de suivi après la vente, hors statistiques"
+										>
+											<CalendarPlus class="size-3.5" />
+											RDV confortation
+										</Button>
+									{/if}
+									<!-- Sans vente, le bouton est plein : c'est l'action à faire. -->
+									<Button
+										variant={(ventes.data?.length ?? 0) > 0 ? 'outline' : 'default'}
+										size="sm"
+										onclick={() => (saleOpen = true)}
+									>
+										<Plus class="size-3.5" />
+										Ajouter une vente
+									</Button>
+								</div>
 							</div>
 							{#if (ventes.data?.length ?? 0) > 0}
 								<div class="space-y-2">
@@ -1960,8 +1878,17 @@
 						</div>
 
 						<div class="space-y-1.5">
-							<Label for="editContactAddress">Adresse</Label>
-							<AddressInput bind:value={editAddress} />
+						<Label for="editContactAddress">Adresse</Label>
+						<AddressInput
+							bind:value={editAddress}
+							onPickDetails={(d) => {
+								editAddressStreet = d.street ?? '';
+								editAddressPostalCode = d.postalCode ?? '';
+								editAddressCity = d.city ?? '';
+								editLatitude = d.latitude;
+								editLongitude = d.longitude;
+							}}
+						/>
 						</div>
 
 						<div class="space-y-1.5">
@@ -2227,177 +2154,12 @@
 						<p class="text-[12px] text-destructive">{editError}</p>
 					{/if}
 				</form>
-			{:else}
-				<!-- Recontact -->
-				<form onsubmit={handleRecontact} class="space-y-4">
-					<div class="space-y-1.5">
-						<Label for="recontactResponse">Réponse au recontact</Label>
-						<Textarea
-							id="recontactResponse"
-							rows={4}
-							required
-							placeholder="Réponse du contact…"
-							bind:value={recontactResponse}
-							class="min-h-28 border-input bg-base"
-						/>
-					</div>
-
-					<div class="space-y-2">
-						<Label>Nouveau suivi</Label>
-						<div
-							class="relative inline-grid grid-cols-2 gap-1 rounded-xl border border-line bg-card2/60 p-0.5"
-						>
-							<button
-								type="button"
-								onclick={() => (recontactFollowUpType = 'rdv')}
-								class={[
-									'flex h-9 items-center justify-center gap-1.5 rounded-lg px-3 text-[12px] font-medium transition-all',
-									recontactFollowUpType === 'rdv'
-										? 'bg-primary text-primary-foreground shadow-md shadow-primary/25'
-										: 'text-muted-foreground hover:bg-brand/10 hover:text-brand light:hover:text-brand'
-								].join(' ')}
-							>
-								<span class="text-[13px] leading-none">📅</span>
-								Ajouter un RDV
-							</button>
-							<button
-								type="button"
-								onclick={() => (recontactFollowUpType = 'rappel')}
-								class={[
-									'flex h-9 items-center justify-center gap-1.5 rounded-lg px-3 text-[12px] font-medium transition-all',
-									recontactFollowUpType === 'rappel'
-										? 'bg-primary text-primary-foreground shadow-md shadow-primary/25'
-										: 'text-muted-foreground hover:bg-brand/10 hover:text-brand light:hover:text-brand'
-								].join(' ')}
-							>
-								<span class="text-[13px] leading-none">🔔</span>
-								Ajouter un rappel
-							</button>
-						</div>
-
-						{#if recontactFollowUpType === 'rappel' && contact.followUp?.type === 'rdv'}
-							<div class="space-y-1.5">
-								<Label for="recontactSwitchReason">Raison du passage en rappel</Label>
-								<Input
-									id="recontactSwitchReason"
-									placeholder="Ex : client injoignable, reporté…"
-									bind:value={recontactSwitchReason}
-									class="border-input bg-base"
-								/>
-							</div>
-						{/if}
-
-						<div class="flex gap-3">
-							<div class="flex-1 space-y-1.5">
-								<Label>Date</Label>
-								<Popover>
-									<PopoverTrigger
-										class="flex h-9 w-full items-center gap-2 rounded-md border border-line bg-base px-3 text-[12.5px] font-medium text-foreground transition-colors hover:bg-card2"
-									>
-										<CalendarDays class="size-3.5 text-muted-foreground" strokeWidth={1.7} />
-										{formattedRecontactDate}
-									</PopoverTrigger>
-									<PopoverContent class="w-auto rounded-xl border-line bg-card p-0" align="start">
-										<Calendar
-											locale="fr-FR"
-											type="single"
-											value={recontactFollowUpDate}
-											isDateDisabled={(date) =>
-												recontactFollowUpType === 'rdv' &&
-												isSunday(date) &&
-												!keepsLegacySunday(date as CalendarDate)}
-											onValueChange={(value: DateValue | undefined) => {
-												if (value) recontactFollowUpDate = value as CalendarDate;
-											}}
-										/>
-									</PopoverContent>
-								</Popover>
-							</div>
-							{#if recontactFollowUpType === 'rdv'}
-								<div class="w-28 space-y-1.5">
-									<Label>Heure</Label>
-									<Select type="single" bind:value={recontactFollowUpTime}>
-										<SelectTrigger class="w-full border-input bg-base">
-											<span data-slot="select-value">{recontactFollowUpTime}</span>
-										</SelectTrigger>
-										<SelectContent>
-											{#each suiviTimes as time}
-												<SelectItem value={time}>{time}</SelectItem>
-											{/each}
-										</SelectContent>
-									</Select>
-								</div>
-							{/if}
-						</div>
-
-						{#if recontactFollowUpType === 'rdv'}
-							<div class="grid grid-cols-2 gap-3">
-								<div class="space-y-1.5">
-									<Label>Commercial rattaché</Label>
-									<Select type="single" bind:value={recontactRdvCommercial}>
-										<SelectTrigger class="w-full border-input bg-base">
-											{#if recontactRdvCommercial !== NONE}
-												<Avatar
-													photo={photoByName.get(recontactRdvCommercial.trim().toLowerCase())}
-													label={initialsOf(recontactRdvCommercial)}
-													alt={recontactRdvCommercial}
-													class="size-5 bg-muted text-[9px] font-bold text-muted-foreground"
-												/>
-											{/if}
-											<span data-slot="select-value">
-												{recontactRdvCommercial !== NONE ? recontactRdvCommercial : 'Aucun'}
-											</span>
-										</SelectTrigger>
-										<SelectContent>
-											<SelectItem value={NONE}>Aucun</SelectItem>
-											{#each rattachables as c}
-												<SelectItem value={commercialName(c)}>
-													<span class="flex items-center gap-2">
-														<Avatar
-															photo={photoByName.get(commercialName(c).trim().toLowerCase())}
-															label={initialsOf(commercialName(c))}
-															class="size-5 bg-muted text-[9px] font-bold text-muted-foreground"
-														/>
-														{commercialName(c)}
-													</span>
-												</SelectItem>
-											{/each}
-										</SelectContent>
-									</Select>
-								</div>
-								<div class="space-y-1.5">
-									<Label>Statut</Label>
-									<Select type="single" bind:value={recontactRdvStatus}>
-										<SelectTrigger class="w-full border-input bg-base">
-											<span data-slot="select-value">
-												{recontactRdvStatus !== NONE
-													? rdvStatusLabel(recontactRdvStatus)
-													: 'Programmé'}
-											</span>
-										</SelectTrigger>
-										<SelectContent>
-											<SelectItem value={NONE}>Programmé</SelectItem>
-											<SelectItem value="déballé">Déballé</SelectItem>
-											<SelectItem value="annulé">Annulé</SelectItem>
-											<SelectItem value="vendu">Vendu</SelectItem>
-										</SelectContent>
-									</Select>
-								</div>
-							</div>
-						{/if}
-					</div>
-
-					{#if recontactError}
-						<p class="text-[12px] text-destructive">{recontactError}</p>
-					{/if}
-				</form>
 			{/if}
 		{/if}
 
-		<!-- Barre d'actions : l'action utile maintenant, le reste rangé dans « Plus ».
-		     Trois éléments au lieu de six, et rien qui déborde de la fenêtre. -->
+		<!-- Barre d'actions : le reste est rangé dans « Plus ». -->
 		<!-- Refus du serveur (ex. marquage « traité » non autorisé) : visible au pied de la fiche. -->
-		{#if traiteError && !traiteOpen}
+		{#if traiteError}
 			<p class="rounded-md bg-destructive/10 px-2.5 py-2 text-[12px] font-medium text-destructive">
 				{traiteError}
 			</p>
@@ -2412,32 +2174,18 @@
 						Plus
 					</PopoverTrigger>
 					<PopoverContent align="start" class="w-60 gap-0.5 p-1.5">
-						{#if !contact?.isClient}
-							{#if actionPrincipale?.id === 'annonce'}
-								<button
-									type="button"
-									class={itemAction}
-									onclick={() => {
-										actionsOuvertes = false;
-										openRecontact();
-									}}
-								>
-									<PhoneCall class="size-3.5 text-muted-foreground" />
-									Recontacter
-								</button>
-							{:else if contact?.followUp?.type === 'rdv'}
-								<button
-									type="button"
-									class={itemAction}
-									onclick={() => {
-										actionsOuvertes = false;
-										copyAnnonceRdv();
-									}}
-								>
-									<Megaphone class="size-3.5 text-muted-foreground" />
-									{annonceCopied ? 'Annonce copiée !' : "Copier l'annonce du RDV"}
-								</button>
-							{/if}
+						{#if !contact?.isClient && contact?.followUp?.type === 'rdv'}
+							<button
+								type="button"
+								class={itemAction}
+								onclick={() => {
+									actionsOuvertes = false;
+									copyAnnonceRdv();
+								}}
+							>
+								<Megaphone class="size-3.5 text-muted-foreground" />
+								{annonceCopied ? 'Annonce copiée !' : 'Annoncer le rendez-vous'}
+							</button>
 						{/if}
 						<button
 							type="button"
@@ -2455,41 +2203,6 @@
 								Imprimer la fiche
 							{/if}
 						</button>
-						{#if !contact?.isClient}
-							<button
-								type="button"
-								class={itemAction}
-								onclick={() => {
-									actionsOuvertes = false;
-									// Traiter ne demande plus de raison : un clic suffit, la raison
-									// reste possible via l'entrée suivante. Retirer le marquage se
-									// fait aussi directement.
-									if (contact?.statut === 'traité') handleMarkTreated(false);
-									else handleMarkTreated(true);
-								}}
-							>
-								{#if contact?.statut === 'traité'}
-									<Undo2 class="size-3.5 text-muted-foreground" />
-									Remettre dans le suivi
-								{:else}
-									<CheckCircle2 class="size-3.5 text-muted-foreground" />
-									Marquer comme traité
-								{/if}
-							</button>
-							{#if contact?.statut !== 'traité'}
-								<button
-									type="button"
-									class={itemAction}
-									onclick={() => {
-										actionsOuvertes = false;
-										openTraiteDialog();
-									}}
-								>
-									<Pencil class="size-3.5 text-muted-foreground" />
-									Traiter avec une raison…
-								</button>
-							{/if}
-						{/if}
 						{#if canDelete}
 							<div class="my-1 h-px bg-line"></div>
 							<button
@@ -2507,23 +2220,24 @@
 					</PopoverContent>
 				</Popover>
 
-				{#if actionPrincipale}
+				{#if !contact?.isClient}
 					<Button
-						onclick={() => (actionPrincipale.id === 'annonce' ? copyAnnonceRdv() : openRecontact())}
-						class="order-3 gap-1.5 sm:order-none"
+						variant={contact?.statut === 'traité' ? 'default' : 'outline'}
+						onclick={() => {
+							if (contact?.statut === 'traité') handleMarkTreated(false);
+							else handleMarkTreated(true);
+						}}
+						class="order-4 gap-1.5 sm:order-none"
+						title={contact?.statut === 'traité'
+							? 'Retirer le marquage traité'
+							: 'Marquer ce contact comme traité'}
 					>
-						{#if actionPrincipale.id === 'annonce'}
-							{#if annonceCopied}
-								<Check class="size-4" />
-								Copié !
-							{:else}
-								<Megaphone class="size-4" strokeWidth={1.8} />
-								{actionPrincipale.label}
-							{/if}
+						{#if contact?.statut === 'traité'}
+							<Undo2 class="size-4" strokeWidth={1.7} />
 						{:else}
-							<PhoneCall class="size-4" strokeWidth={1.7} />
-							{actionPrincipale.label}
+							<CheckCircle2 class="size-4" strokeWidth={1.7} />
 						{/if}
+						Traité
 					</Button>
 				{/if}
 
@@ -2540,20 +2254,18 @@
 					{/if}
 					Enregistrer
 				</Button>
-			{:else}
-				<Button variant="ghost" onclick={() => (mode = 'view')} disabled={recontactBusy}>
-					Annuler
-				</Button>
-				<div class="flex-1"></div>
-				<Button onclick={handleRecontact} disabled={recontactBusy}>
-					{#if recontactBusy}
-						<LoaderCircle class="size-4 animate-spin" />
-					{/if}
-					Enregistrer le recontact
-				</Button>
 			{/if}
 		</DialogFooter>
 	</DialogContent>
+
+	{#if contact}
+		<ConfortationDialog
+			bind:open={confortationOpen}
+			contactId={contact._id}
+			commercial={contact.followUp?.commercial ?? ''}
+			onCreated={confortationCreated}
+		/>
+	{/if}
 
 	<SaleDialog
 		bind:open={saleOpen}
@@ -2630,14 +2342,26 @@
 			</DialogHeader>
 
 			<div class="space-y-1.5">
-				<Label for="nonVenteReason">Pourquoi ce RDV n'aboutit-il pas à une vente ?</Label>
+				<Label for="nonVenteCode">Motif principal</Label>
+				<select
+					id="nonVenteCode"
+					bind:value={nonVenteCode}
+					class="h-9 w-full rounded-md border border-input bg-base px-2.5 text-[12.5px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
+				>
+					<option value="">Choisir un motif…</option>
+					{#each NON_VENTE_REASONS as r (r.key)}
+						<option value={r.key}>{r.label}</option>
+					{/each}
+				</select>
+			</div>
+			<div class="space-y-1.5">
+				<Label for="nonVenteReason">Précisions (facultatif)</Label>
 				<Textarea
 					id="nonVenteReason"
-					rows={3}
-					placeholder="Ex : prix trop élevé, besoin pas prioritaire, dossier reporté…"
+					rows={2}
+					placeholder="Ex : devis 2 000 € au-dessus du budget, rappeler en septembre…"
 					bind:value={nonVenteReason}
-					class="min-h-20 border-input bg-base"
-					autofocus
+					class="min-h-16 border-input bg-base"
 				/>
 			</div>
 
@@ -2651,7 +2375,7 @@
 				>
 					Annuler
 				</Button>
-				<Button onclick={confirmNonVente} disabled={quickBusy || !nonVenteReason.trim()}>
+				<Button onclick={confirmNonVente} disabled={quickBusy || (!nonVenteReason.trim() && !nonVenteCode)}>
 					{#if quickBusy}
 						<LoaderCircle class="size-4 animate-spin" />
 					{/if}
@@ -2679,14 +2403,26 @@
 			</DialogHeader>
 
 			<div class="space-y-1.5">
-				<Label for="annulationReason">Pourquoi ce RDV est-il annulé ?</Label>
+				<Label for="annulationCode">Motif principal</Label>
+				<select
+					id="annulationCode"
+					bind:value={annulationCode}
+					class="h-9 w-full rounded-md border border-input bg-base px-2.5 text-[12.5px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
+				>
+					<option value="">Choisir un motif…</option>
+					{#each ANNULATION_REASONS as r (r.key)}
+						<option value={r.key}>{r.label}</option>
+					{/each}
+				</select>
+			</div>
+			<div class="space-y-1.5">
+				<Label for="annulationReason">Précisions (facultatif)</Label>
 				<Textarea
 					id="annulationReason"
-					rows={3}
+					rows={2}
 					placeholder="Ex : client absent, reporté, plus intéressé…"
 					bind:value={annulationReason}
-					class="min-h-20 border-input bg-base"
-					autofocus
+					class="min-h-16 border-input bg-base"
 				/>
 			</div>
 
@@ -2700,63 +2436,10 @@
 				>
 					Annuler
 				</Button>
-				<Button onclick={confirmAnnulation} disabled={quickBusy || !annulationReason.trim()}>
-					{#if quickBusy}
-						<LoaderCircle class="size-4 animate-spin" />
-					{/if}
-					Valider
-				</Button>
-			</DialogFooter>
-		</DialogContent>
-	</Dialog>		<!-- Popup de saisie de la raison du marquage « traité » : facultative, le
-		     marquage lui-même se fait sans passer par ici. -->
-	<Dialog bind:open={traiteOpen}>
-		<DialogContent
-			class="max-w-sm rounded-xl border-line bg-card"
-			onInteractOutside={(event) => event.preventDefault()}
-		>
-			<DialogHeader>
-				<DialogTitle class="flex items-center gap-2 text-[14px] font-semibold">
-					<span
-						class="grid size-8 place-items-center rounded-lg border border-line bg-card2 text-muted-foreground"
-					>
-						✅
-					</span>
-					Traiter ce contact
-				</DialogTitle>
-			</DialogHeader>
-
-			{#if traiteError}
-				<p
-					class="rounded-md bg-destructive/10 px-2.5 py-2 text-[12px] font-medium text-destructive"
-				>
-					{traiteError}
-				</p>
-			{/if}
-
-			<div class="space-y-1.5">
-				<Label for="traiteReason">Raison du traitement (facultatif)</Label>
-				<Textarea
-					id="traiteReason"
-					rows={3}
-					placeholder="Ex : dossier clos, client déjà équipé, hors cible…"
-					bind:value={traiteReason}
-					class="min-h-20 border-input bg-base"
-					autofocus
-				/>
-			</div>
-
-			<DialogFooter class="gap-2">
 				<Button
-					variant="ghost"
-					onclick={() => {
-						traiteReason = '';
-						traiteOpen = false;
-					}}
+					onclick={confirmAnnulation}
+					disabled={quickBusy || (!annulationReason.trim() && !annulationCode)}
 				>
-					Annuler
-				</Button>
-				<Button onclick={confirmTraite} disabled={quickBusy}>
 					{#if quickBusy}
 						<LoaderCircle class="size-4 animate-spin" />
 					{/if}

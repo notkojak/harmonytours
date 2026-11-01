@@ -457,10 +457,33 @@ export const listTeamMembers = query({
 			if (name) byName.set(name, u._id);
 		}
 
-		const contacts = await ctx.db.query('contacts').collect();
-		const ventes = await ctx.db.query('ventes').collect();
+		// Les fiches et ventes archivées sortent des chiffres : le CA d'un mois ne
+		// doit pas bouger quand une fiche est supprimée par erreur, et une fiche
+		// archivée ne doit plus compter ses RDV.
+		const allContacts = await ctx.db.query('contacts').collect();
+		const archivedContactIds = new Set(
+			allContacts.filter((c) => c.deletedAt).map((c) => c._id as string)
+		);
+		const contacts = allContacts.filter((c) => !c.deletedAt);
+		const ventes = (await ctx.db.query('ventes').collect()).filter(
+			(v) => !v.deletedAt && !archivedContactIds.has(v.contactId)
+		);
 		// Contact par id : sert au partage des ventes (vendeur + créateur du contact).
 		const contactById = new Map(contacts.map((c) => [c._id, c]));
+
+		// Vendeurs de chaque contact, toutes ventes confondues : le binôme d'un
+		// contact est le même pour toutes ses ventes, il ne dépend pas de la vente
+		// en cours de calcul (sinon la seconde vente d'un client partagé entre
+		// deux commerciaux retombait sur un seul d'entre eux).
+		const vendeursParContact = new Map<string, Set<Id<'users'>>>();
+		for (const v of ventes) {
+			let set = vendeursParContact.get(v.contactId);
+			if (!set) {
+				set = new Set();
+				vendeursParContact.set(v.contactId, set);
+			}
+			set.add(v.vendeurId);
+		}
 
 		type Stats = {
 			rdvTap: number;
@@ -513,14 +536,15 @@ export const listTeamMembers = query({
 		// commercial : on reprend celui du RDV, tracé dans l'historique, pour ne
 		// pas déplacer la vente d'un commercial à l'autre.
 		const commercialRattache = (contact: Doc<'contacts'> | undefined) => {
+			// L'id prime sur le nom : c'est lui qui survit à un renommage.
+			if (contact?.followUp?.commercialId) return contact.followUp.commercialId;
 			const nom = (contact?.followUp?.commercial ?? '').trim();
 			if (nom) return byName.get(nom);
 			if (contact?.followUp?.type !== 'rappel') return undefined;
 			const history = contact.rdvHistory ?? [];
 			for (let i = history.length - 1; i >= 0; i--) {
 				const trace = history[i];
-				const nomHistorique =
-					typeof trace === 'object' ? (trace.commercial ?? '').trim() : '';
+				const nomHistorique = typeof trace === 'object' ? (trace.commercial ?? '').trim() : '';
 				if (nomHistorique) return byName.get(nomHistorique);
 			}
 			return undefined;
@@ -528,11 +552,17 @@ export const listTeamMembers = query({
 
 		// Binôme d'une vente : le binôme, c'est toujours la personne qui a créé le
 		// contact (elle le reste même si la fiche est modifiée par quelqu'un
-		// d'autre) et le commercial rattaché au RDV. Sans commercial rattaché, le
-		// vendeur de la vente occupe la seconde place — c'est le cas d'une vente
-		// sans RDV placé, ou conclue par quelqu'un qui n'était pas rattaché.
-		const binome = (vendeurId: Id<'users'> | undefined, contact: Doc<'contacts'> | undefined) =>
-			partners(contact?.createdBy, commercialRattache(contact) ?? vendeurId);
+		// d'autre) et le commercial rattaché au RDV. Sans commercial rattaché, la
+		// seconde place revient aux vendeurs du contact : celui de la vente
+		// calculée, mais aussi ceux de ses autres ventes. Un client vendu par deux
+		// commerciaux doit être partagé de la même façon sur chacune de ses ventes,
+		// sinon la seconde vente retombait entièrement sur le créateur du contact.
+		const binome = (vendeurId: Id<'users'> | undefined, contact: Doc<'contacts'> | undefined) => {
+			const rattache = commercialRattache(contact);
+			if (rattache) return partners(contact?.createdBy, rattache);
+			const vendeursDuContact = contact ? vendeursParContact.get(contact._id) : undefined;
+			return partners(contact?.createdBy, ...(vendeursDuContact ?? [vendeurId]));
+		};
 
 		// RDV : suivi courant de type RDV, contacts traités compris. Un dossier marqué
 		// « traité » garde ses RDV dans les chiffres : le RDV a bien été pris puis
@@ -550,6 +580,9 @@ export const listTeamMembers = query({
 		for (const c of contacts) {
 			const fu = c.followUp;
 			if (!fu || fu.type !== 'rdv') continue;
+			// Un RDV de confortation est un rendez-vous de suivi : il ne compte ni
+			// dans les RDV pris, ni dans les RDV traités.
+			if (fu.motif === 'confortation') continue;
 			const treated = fu.status === 'vendu' || fu.status === 'déballé';
 			// Date de prise : dernière prise de RDV enregistrée. Repli sur la date
 			// du contact pour les RDV antérieurs à la mise en place de l'historique.
@@ -604,6 +637,11 @@ export const listTeamMembers = query({
 				fu.date < endISO &&
 				(fu.status === 'vendu' || fu.status === 'déballé');
 			if (rdvDejaCompte) continue;
+			// Le seul RDV de la fiche est une confortation : la vente compte dans
+			// le CA, mais pas comme un RDV traité.
+			const rdvConfortation =
+				fu?.type === 'rdv' && fu.motif === 'confortation' && fu.date >= startISO && fu.date < endISO;
+			if (rdvConfortation) continue;
 			const { ids, share } = binome(v.vendeurId, contact);
 			for (const id of ids) get(id).rdvTraites += share;
 		}
@@ -612,12 +650,12 @@ export const listTeamMembers = query({
 		// entre les deux personnes du binôme : le créateur du contact et le
 		// commercial rattaché au RDV (à défaut, le vendeur de la vente).
 
-		// CA total de la période sélectionnée (colonne TOTAL HT) : seules les ventes
-		// VALIDÉES comptent. Les ventes « en attente » (pas encore validées), « erreur »
-		// et « annulée » sont exclues et suivies à part (caAttente / caErreur /
-		// caAnnulations). Suit le jour / semaine / mois.
+		// CA total de la période sélectionnée (colonne TOTAL HT) : les ventes
+		// VALIDÉES et « en attente » comptent (une vente en attente est déjà
+		// conclue, elle attend seulement sa validation). Les ventes « erreur » et
+		// « annulée » restent exclues et suivies à part. Suit le jour / semaine / mois.
 		for (const v of ventes) {
-			if (v.statut !== 'valide') continue;
+			if (v.statut !== 'valide' && v.statut !== 'en attente') continue;
 			if (v.date < startTs || v.date >= endTs) continue;
 			const { ids, share } = binome(v.vendeurId, contactById.get(v.contactId));
 			for (const id of ids) get(id).caTotal += v.totalHT * share;

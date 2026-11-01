@@ -31,14 +31,17 @@ function userName(u: { firstName?: string; lastName?: string; email?: string }):
 	return `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || u.email || 'Commercial';
 }
 
-// Noms des créateurs des contacts (commercial qui a pris le contact), pour
-// l'affichage « Vendu par X et Y » et la fiche client.
-async function creatorNames(
+// Noms affichés des personnes liées aux contacts (commercial qui a pris le
+// contact) et aux ventes (vendeurs), pour l'affichage « Vendu par X et Y » et
+// la fiche client.
+async function peopleNames(
 	ctx: QueryCtx,
-	contacts: Doc<'contacts'>[]
+	contacts: Doc<'contacts'>[],
+	ventes: Doc<'ventes'>[]
 ): Promise<Map<Id<'users'>, string>> {
 	const ids = new Set<Id<'users'>>();
 	for (const c of contacts) if (c.createdBy) ids.add(c.createdBy);
+	for (const v of ventes) if (v.vendeurId) ids.add(v.vendeurId);
 	const names = new Map<Id<'users'>, string>();
 	for (const id of ids) {
 		const u = await ctx.db.get(id);
@@ -47,18 +50,54 @@ async function creatorNames(
 	return names;
 }
 
+// Vendeurs de chaque contact, toutes ventes confondues : le binôme d'un contact
+// est le même pour toutes ses ventes, il ne dépend pas de la vente affichée.
+function vendeursParContact(ventes: Doc<'ventes'>[]): Map<string, Set<Id<'users'>>> {
+	const parContact = new Map<string, Set<Id<'users'>>>();
+	for (const v of ventes) {
+		let set = parContact.get(v.contactId);
+		if (!set) {
+			set = new Set();
+			parContact.set(v.contactId, set);
+		}
+		set.add(v.vendeurId);
+	}
+	return parContact;
+}
+
 // Nom affiché du vendeur d'une vente : « X » seul, ou « X et Y » quand la vente
 // est conclue en binôme. Le binôme est celui des chiffres : le commercial
-// rattaché au RDV (le vendeur de la vente à défaut) et le créateur du contact.
+// rattaché au RDV, à défaut le créateur du contact avec les vendeurs du contact
+// (pas seulement celui de la vente affichée, sinon la seconde vente d'un client
+// vendu par deux commerciaux n'en affichait qu'un).
 function vendeurLabel(
 	vente: Doc<'ventes'>,
 	contact: Doc<'contacts'> | undefined,
-	userNames: Map<Id<'users'>, string>
+	names: Map<Id<'users'>, string>,
+	vendeursDuContact?: Set<Id<'users'>>
 ): string {
-	const principal = contact?.followUp?.commercial?.trim() || vente.vendeurName;
-	const createur = contact?.createdBy ? userNames.get(contact.createdBy) : undefined;
-	if (createur && createur !== principal) return `${principal} et ${createur}`;
-	return principal;
+	const rattache = contact?.followUp?.commercial?.trim();
+	const createurId = contact?.createdBy;
+	const createur = createurId ? names.get(createurId) : undefined;
+	// Commercial rattaché au RDV : c'est lui qui porte la vente, avec le créateur.
+	if (rattache) {
+		if (createur && createur !== rattache) return `${rattache} et ${createur}`;
+		return rattache;
+	}
+	// Sans commercial rattaché, le binôme est le créateur du contact et les
+	// vendeurs du contact. Le vendeur de la vente affichée reste en tête, pour ne
+	// pas réordonner les ventes déjà correctes.
+	const noms: string[] = [];
+	const ajoute = (nom: string | undefined) => {
+		if (nom && !noms.includes(nom)) noms.push(nom);
+	};
+	ajoute(names.get(vente.vendeurId) ?? vente.vendeurName);
+	ajoute(createur);
+	if (vendeursDuContact) {
+		for (const id of vendeursDuContact) ajoute(names.get(id));
+	}
+	if (noms.length === 0) return vente.vendeurName;
+	return noms.join(' et ');
 }
 
 // Ajoute une vente à un contact : le contact devient un client.
@@ -104,7 +143,8 @@ export const addVente = mutation({
 		const totalTVA = args.produits.reduce((sum, p) => sum + (p.montantHT * p.tva) / 100, 0);
 		const totalTTC = totalHT + totalTVA;
 
-		await ctx.db.insert('ventes', {
+		const venteId = await ctx.db.insert('ventes', {
+			statutChangedAt: Date.now(),
 			contactId: args.contactId,
 			vendeurId,
 			vendeurName,
@@ -170,6 +210,7 @@ export const updateStatut = mutation({
 		// garderait les documents manquants d'un dossier désormais validé.
 		await ctx.db.patch(args.venteId, {
 			statut: args.statut,
+			statutChangedAt: Date.now(),
 			...(args.statut === 'erreur' ? {} : { erreur: undefined })
 		});
 	}
@@ -191,7 +232,13 @@ export const listVentes = query({
 
 		const allContacts = await ctx.db.query('contacts').collect();
 		const contactMap = new Map(allContacts.map((c) => [c._id, c]));
-		const userNames = await creatorNames(ctx, allContacts);
+		// Les ventes archivées — et celles d'une fiche archivée — sortent des
+		// listes, des totaux et des exports.
+		const allVentes = (await ctx.db.query('ventes').collect()).filter(
+			(v) => !v.deletedAt && !contactMap.get(v.contactId)?.deletedAt
+		);
+		const userNames = await peopleNames(ctx, allContacts, allVentes);
+		const vendeurs = vendeursParContact(allVentes);
 
 		const build = (ventes: Doc<'ventes'>[]) =>
 			ventes
@@ -199,7 +246,7 @@ export const listVentes = query({
 					const contact = contactMap.get(v.contactId);
 					return {
 						...v,
-						vendeurDisplay: vendeurLabel(v, contact, userNames),
+						vendeurDisplay: vendeurLabel(v, contact, userNames, vendeurs.get(v.contactId)),
 						contactName: contact?.name ?? '—',
 						contact: contact
 							? {
@@ -210,8 +257,6 @@ export const listVentes = query({
 					};
 				})
 				.sort((a, b) => b.date - a.date);
-
-		const allVentes = await ctx.db.query('ventes').collect();
 
 		// Périmètre manager : toutes les ventes de l'agence/zone, filtrées par personne.
 		if (canViewAllCrm(user)) {
@@ -250,6 +295,7 @@ export const listVentes = query({
 		const myName = `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim();
 		const visibleContactIds = new Set<string>();
 		for (const c of allContacts) {
+			if (c.deletedAt) continue;
 			if (c.createdBy === user._id) visibleContactIds.add(c._id);
 			if (myName && c.followUp?.commercial === myName) visibleContactIds.add(c._id);
 		}
@@ -281,6 +327,7 @@ export const setErreur = mutation({
 			`${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || user.email || 'Manager';
 		await ctx.db.patch(args.venteId, {
 			statut: 'erreur',
+			statutChangedAt: Date.now(),
 			erreur: {
 				manquants: args.manquants,
 				note: args.note,
@@ -303,7 +350,11 @@ export const removeErreur = mutation({
 		if (!vente) {
 			throw new Error('Vente introuvable.');
 		}
-		await ctx.db.patch(args.venteId, { statut: 'valide', erreur: undefined });
+		await ctx.db.patch(args.venteId, {
+			statut: 'valide',
+			statutChangedAt: Date.now(),
+			erreur: undefined
+		});
 	}
 });
 
@@ -321,12 +372,15 @@ export const removeVente = mutation({
 		if (!vente) {
 			throw new Error('Vente introuvable.');
 		}
-		await ctx.db.delete(args.venteId);
+		// Suppression douce : la vente sort des totaux mais reste auditable. Le
+		// contact redevient un simple contact seulement s'il n'a plus aucune vente
+		// active.
+		await ctx.db.patch(args.venteId, { deletedAt: Date.now(), deletedBy: user._id });
 		const remaining = await ctx.db
 			.query('ventes')
 			.withIndex('by_contact', (q) => q.eq('contactId', vente.contactId))
 			.collect();
-		if (remaining.length === 0) {
+		if (!remaining.some((v) => !v.deletedAt)) {
 			await ctx.db.patch(vente.contactId, { isClient: false });
 		}
 	}
@@ -414,6 +468,71 @@ export const updateVente = mutation({
 	}
 });
 
+// Dates de pose (installation / livraison) d'une vente : elles vivent sur la
+// vente et s'affichent dans l'agenda. Autorisé au vendeur, au créateur du
+// contact ou à un manager — même règle que la modification de la vente.
+export const addDatePose = mutation({
+	args: {
+		venteId: v.id('ventes'),
+		date: v.string(),
+		time: v.optional(v.string()),
+		note: v.optional(v.string())
+	},
+	handler: async (ctx, args) => {
+		const user = await getCurrentUser(ctx);
+		const vente = await ctx.db.get(args.venteId);
+		if (!vente || vente.deletedAt) {
+			throw new Error('Vente introuvable.');
+		}
+		const contact = await ctx.db.get(vente.contactId);
+		const allowed =
+			vente.vendeurId === user._id ||
+			(contact && contact.createdBy === user._id) ||
+			canManageEmployes(user);
+		if (!allowed) {
+			throw new Error('Non autorisé.');
+		}
+		if (!/^\d{4}-\d{2}-\d{2}$/.test(args.date)) {
+			throw new Error('Date de pose invalide.');
+		}
+		const datePoseId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+		await ctx.db.patch(args.venteId, {
+			datesPoses: [
+				...(vente.datesPoses ?? []),
+				{
+					id: datePoseId,
+					date: args.date,
+					...(args.time ? { time: args.time } : {}),
+					...(args.note?.trim() ? { note: args.note.trim() } : {})
+				}
+			]
+		});
+		return datePoseId;
+	}
+});
+
+export const removeDatePose = mutation({
+	args: { venteId: v.id('ventes'), datePoseId: v.string() },
+	handler: async (ctx, args) => {
+		const user = await getCurrentUser(ctx);
+		const vente = await ctx.db.get(args.venteId);
+		if (!vente) {
+			throw new Error('Vente introuvable.');
+		}
+		const contact = await ctx.db.get(vente.contactId);
+		const allowed =
+			vente.vendeurId === user._id ||
+			(contact && contact.createdBy === user._id) ||
+			canManageEmployes(user);
+		if (!allowed) {
+			throw new Error('Non autorisé.');
+		}
+		await ctx.db.patch(args.venteId, {
+			datesPoses: (vente.datesPoses ?? []).filter((d) => d.id !== args.datePoseId)
+		});
+	}
+});
+
 // Ventes en erreur visibles par l'utilisateur connecté (tableau de bord).
 // Les managers voient toutes les ventes en erreur de leur périmètre ;
 // les autres ne voient que les ventes qui leur sont liées.
@@ -422,7 +541,7 @@ export const listVentesEnErreur = query({
 	handler: async (ctx) => {
 		const user = await getCurrentUser(ctx);
 		const allVentes = await ctx.db.query('ventes').collect();
-		const ventesErreur = allVentes.filter((v) => v.statut === 'erreur');
+		const ventesErreur = allVentes.filter((v) => v.statut === 'erreur' && !v.deletedAt);
 		if (ventesErreur.length === 0) return [];
 
 		const allContacts = await ctx.db.query('contacts').collect();
@@ -433,6 +552,7 @@ export const listVentesEnErreur = query({
 
 		const visible = ventesErreur.filter((v) => {
 			const contact = contactMap.get(v.contactId);
+			if (contact?.deletedAt) return false;
 			if (isManager) {
 				if (scopeAll) return true;
 				// Directeur d'agence : uniquement les ventes de son agence.
@@ -444,14 +564,15 @@ export const listVentesEnErreur = query({
 				(!!myName && contact?.followUp?.commercial === myName)
 			);
 		});
-		const userNames = await creatorNames(ctx, allContacts);
+		const userNames = await peopleNames(ctx, allContacts, ventesErreur);
+		const vendeurs = vendeursParContact(ventesErreur);
 
 		return visible
 			.map((v) => {
 				const contact = contactMap.get(v.contactId);
 				return {
 					...v,
-					vendeurDisplay: vendeurLabel(v, contact, userNames),
+					vendeurDisplay: vendeurLabel(v, contact, userNames, vendeurs.get(v.contactId)),
 					contactName: contact?.name ?? '—',
 					contactPhone: contact?.phone ?? null,
 					contactProjet: contact?.projet ?? null
@@ -469,10 +590,12 @@ export const getVentes = query({
 		const contact = await ctx.db.get(contactId);
 		if (!contact) return [];
 
-		const ventes = await ctx.db
-			.query('ventes')
-			.withIndex('by_contact', (q) => q.eq('contactId', contactId))
-			.collect();
+		const ventes = (
+			await ctx.db
+				.query('ventes')
+				.withIndex('by_contact', (q) => q.eq('contactId', contactId))
+				.collect()
+		).filter((v) => !v.deletedAt);
 		const myName = `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim();
 
 		// Visibilité : je suis vendeur d'une vente, ou le RDV du contact m'est lié,
@@ -490,11 +613,14 @@ export const getVentes = query({
 			contact.createdBy === user._id;
 		if (!isMine) return [];
 
-		const userNames = await creatorNames(ctx, [contact]);
+		// Toutes les ventes du contact servent au libellé : le binôme est le même
+		// sur chaque vente, il ne dépend pas de celle qui est affichée.
+		const userNames = await peopleNames(ctx, [contact], ventes);
+		const vendeurs = vendeursParContact(ventes);
 		return ventes
 			.map((v) => ({
 				...v,
-				vendeurDisplay: vendeurLabel(v, contact, userNames)
+				vendeurDisplay: vendeurLabel(v, contact, userNames, vendeurs.get(v.contactId))
 			}))
 			.sort((a, b) => b.date - a.date);
 	}
@@ -516,7 +642,7 @@ export const listClients = query({
 	handler: async (ctx, args) => {
 		const user = await getCurrentUser(ctx);
 
-		const allVentes = await ctx.db.query('ventes').collect();
+		const allVentes = (await ctx.db.query('ventes').collect()).filter((v) => !v.deletedAt);
 		const ventesByContact = new Map<string, Doc<'ventes'>[]>();
 		for (const v of allVentes) {
 			const list = ventesByContact.get(v.contactId) ?? [];
@@ -526,7 +652,8 @@ export const listClients = query({
 
 		const allContacts = await ctx.db.query('contacts').collect();
 		const contactMap = new Map(allContacts.map((c) => [c._id, c]));
-		const userNames = await creatorNames(ctx, allContacts);
+		const userNames = await peopleNames(ctx, allContacts, allVentes);
+		const vendeurs = vendeursParContact(allVentes);
 
 		const buildClients = (contactIds: Set<string>) => {
 			const clients: Array<{
@@ -536,7 +663,7 @@ export const listClients = query({
 			}> = [];
 			for (const id of contactIds) {
 				const contact = contactMap.get(id as Id<'contacts'>);
-				if (!contact) continue;
+				if (!contact || contact.deletedAt) continue;
 				const ventesList = ventesByContact.get(id) ?? [];
 				if (ventesList.length === 0) continue;
 				const totalTTC = ventesList.reduce((sum, v) => sum + v.totalTTC, 0);
@@ -547,7 +674,12 @@ export const listClients = query({
 					},
 					ventes: ventesList.map((v) => ({
 						...v,
-						vendeurDisplay: vendeurLabel(v, contactMap.get(v.contactId), userNames)
+						vendeurDisplay: vendeurLabel(
+							v,
+							contactMap.get(v.contactId),
+							userNames,
+							vendeurs.get(v.contactId)
+						)
 					})),
 					totalTTC
 				});

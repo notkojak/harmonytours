@@ -1,9 +1,43 @@
-import { type QueryCtx, mutation, query } from './_generated/server';
+import { type MutationCtx, type QueryCtx, mutation, query } from './_generated/server';
 import { v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { canManageEmployes, canReassignContact, getCurrentUser } from './permissions';
 import { canViewAllCrm, isUserInScope, visibleAgencyIds } from './access';
 import { qualifValidator } from './schema';
+
+/** Téléphone réduit aux chiffres : sert de clé de détection des doublons. */
+export function phoneKeyOf(phone: string | undefined | null): string | undefined {
+	const digits = (phone ?? '').replace(/\D/g, '');
+	return digits.length >= 8 ? digits : undefined;
+}
+
+function displayName(u: { firstName?: string; lastName?: string; email?: string }): string {
+	return `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || u.email || 'Commercial';
+}
+
+/**
+ * Le commercial d'un RDV est stocké deux fois : son nom (affichage historique)
+ * et son id (clé de calcul). On complète toujours l'un à partir de l'autre pour
+ * que les fiches existantes, qui n'ont qu'un nom, gagnent un id à la première
+ * écriture.
+ */
+async function resolveCommercial<T extends { commercial?: string; commercialId?: Id<'users'> }>(
+	ctx: MutationCtx,
+	followUp: T
+): Promise<T> {
+	if (followUp.commercialId) {
+		const u = await ctx.db.get(followUp.commercialId);
+		if (u) return { ...followUp, commercial: displayName(u) };
+		return followUp;
+	}
+	const name = followUp.commercial?.trim();
+	if (!name) return followUp;
+	const users = await ctx.db.query('users').collect();
+	const target = users.find(
+		(u) => displayName(u).toLowerCase() === name.toLowerCase()
+	);
+	return target ? { ...followUp, commercialId: target._id } : followUp;
+}
 
 // Suivi (rappel / RDV) avec les infos du RDV : commercial rattaché et statut.
 const followUpValidator = v.object({
@@ -11,6 +45,7 @@ const followUpValidator = v.object({
 	date: v.string(),
 	time: v.optional(v.string()),
 	commercial: v.optional(v.string()),
+	commercialId: v.optional(v.id('users')),
 	status: v.optional(
 		v.union(
 			v.literal('annulé'),
@@ -22,7 +57,9 @@ const followUpValidator = v.object({
 	// Type de RDV placé : confortation (validation client) ou gestion dossier.
 	motif: v.optional(v.union(v.literal('confortation'), v.literal('gestion'))),
 	nonVenteReason: v.optional(v.string()),
+	nonVenteCode: v.optional(v.string()),
 	annulationReason: v.optional(v.string()),
+	annulationCode: v.optional(v.string()),
 	// Horodatage (ms) de la mise en « annulé » du RDV.
 	annulationDate: v.optional(v.number())
 });
@@ -79,6 +116,11 @@ export const create = mutation({
 		name: v.string(),
 		civilites: v.optional(v.array(v.union(v.literal('M.'), v.literal('Mme'), v.literal('Melle')))),
 		address: v.optional(v.string()),
+		addressStreet: v.optional(v.string()),
+		addressPostalCode: v.optional(v.string()),
+		addressCity: v.optional(v.string()),
+		latitude: v.optional(v.number()),
+		longitude: v.optional(v.number()),
 		phone: v.optional(v.string()),
 		projet: v.optional(v.string()),
 		source: v.optional(v.union(v.literal('TAP'), v.literal('GMS'), v.literal('PHONE'))),
@@ -90,60 +132,138 @@ export const create = mutation({
 	handler: async (ctx, args) => {
 		const user = await getCurrentUser(ctx);
 		assertRdvNotOnSunday(args.followUp);
-		return await ctx.db.insert('contacts', {
+		const followUp = args.followUp ? await resolveCommercial(ctx, args.followUp) : undefined;
+		const contactId = await ctx.db.insert('contacts', {
 			...args,
+			...(followUp ? { followUp } : {}),
+			phoneKey: phoneKeyOf(args.phone),
 			statut: 'actif',
 			agencyId: user.agencyId,
 			createdBy: user._id,
-			rdvHistory: args.followUp?.type === 'rdv' ? [{ at: Date.now() }] : undefined
+			rdvHistory: followUp?.type === 'rdv' ? [{ at: Date.now() }] : undefined
 		});
+		return contactId;
 	}
 });
 
-// Enregistre un recontact (réponse) et repositionne éventuellement le suivi.
+// Journalise un recontact (réponse) sans toucher au suivi du contact : le
+// rendez-vous ou le rappel en cours reste tel quel, même si la personne n'a
+// pas répondu. Le prochain RDV se pose explicitement (fiche ou agenda).
 export const recontact = mutation({
 	args: {
 		contactId: v.id('contacts'),
-		response: v.string(),
-		rdvSwitchReason: v.optional(v.string()),
-		followUp: v.optional(followUpValidator)
+		response: v.string()
 	},
 	handler: async (ctx, args) => {
 		const user = await getCurrentUser(ctx);
 		const contact = await ctx.db.get(args.contactId);
-		if (!contact) {
+		if (!contact || contact.deletedAt) {
 			throw new Error('Contact introuvable.');
 		}
-		if (contact.createdBy !== user._id) {
+		const myName = displayName(user).trim().toLowerCase();
+		const isCreator = contact.createdBy === user._id;
+		const isLinked =
+			contact.followUp?.commercialId === user._id ||
+			(contact.followUp?.commercial ?? '').trim().toLowerCase() === myName;
+		const canEditScope =
+			canReassignContact(user) && (await canReadAsManager(ctx, user, contact));
+		if (!isCreator && !isLinked && !canEditScope) {
 			throw new Error('Non autorisé.');
 		}
-		assertRdvNotOnSunday(args.followUp, contact.followUp);
-		// Historique RDV : un nouveau RDV est compté, ou la raison du passage en rappel
-		// est enregistrée sur le dernier RDV lorsqu'on le remplace par un rappel.
-		let rdvHistory: Doc<'contacts'>['rdvHistory'] | undefined;
-		if (args.followUp?.type === 'rdv') {
-			rdvHistory = [...(contact.rdvHistory ?? []), { at: Date.now() }];
-		} else if (args.followUp?.type === 'rappel' && contact.followUp?.type === 'rdv') {
-			const history = contact.rdvHistory ?? [];
-			if (history.length > 0) {
-				const last = history[history.length - 1];
-				const lastAt = typeof last === 'number' ? last : last.at;
-				rdvHistory = [
-					...history.slice(0, -1),
-					{
-						at: lastAt,
-						reason: args.rdvSwitchReason || undefined,
-						...traceRdvClos(contact.followUp)
-					}
-				];
-			}
+		const response = args.response.trim();
+		if (!response) {
+			throw new Error('Renseigne la réponse au recontact.');
 		}
-
+		// La date fait foi côté serveur : on la renvoie pour que le client puisse
+		// ensuite supprimer exactement cette ligne.
+		const entry = { date: Date.now(), response };
 		await ctx.db.patch(args.contactId, {
-			recontacts: [...(contact.recontacts ?? []), { date: Date.now(), response: args.response }],
-			...(args.followUp ? { followUp: args.followUp } : {}),
-			...(rdvHistory ? { rdvHistory } : {})
+			recontacts: [...(contact.recontacts ?? []), entry]
 		});
+		return entry;
+	}
+});
+
+// Supprime une ligne du journal de recontact (erreur de saisie, doublon).
+// Mêmes droits que la consignation.
+export const removeRecontact = mutation({
+	args: {
+		contactId: v.id('contacts'),
+		date: v.number()
+	},
+	handler: async (ctx, args) => {
+		const user = await getCurrentUser(ctx);
+		const contact = await ctx.db.get(args.contactId);
+		if (!contact || contact.deletedAt) {
+			throw new Error('Contact introuvable.');
+		}
+		const myName = displayName(user).trim().toLowerCase();
+		const isCreator = contact.createdBy === user._id;
+		const isLinked =
+			contact.followUp?.commercialId === user._id ||
+			(contact.followUp?.commercial ?? '').trim().toLowerCase() === myName;
+		const canEditScope =
+			canReassignContact(user) && (await canReadAsManager(ctx, user, contact));
+		if (!isCreator && !isLinked && !canEditScope) {
+			throw new Error('Non autorisé.');
+		}
+		const recontacts = contact.recontacts ?? [];
+		let next = recontacts.filter((r) => r.date !== args.date);
+		if (next.length === recontacts.length) {
+			// Les fiches créées avant ce correctif portent des dates décalées de
+			// quelques millisecondes : on retombe sur l'échange le plus proche.
+			const target = recontacts.reduce<(typeof recontacts)[number] | null>((best, r) => {
+				if (Math.abs(r.date - args.date) > 10_000) return best;
+				return !best || Math.abs(r.date - args.date) < Math.abs(best.date - args.date) ? r : best;
+			}, null);
+			if (!target) {
+				throw new Error('Recontact introuvable.');
+			}
+			next = recontacts.filter((r) => r !== target);
+		}
+		await ctx.db.patch(args.contactId, { recontacts: next });
+	}
+});
+
+// RDV de confortation sur une fiche client / une vente : un rendez-vous de
+// suivi qui ne compte pas comme un RDV dans les statistiques. Il ne touche pas
+// à `rdvHistory` (aucune prise de RDV commercial) et ne crée ni vente ni rappel.
+// Autorisé au créateur, au commercial lié au suivi, ou à un manager du périmètre.
+export const scheduleConfortation = mutation({
+	args: {
+		contactId: v.id('contacts'),
+		date: v.string(),
+		time: v.optional(v.string()),
+		commercial: v.optional(v.string()),
+		commercialId: v.optional(v.id('users'))
+	},
+	handler: async (ctx, args) => {
+		const user = await getCurrentUser(ctx);
+		const contact = await ctx.db.get(args.contactId);
+		if (!contact || contact.deletedAt) {
+			throw new Error('Contact introuvable.');
+		}
+		const myName = displayName(user).trim().toLowerCase();
+		const isCreator = contact.createdBy === user._id;
+		const isLinked =
+			contact.followUp?.commercialId === user._id ||
+			(contact.followUp?.commercial ?? '').trim().toLowerCase() === myName;
+		const canEditScope =
+			canReassignContact(user) && (await canReadAsManager(ctx, user, contact));
+		if (!isCreator && !isLinked && !canEditScope) {
+			throw new Error('Non autorisé.');
+		}
+		assertRdvNotOnSunday({ type: 'rdv', date: args.date });
+		const followUp = await resolveCommercial(ctx, {
+			type: 'rdv' as const,
+			date: args.date,
+			...(args.time ? { time: args.time } : {}),
+			motif: 'confortation' as const,
+			...(args.commercial ? { commercial: args.commercial } : {}),
+			...(args.commercialId ? { commercialId: args.commercialId } : {})
+		});
+		await ctx.db.patch(args.contactId, { followUp });
+		return followUp;
 	}
 });
 
@@ -166,7 +286,9 @@ export const setFollowUpFields = mutation({
 			)
 		),
 		nonVenteReason: v.optional(v.string()),
-		annulationReason: v.optional(v.string())
+		nonVenteCode: v.optional(v.string()),
+		annulationReason: v.optional(v.string()),
+		annulationCode: v.optional(v.string())
 	},
 	handler: async (ctx, args) => {
 		const user = await getCurrentUser(ctx);
@@ -198,18 +320,31 @@ export const setFollowUpFields = mutation({
 				: args.status === ''
 					? undefined
 					: args.status;
+		const target = args.commercial
+			? ((await ctx.db.query('users').collect()).find(
+					(u) => displayName(u).toLowerCase() === args.commercial?.trim().toLowerCase()
+				) ?? null)
+			: null;
 		const patch: { followUp: typeof fu } = {
 			followUp: {
 				type: fu.type,
 				date: fu.date,
 				time: fu.time,
 				commercial: args.commercial !== undefined ? args.commercial : fu.commercial,
+				// Le nom affiché et l'id du commercial restent synchronisés.
+				commercialId:
+					args.commercial !== undefined
+						? (target?._id as Id<'users'> | undefined)
+						: fu.commercialId,
 				status,
 				// On conserve le type de RDV (confortation / gestion dossier).
 				motif: fu.motif,
 				nonVenteReason: args.nonVenteReason !== undefined ? args.nonVenteReason : fu.nonVenteReason,
+				nonVenteCode: args.nonVenteCode !== undefined ? args.nonVenteCode : fu.nonVenteCode,
 				annulationReason:
 					args.annulationReason !== undefined ? args.annulationReason : fu.annulationReason,
+				annulationCode:
+					args.annulationCode !== undefined ? args.annulationCode : fu.annulationCode,
 				// Date d'annulation : posée à la première mise en « annulé », conservée
 				// ensuite (y compris si le RDV repasse programmé puis est ré-annulé).
 				annulationDate:
@@ -222,13 +357,6 @@ export const setFollowUpFields = mutation({
 		};
 		if (args.commercial) {
 			// Rejette un commercial hors de l'agence du contact (même périmètre que list).
-			const users = await ctx.db.query('users').collect();
-			const target =
-				users.find(
-					(u) =>
-						`${u.firstName ?? ''} ${u.lastName ?? ''}`.trim().toLowerCase() ===
-						args.commercial?.toLowerCase()
-				) ?? null;
 			if (target && contact.agencyId && target.agencyId !== contact.agencyId) {
 				throw new Error('Non autorisé pour cette agence.');
 			}
@@ -324,7 +452,9 @@ export const markPrinted = mutation({
 export const list = query({
 	args: {
 		includeClients: v.optional(v.boolean()),
-		personId: v.optional(v.id('users'))
+		personId: v.optional(v.id('users')),
+		// Archive : fiches supprimées (suppression douce), visibles par les managers.
+		archived: v.optional(v.boolean())
 	},
 	handler: async (ctx, args) => {
 		const user = await getCurrentUser(ctx);
@@ -342,10 +472,26 @@ export const list = query({
 				if (u) filterUser = u;
 			}
 
-			const contacts = await ctx.db.query('contacts').collect();
+			// Lecture par agence plutôt que de collecter toute la table : un
+			// directeur d'agence ne lit plus les contacts des autres agences.
+			const contacts =
+				scopeIds === null
+					? await ctx.db.query('contacts').collect()
+					: (
+							await Promise.all(
+								[...scopeIds].map((agencyId) =>
+									ctx.db
+										.query('contacts')
+										.withIndex('by_agency', (q) => q.eq('agencyId', agencyId))
+										.collect()
+								)
+							)
+						).flat();
 			const scoped = contacts.filter((c) => {
 				if (!c.agencyId) return false;
 				if (scopeIds !== null && !scopeIds.has(c.agencyId)) return false;
+				// Une fiche supprimée n'apparaît que dans l'onglet Archives.
+				if (args.archived ? !c.deletedAt : !!c.deletedAt) return false;
 				if (args.includeClients || !c.isClient) {
 					// ok
 				} else return false;
@@ -385,7 +531,10 @@ export const list = query({
 		// Tous ces contacts ont été créés par l'utilisateur connecté : le commercial
 		// lié est donc son nom.
 		const createdByName = `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim();
+		// Un commercial n'a pas accès aux archives (réservées aux managers).
+		if (args.archived) return [];
 		return contacts
+			.filter((c) => !c.deletedAt)
 			.filter((c) => args.includeClients || !c.isClient)
 			.map((contact) => ({ ...contact, createdByName }))
 			.sort((a, b) => {
@@ -455,19 +604,139 @@ export const remove = mutation({
 			throw new Error('Contact introuvable.');
 		}
 		// Le créateur du contact ou un manager (admin / directeur de zone /
-		// directeur d'agence) peut supprimer.
+		// directeur d'agence) peut archiver la fiche.
 		if (contact.createdBy !== user._id && !canManageEmployes(user)) {
 			throw new Error('Non autorisé.');
 		}
-		// Supprime aussi les ventes liées (client) pour ne pas laisser d'orphelins.
-		const ventes = await ctx.db
-			.query('ventes')
-			.withIndex('by_contact', (q) => q.eq('contactId', args.contactId))
-			.collect();
-		for (const vente of ventes) {
-			await ctx.db.delete(vente._id);
+		if (contact.deletedAt) return;
+		// Suppression douce : les ventes restent rattachées et aucune donnée n'est
+		// perdue. Une fiche archivée disparaît des listes et des statistiques et
+		// peut être restaurée par un manager.
+		await ctx.db.patch(args.contactId, {
+			deletedAt: Date.now(),
+			deletedBy: user._id
+		});
+	}
+});
+
+/**
+ * Restaure une fiche archivée. Réservé aux managers du périmètre : c'est la
+ * sécurité qui manquait à la suppression en cascade des ventes.
+ */
+export const restore = mutation({
+	args: { contactId: v.id('contacts') },
+	handler: async (ctx, args) => {
+		const user = await getCurrentUser(ctx);
+		const contact = await ctx.db.get(args.contactId);
+		if (!contact) {
+			throw new Error('Contact introuvable.');
 		}
-		await ctx.db.delete(args.contactId);
+		if (!canManageEmployes(user)) {
+			throw new Error('Non autorisé.');
+		}
+		if (contact.agencyId) {
+			const scopeIds = await visibleAgencyIds(ctx, user);
+			if (scopeIds !== null && !scopeIds.has(contact.agencyId)) {
+				throw new Error('Non autorisé pour cette agence.');
+			}
+		}
+		await ctx.db.patch(args.contactId, { deletedAt: undefined, deletedBy: undefined });
+	}
+});
+
+// Doublons potentiels : même téléphone normalisé, ou même nom sur la même
+// agence. Utilisé à la création de fiche pour éviter de compter deux fois le
+// même client (et de payer deux fois la même vente).
+export const findDoublons = query({
+	args: {
+		phone: v.optional(v.string()),
+		name: v.optional(v.string()),
+		excludeId: v.optional(v.id('contacts'))
+	},
+	handler: async (ctx, args) => {
+		const user = await getCurrentUser(ctx);
+		const agencyIds = await visibleAgencyIds(ctx, user);
+		const phoneKey = phoneKeyOf(args.phone);
+		const name = args.name?.trim().toLowerCase() ?? '';
+		if (!phoneKey && name.length < 3) return [];
+
+		const contacts = await ctx.db.query('contacts').collect();
+		return contacts
+			.filter((c) => {
+				if (c.deletedAt) return false;
+				if (c._id === args.excludeId) return false;
+				if (agencyIds !== null && (!c.agencyId || !agencyIds.has(c.agencyId))) return false;
+				const samePhone = !!phoneKey && phoneKeyOf(c.phone) === phoneKey;
+				const sameName = name.length >= 3 && c.name.trim().toLowerCase() === name;
+				return samePhone || sameName;
+			})
+			.slice(0, 8)
+			.map((c) => ({
+				_id: c._id,
+				name: c.name,
+				phone: c.phone ?? null,
+				address: c.address ?? null,
+				isClient: !!c.isClient,
+				createdAt: c.dateContact ?? c._creationTime
+			}));
+	}
+});
+
+// Recherche serveur (nom, téléphone, adresse) limitée au périmètre : le
+// navigateur n'a plus besoin de charger toutes les fiches pour filtrer.
+export const search = query({
+	args: { q: v.string(), limit: v.optional(v.number()) },
+	handler: async (ctx, args) => {
+		const user = await getCurrentUser(ctx);
+		const term = args.q.trim().toLowerCase();
+		const limit = Math.min(Math.max(args.limit ?? 20, 1), 50);
+		if (term.length < 2) return [];
+
+		const agencyIds = await visibleAgencyIds(ctx, user);
+		const contacts = await ctx.db.query('contacts').collect();
+		return contacts
+			.filter((c) => {
+				if (c.deletedAt) return false;
+				if (agencyIds !== null && (!c.agencyId || !agencyIds.has(c.agencyId))) return false;
+				if (!canViewAllCrm(user) && c.createdBy !== user._id) {
+					const myName = `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim();
+					if (!myName || c.followUp?.commercial !== myName) return false;
+				}
+				const haystack = `${c.name} ${c.phone ?? ''} ${c.address ?? ''} ${c.addressCity ?? ''} ${
+					c.addressPostalCode ?? ''
+				}`.toLowerCase();
+				return haystack.includes(term);
+			})
+			.slice(0, limit)
+			.map((c) => ({
+				_id: c._id,
+				name: c.name,
+				phone: c.phone ?? null,
+				address: c.address ?? null,
+				isClient: !!c.isClient,
+				followUp: c.followUp ?? null
+			}));
+	}
+});
+
+// Compteurs de la navigation : deux nombres, au lieu de charger toutes les
+// fiches et tous les clients à chaque page.
+export const counts = query({
+	args: {},
+	handler: async (ctx) => {
+		const user = await getCurrentUser(ctx);
+		const agencyIds = await visibleAgencyIds(ctx, user);
+		const contacts = await ctx.db.query('contacts').collect();
+		let actifs = 0;
+		let clients = 0;
+		for (const c of contacts) {
+			if (c.deletedAt) continue;
+			if (agencyIds !== null && (!c.agencyId || !agencyIds.has(c.agencyId))) continue;
+			if (!canViewAllCrm(user) && c.createdBy !== user._id) continue;
+			if (c.isClient) clients++;
+			else actifs++;
+		}
+		return { contacts: actifs, clients };
 	}
 });
 
@@ -495,6 +764,7 @@ export const listAgenda = query({
 		}
 
 		return contacts
+			.filter((c) => !c.deletedAt)
 			.filter((c) => args.includeClients || !c.isClient)
 			.map((contact) => ({
 				...contact,
@@ -519,6 +789,11 @@ export const update = mutation({
 		name: v.optional(v.string()),
 		civilites: v.optional(v.array(v.union(v.literal('M.'), v.literal('Mme'), v.literal('Melle')))),
 		address: v.optional(v.string()),
+		addressStreet: v.optional(v.string()),
+		addressPostalCode: v.optional(v.string()),
+		addressCity: v.optional(v.string()),
+		latitude: v.optional(v.number()),
+		longitude: v.optional(v.number()),
 		phone: v.optional(v.string()),
 		projet: v.optional(v.string()),
 		source: v.optional(v.union(v.literal('TAP'), v.literal('GMS'), v.literal('PHONE'))),
@@ -564,7 +839,13 @@ export const update = mutation({
 			civilites?: ('M.' | 'Mme' | 'Melle')[];
 			qualif?: Record<string, unknown>;
 			address?: string;
+			addressStreet?: string;
+			addressPostalCode?: string;
+			addressCity?: string;
+			latitude?: number;
+			longitude?: number;
 			phone?: string;
+			phoneKey?: string;
 			projet?: string;
 			source?: 'TAP' | 'GMS' | 'PHONE';
 			note?: string;
@@ -573,10 +854,13 @@ export const update = mutation({
 				date: string;
 				time?: string;
 				commercial?: string;
+				commercialId?: Id<'users'>;
 				status?: 'annulé' | 'déballé' | 'vendu' | 'à reprogrammer';
 				motif?: 'confortation' | 'gestion';
 				nonVenteReason?: string;
+				nonVenteCode?: string;
 				annulationReason?: string;
+				annulationCode?: string;
 				annulationDate?: number;
 			};
 			rdvHistory?: { at: number; reason?: string }[];
@@ -587,7 +871,15 @@ export const update = mutation({
 		if (args.civilites !== undefined) patch.civilites = args.civilites;
 		if (args.qualif !== undefined) patch.qualif = args.qualif;
 		if (args.address !== undefined) patch.address = args.address;
-		if (args.phone !== undefined) patch.phone = args.phone;
+		if (args.addressStreet !== undefined) patch.addressStreet = args.addressStreet;
+		if (args.addressPostalCode !== undefined) patch.addressPostalCode = args.addressPostalCode;
+		if (args.addressCity !== undefined) patch.addressCity = args.addressCity;
+		if (args.latitude !== undefined) patch.latitude = args.latitude;
+		if (args.longitude !== undefined) patch.longitude = args.longitude;
+		if (args.phone !== undefined) {
+			patch.phone = args.phone;
+			patch.phoneKey = phoneKeyOf(args.phone);
+		}
 		if (args.projet !== undefined) patch.projet = args.projet;
 		if (args.source !== undefined) patch.source = args.source;
 		if (args.note !== undefined) patch.note = args.note;
@@ -618,21 +910,27 @@ export const update = mutation({
 			// Un rappel, lui, n'a pas d'issue de RDV : les raisons restent dans
 			// l'historique (traceRdvClos) et ne sont pas recopiées sur le rappel,
 			// comme lors d'un recontact.
+			const followUp = await resolveCommercial(ctx, args.followUp);
 			patch.followUp =
-				args.followUp.type === 'rdv'
+				followUp.type === 'rdv'
 					? {
-							...args.followUp,
-							nonVenteReason: args.followUp.nonVenteReason ?? contact.followUp?.nonVenteReason,
-							annulationReason:
-								args.followUp.annulationReason ?? contact.followUp?.annulationReason,
-							annulationDate: args.followUp.annulationDate ?? contact.followUp?.annulationDate
+							...followUp,
+							nonVenteReason: followUp.nonVenteReason ?? contact.followUp?.nonVenteReason,
+							nonVenteCode: followUp.nonVenteCode ?? contact.followUp?.nonVenteCode,
+							annulationReason: followUp.annulationReason ?? contact.followUp?.annulationReason,
+							annulationCode: followUp.annulationCode ?? contact.followUp?.annulationCode,
+							annulationDate: followUp.annulationDate ?? contact.followUp?.annulationDate
 						}
-					: args.followUp;
+					: followUp;
 		}
 		// Historique RDV : un nouveau RDV est compté quand le suivi passe de rappel à RDV,
 		// et la raison du passage en rappel est enregistrée sur le dernier RDV sinon.
 		// Un simple passage en rappel ne supprime jamais l'historique des RDV.
-		if (args.followUp?.type === 'rdv' && contact.followUp?.type !== 'rdv') {
+		if (
+			args.followUp?.type === 'rdv' &&
+			args.followUp.motif !== 'confortation' &&
+			contact.followUp?.type !== 'rdv'
+		) {
 			patch.rdvHistory = [...(contact.rdvHistory ?? []), { at: Date.now() }];
 		} else if (args.followUp?.type === 'rappel' && contact.followUp?.type === 'rdv') {
 			const history = contact.rdvHistory ?? [];

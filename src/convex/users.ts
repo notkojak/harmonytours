@@ -1,4 +1,4 @@
-import { mutation, query } from './_generated/server';
+import { internalQuery, mutation, query } from './_generated/server';
 import { v } from 'convex/values';
 import { getAuthUserId } from '@convex-dev/auth/server';
 import { canManageEmployes, getCurrentUser } from './permissions';
@@ -99,9 +99,9 @@ export const getProfile = query({
 	}
 });
 
-// Profil public par identifiant — utilisé par les endpoints de connexion
-// mobiles (HTTP actions) qui ne passent pas par le client Convex.
-export const getById = query({
+// Profil complet par identifiant : réservé au serveur (endpoints mobiles et
+// vérifications d'identité). Aucun client web ne peut l'appeler.
+export const getByIdInternal = internalQuery({
 	args: { userId: v.id('users') },
 	handler: async (ctx, args) => {
 		const user = await ctx.db.get(args.userId);
@@ -112,8 +112,10 @@ export const getById = query({
 	}
 });
 
-// Profil public par e-mail (fallback quand le sign-in ne renvoie pas l'id).
-export const getByEmail = query({
+// Profil complet par e-mail : réservé au serveur (connexion mobile). Le web
+// n'obtient plus que l'existence et le statut du compte (voir `getByEmail`),
+// pour ne pas exposer le rôle et l'identité d'un salarié à partir d'un e-mail.
+export const getByEmailInternal = internalQuery({
 	args: { email: v.string() },
 	handler: async (ctx, args) => {
 		const user = await ctx.db
@@ -124,5 +126,25 @@ export const getByEmail = query({
 			return null;
 		}
 		return profileOf(user as any);
+	}
+});
+
+/**
+ * Indice de connexion public : un compte existe-t-il, et est-il encore actif ?
+ * C'est tout ce dont la page de connexion a besoin pour distinguer « compte
+ * désactivé », « mot de passe incorrect » et « e-mail inconnu ». Le profil
+ * complet reste côté serveur.
+ */
+export const getByEmail = query({
+	args: { email: v.string() },
+	handler: async (ctx, args) => {
+		const user = await ctx.db
+			.query('users')
+			.withIndex('email', (q) => q.eq('email', args.email))
+			.first();
+		if (!user) {
+			return null;
+		}
+		return { _id: user._id, statut: user.statut ?? 'actif' };
 	}
 });

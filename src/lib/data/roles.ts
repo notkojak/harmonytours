@@ -16,6 +16,21 @@ export function canAccessAdministration(role: string | null | undefined): boolea
 }
 
 /**
+ * Vue Direction : managers de périmètre (l'animateur de zone voit les chiffres
+ * de son agence, sans pouvoir administrer les comptes).
+ */
+export const PILOTAGE_ROLES = [
+	'administrateur',
+	'directeur de zone',
+	'animateur de zone',
+	"directeur d'agence"
+] as const;
+
+export function canViewPilotage(role: string | null | undefined): boolean {
+	return !!role && (PILOTAGE_ROLES as readonly string[]).includes(role);
+}
+
+/**
  * Qui peut corriger « qui a pris le contact » : l'administrateur, le directeur
  * de zone et le directeur d'agence (même règle que côté serveur, permissions.ts).
  */
@@ -27,6 +42,14 @@ export const REASSIGN_ROLES = [
 
 export function canReassignContact(role: string | null | undefined): boolean {
 	return !!role && (REASSIGN_ROLES as readonly string[]).includes(role);
+}
+
+/**
+ * L'administrateur seul ouvre le regroupement de chantier depuis le chiffrage
+ * (et donc le déblocage d'une place par le responsable des poses).
+ */
+export function isAdministrateur(role: string | null | undefined): boolean {
+	return role === 'administrateur';
 }
 
 export function capitalizeRole(role: string | null | undefined): string {

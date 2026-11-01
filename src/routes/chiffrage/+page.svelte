@@ -36,10 +36,11 @@
 	import { onMount } from 'svelte';
 	import GrillePicker from '$lib/components/chiffrage/GrillePicker.svelte';
 	import PanneauDevis from '$lib/components/chiffrage/PanneauDevis.svelte';
+	import DevisEnregistres from '$lib/components/chiffrage/DevisEnregistres.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { FOCUS_CHAMP } from '$lib/chiffrage-style';
 	import { chargerDevis, prochainNumeroLigne, sauverDevis } from '$lib/devis-local';
-	import type { Opportunite } from '$lib/data/opportunite';
+	import type { Deblocage } from '$lib/data/deblocage';
 
 	// ---------------------------------------------------------------- Articles
 	// Un article du book est soit un forfait du catalogue (prix affiché), soit
@@ -85,8 +86,9 @@
 	// Le book s'annonce en prix HT sans remise : la remise commerciale se décide
 	// après, jamais par défaut.
 	let remise = $state(0);
-	// La DO validée : c'est elle qui porte la remise, jamais une saisie directe.
-	let opportunite = $state<Opportunite | null>(null);
+	// La place ouverte par le responsable : c'est elle qui porte la remise,
+	// jamais une saisie directe.
+	let deblocage = $state<Deblocage | null>(null);
 	let flash = $state<string | null>(null);
 	let compteur = 0;
 	// Le devis est relu depuis l'appareil une fois l'hydratation faite (jamais au
@@ -99,7 +101,7 @@
 		if (sauve) {
 			lignes = sauve.lignes;
 			remise = sauve.remise;
-			opportunite = sauve.opportunite;
+			deblocage = sauve.deblocage;
 			compteur = prochainNumeroLigne(sauve.lignes);
 		}
 		devisRepris = true;
@@ -109,7 +111,7 @@
 	// aussitôt conservée : vider le devis efface la sauvegarde.
 	$effect(() => {
 		if (!devisRepris) return;
-		sauverDevis(lignes, remise, opportunite);
+		sauverDevis(lignes, remise, deblocage);
 	});
 
 	const famille = $derived(familleId ? (FAMILLE_BY_ID.get(familleId) ?? null) : null);
@@ -810,19 +812,20 @@
 				<PanneauDevis
 					bind:lignes
 					bind:remise
-					bind:opportunite
+					bind:deblocage
 					{flash}
 					onQte={majQte}
 					onSupprimer={supprimer}
 					onVider={() => {
 						lignes = [];
-						// La remise vient de la DO, qui dépend du regroupement : vider le
+						// La remise vient du déblocage, qui dépend du regroupement : vider le
 						// panier efface les deux (le visuel est réinitialisé dans le panneau).
 						remise = 0;
-						opportunite = null;
+						deblocage = null;
 					}}
 				/>
 			</div>
+			<DevisEnregistres bind:lignes bind:remise bind:deblocage />
 		</div>
 	</div>
 </div>

@@ -11,7 +11,15 @@
 		DialogHeader,
 		DialogTitle
 	} from '$lib/components/ui/dialog/index.js';
-	import { EVENT_EMOJI, EVENT_STYLE, EVENT_TYPE_LABEL, rdvStatusClass } from '$lib/agenda-style';
+	import {
+		CONFORTATION_EMOJI,
+		EVENT_EMOJI,
+		EVENT_STYLE,
+		EVENT_TYPE_LABEL,
+		REUNION_FIXED_SLOT,
+		rdvBlockTitle,
+		rdvStatusClass
+	} from '$lib/agenda-style';
 
 	let { open = $bindable(false) }: { open?: boolean } = $props();
 
@@ -26,7 +34,7 @@
 	const RDV_EMOJI = '💼';
 
 	const chipMonth =
-		'overflow-hidden rounded-md text-left text-[11px] font-medium transition-colors flex w-full items-start gap-1.5 px-2 py-1';
+		'overflow-hidden rounded-sm text-left text-[11px] font-medium transition-colors flex w-full items-start gap-1.5 px-2 py-1';
 
 	// Gestion dossier : créneaux fixes mercredi 14h–15h et vendredi 14h–15h.
 
@@ -39,7 +47,15 @@
 	}
 
 	type MonthItem =
-		| { id: string; kind: 'rdv'; time: string; name: string; projet?: string; status?: string }
+		| {
+				id: string;
+				kind: 'rdv';
+				time: string;
+				name: string;
+				projet?: string;
+				status?: string;
+				motif?: string;
+		  }
 		| {
 				id: string;
 				kind: 'evenement';
@@ -83,7 +99,8 @@
 				time: c.followUp?.time ?? '',
 				name: c.name,
 				projet: c.projet ?? undefined,
-				status: c.followUp?.status ?? undefined
+				status: c.followUp?.status ?? undefined,
+				motif: c.followUp?.motif ?? undefined
 			};
 			map.set(date, [...(map.get(date) ?? []), item]);
 		}
@@ -201,15 +218,17 @@
 							{#each monthItemsByDate.get(dateISO) ?? [] as item (item.id)}
 								{#if item.kind === 'rdv'}
 									<div
-										class={[chipMonth, rdvStatusClass(item.status)].join(' ')}
+										class={[chipMonth, rdvStatusClass(item.status, item.motif)].join(' ')}
 										title={[item.name, item.projet].filter(Boolean).join(' — ')}
 									>
 										<span class="hidden font-mono text-[10px] opacity-70 sm:block">
 											{item.time}
 										</span>
 										<span class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
-											<span class="hidden sm:inline">{RDV_EMOJI}</span>
-											{item.name}
+										<span class="hidden sm:inline">
+											{item.motif === 'confortation' ? CONFORTATION_EMOJI : RDV_EMOJI}
+										</span>
+										{rdvBlockTitle(item.name, item.motif)}
 										</span>
 									</div>
 								{:else if item.kind === 'evenement'}
@@ -237,7 +256,7 @@
 									</div>
 								{:else}
 									<div
-										class={chipMonth + ' ' + EVENT_STYLE.gestion}
+										class={chipMonth + ' ' + REUNION_FIXED_SLOT}
 										title="Réunion — créneau fixe (lundi et vendredi 8h30–9h30)"
 									>
 										<span class="hidden font-mono text-[10px] opacity-70 sm:block">08:30</span>

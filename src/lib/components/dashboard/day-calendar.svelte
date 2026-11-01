@@ -178,7 +178,7 @@
 							</span>
 							<span
 								class={[
-									'shrink-0 rounded-md px-1.5 py-0.5 text-[9.5px] font-bold tracking-wider uppercase',
+									'shrink-0 rounded-sm px-1.5 py-0.5 text-[9.5px] font-bold tracking-wider uppercase',
 									rdvStatusClass(item.rdv.followUp?.status, item.rdv.followUp?.motif)
 								].join(' ')}
 							>
@@ -206,7 +206,7 @@
 							</div>
 							<span
 								class={[
-									'shrink-0 rounded-md px-1.5 py-0.5 text-[9.5px] font-bold tracking-wider uppercase',
+									'shrink-0 rounded-sm px-1.5 py-0.5 text-[9.5px] font-bold tracking-wider uppercase',
 									meta.chip
 								].join(' ')}
 							>
