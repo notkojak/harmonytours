@@ -30,9 +30,7 @@
 </script>
 
 {#if show}
-	<div
-		class="flex max-w-full flex-wrap items-center gap-1 rounded-full border border-line bg-card2/60 p-1"
-	>
+	<div class="flex max-w-full flex-wrap items-center gap-1 rounded-full bg-card2 p-1">
 		<button
 			type="button"
 			onclick={() => (value = undefined)}
@@ -40,7 +38,7 @@
 				'flex items-center justify-center gap-1 rounded-full px-3 py-1.5 text-[12px] font-medium transition-all duration-150',
 				value === undefined
 					? 'bg-primary text-primary-foreground shadow-sm'
-					: 'text-muted-foreground hover:bg-glass-2 hover:text-ink'
+					: 'text-muted-foreground hover:bg-card hover:text-ink'
 			].join(' ')}
 		>
 			Tout
@@ -53,7 +51,7 @@
 					'flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium whitespace-nowrap transition-all duration-150',
 					value === p._id
 						? 'bg-primary text-primary-foreground shadow-sm'
-						: 'text-muted-foreground hover:bg-glass-2 hover:text-ink'
+						: 'text-muted-foreground hover:bg-card hover:text-ink'
 				].join(' ')}
 			>
 				<Avatar

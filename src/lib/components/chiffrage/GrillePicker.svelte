@@ -84,7 +84,7 @@
 					type="number"
 					value={h}
 					onchange={(e) => saisirH(e.currentTarget.value)}
-					class="h-11 min-w-0 flex-1 rounded-full border border-input bg-card px-5 text-[15px] font-semibold text-ink tabular-nums {FOCUS_CHAMP}"
+					class="h-11 min-w-0 flex-1 rounded-full bg-card px-5 text-[13px] font-semibold text-ink tabular-nums {FOCUS_CHAMP}"
 				/>
 				<span class="shrink-0 text-[11px] text-ink-mute">mm</span>
 			</div>
@@ -99,7 +99,7 @@
 					type="number"
 					value={l}
 					onchange={(e) => saisirL(e.currentTarget.value)}
-					class="h-11 min-w-0 flex-1 rounded-full border border-input bg-card px-5 text-[15px] font-semibold text-ink tabular-nums {FOCUS_CHAMP}"
+					class="h-11 min-w-0 flex-1 rounded-full bg-card px-5 text-[13px] font-semibold text-ink tabular-nums {FOCUS_CHAMP}"
 				/>
 				<span class="shrink-0 text-[11px] text-ink-mute">mm</span>
 			</div>
@@ -107,7 +107,7 @@
 		</label>
 	</div>
 
-	<div class="rounded-2xl border border-line bg-card2/60 p-2.5">
+	<div class="rounded-2xl bg-card2 p-2.5">
 		<div class="flex items-center justify-between gap-3">
 			<p class="text-[10.5px] font-semibold text-ink-soft">
 				Clique une case, ou glisse pour balayer la grille
@@ -137,7 +137,7 @@
 									title={lib(lv, libL)}
 									class={[
 										'w-9 rounded-full py-1 text-[9.5px] font-semibold tabular-nums transition-colors',
-										lv === l ? 'bg-brand text-white' : 'text-ink-soft hover:text-ink'
+										lv === l ? 'bg-primary text-primary-foreground' : 'text-ink-soft hover:text-ink'
 									].join(' ')}
 								>
 									{court(lv)}
@@ -156,7 +156,7 @@
 									title={lib(hv, libH)}
 									class={[
 										'w-12 rounded-full py-1 text-[9.5px] font-semibold tabular-nums transition-colors',
-										hv === h ? 'bg-brand text-white' : 'text-ink-soft hover:text-ink'
+										hv === h ? 'bg-primary text-primary-foreground' : 'text-ink-soft hover:text-ink'
 									].join(' ')}
 								>
 									{court(hv)}

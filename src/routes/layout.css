@@ -1,20 +1,23 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @import 'shadcn-svelte/tailwind.css';
-@import '@fontsource-variable/plus-jakarta-sans';
-@import '@fontsource-variable/sora';
+@import '@fontsource-variable/inter';
 
 @custom-variant dark (&:is(.dark *));
 @custom-variant light (&:is(.light *));
 
 @theme {
-	/* Typographie bravaux.fr : Plus Jakarta Sans pour le corps, Sora pour les titres. */
-	--font-sans: 'Plus Jakarta Sans Variable', system-ui, sans-serif;
-	--font-display: 'Sora Variable', system-ui, sans-serif;
+	/* Typographie : Inter partout — corps de texte et titres. Police servie par
+	   le projet (fichiers variables locaux, toutes les graisses de 100 à 900),
+	   donc pas d'appel à une fonte distante au chargement. */
+	--font-sans: 'Inter Variable', system-ui, sans-serif;
+	--font-display: 'Inter Variable', system-ui, sans-serif;
 	--font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 
 	/* Accent de marque (--bleu de bravaux.fr) */
 	--color-brand: var(--brand);
+	/* Fond de la fenêtre, autour des panneaux (thème clair : noir profond) */
+	--color-chrome: var(--chrome);
 
 	/* Palette thémable (claire par défaut, sombre via .dark) */
 	--color-base: var(--base);
@@ -31,7 +34,7 @@
 	--color-glass-3: var(--glass-3);
 
 	/* Échelle d'arrondis bravaux.fr : cartes 18px, panneaux 48px, pastilles pleines. */
-	--radius-2xl: 1.125rem; /* 18px — --r-carte */
+	--radius-2xl: 1.25rem; /* 20px — --r-carte */
 	--radius-3xl: 1.5rem; /* 24px — champs multilignes */
 	--radius-4xl: 2rem; /* 32px — panneau */
 	--color-sidebar-ring: var(--sidebar-ring);
@@ -77,14 +80,15 @@
 	color-scheme: light;
 	/* Tokens de marque, repris tels quels du site */
 	--brand: #24a2b3; /* --bleu */
-	--base: #f4f4f4; /* --fond */
+	--chrome: #0d0d0f; /* fond de la fenêtre, autour des panneaux */
+	--base: #f6f6f7; /* --fond */
 	--surface: #ffffff; /* --blanc */
-	--card2: #f7f7f7;
-	--line: #e6e6e6; /* --trait */
-	--line-strong: #cdcdcd; /* --filet */
-	--ink: #000000; /* --noir */
-	--ink-soft: #5a5a5a; /* --texte */
-	--ink-mute: #8a8a8a; /* placeholder */
+	--card2: #f4f4f5; /* blocs intérieurs, sans trait */
+	--line: #eeeef1; /* --trait, volontairement très clair */
+	--line-strong: #dededf; /* --filet */
+	--ink: #0b0b0c; /* --noir */
+	--ink-soft: #5f5f66; /* --texte */
+	--ink-mute: #94949b; /* placeholder */
 	--glass-1: rgba(0, 0, 0, 0.025);
 	--glass-2: rgba(0, 0, 0, 0.045);
 	--glass-3: rgba(0, 0, 0, 0.075);
@@ -115,13 +119,13 @@
 	--chart-4: #8a8a8a;
 	--chart-5: #d4d4d4;
 	--radius: 1.125rem;
-	--sidebar: #f4f4f4;
-	--sidebar-foreground: #000000;
-	--sidebar-primary: #000000;
-	--sidebar-primary-foreground: #ffffff;
-	--sidebar-accent: #ececec;
-	--sidebar-accent-foreground: #000000;
-	--sidebar-border: #e6e6e6;
+	--sidebar: #0d0d0f;
+	--sidebar-foreground: #f4f4f5;
+	--sidebar-primary: #ffffff;
+	--sidebar-primary-foreground: #000000;
+	--sidebar-accent: rgba(255, 255, 255, 0.08);
+	--sidebar-accent-foreground: #ffffff;
+	--sidebar-border: rgba(255, 255, 255, 0.08);
 	--sidebar-ring: #24a2b3;
 }
 
@@ -129,6 +133,7 @@
 .dark {
 	color-scheme: dark;
 	--brand: #24a2b3;
+	--chrome: #0d0d0f;
 	--base: #0a0a0b;
 	--surface: #121214;
 	--card2: #17171a;
@@ -167,7 +172,7 @@
 	--chart-4: #6d6d75;
 	--chart-5: #33333a;
 	--radius: 1.125rem;
-	--sidebar: #0e0e10;
+	--sidebar: #0d0d0f;
 	--sidebar-foreground: #f6f6f6;
 	--sidebar-primary: #ffffff;
 	--sidebar-primary-foreground: #000000;
@@ -187,13 +192,13 @@ body {
 	background-color: var(--color-base);
 	color: var(--color-ink);
 	font-family: var(--font-sans);
-	font-size: 15px;
-	line-height: 1.6;
+	font-size: 14px;
+	line-height: 1.55;
 	-webkit-font-smoothing: antialiased;
 	text-rendering: optimizeLegibility;
 }
 
-/* Titres en Sora, serrés comme sur bravaux.fr */
+/* Titres en Inter, serrés comme sur bravaux.fr */
 h1,
 h2,
 h3,
@@ -222,10 +227,14 @@ h6 {
 	}
 }
 
-/* Fine barre de défilement pour rester discret */
-* {
-	scrollbar-width: thin;
-	scrollbar-color: var(--line-strong) transparent;
+/* Fine barre de défilement pour rester discret.
+   Dans @layer base : hors couche, cette règle `*` écraserait les utilitaires
+   `[scrollbar-width:none]` (les styles non layerés passent devant les layers). */
+@layer base {
+	* {
+		scrollbar-width: thin;
+		scrollbar-color: var(--line-strong) transparent;
+	}
 }
 
 ::selection {

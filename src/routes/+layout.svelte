@@ -52,36 +52,17 @@
 		{@render children()}
 	</div>
 {:else}
-	<div class="flex h-screen overflow-hidden bg-base text-ink">
+	<div class="flex h-screen overflow-hidden bg-chrome text-ink">
 		<Sidebar bind:mobileOpen={mobileNavOpen} />
 
-		<main class="flex min-w-0 flex-1 flex-col py-2 pr-2 sm:py-3 sm:pr-3">
+		<main
+			class="flex min-w-0 flex-1 flex-col gap-2 pt-2 pr-2 pb-2 sm:gap-2.5 sm:pt-3 sm:pr-3 sm:pb-3"
+		>
+			<!-- Filtres de période (jour / semaine / mois) : uniquement sur le tableau de bord. -->
+			<Topbar onMenu={() => (mobileNavOpen = true)} showPeriod={pathname === '/'} />
 			<div
-				class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-[var(--ombre)]"
+				class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[22px] bg-surface shadow-[0_24px_60px_-32px_rgba(0,0,0,0.55)]"
 			>
-				<Topbar
-					onMenu={() => (mobileNavOpen = true)}
-					showPeriod={pathname !== '/agenda'}
-					title={pathname === '/progression'
-						? 'Progression'
-						: pathname === '/books'
-							? 'Books'
-							: pathname === '/administration'
-								? 'Administration'
-								: pathname === '/contacts'
-									? 'Contacts'
-									: pathname === '/clients'
-										? 'Clients'
-										: pathname === '/agenda'
-											? 'Agenda'
-											: pathname === '/zones'
-												? 'Zones de prospection'
-												: pathname === '/bilan'
-													? 'Bilan de prospection'
-													: pathname === '/chiffrage'
-														? 'Chiffrage'
-														: 'Tableau de bord'}
-				/>
 				<div
 					class={[
 						'min-h-0 flex-1 overflow-y-auto',

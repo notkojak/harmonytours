@@ -148,9 +148,7 @@
 <!-- Mobile : prénom nom + CA total uniquement (mêmes regroupements que le tableau) -->
 <div class="flex flex-col gap-1.5 md:hidden">
 	{#each [...ordered.commerciaux, ...ordered.autres] as member}
-		<div
-			class="flex items-center justify-between gap-3 rounded-lg border border-line/60 bg-card2/50 px-3 py-2"
-		>
+		<div class="flex items-center justify-between gap-3 rounded-2xl bg-card2 px-3.5 py-2.5">
 			<span class="flex min-w-0 items-center gap-2">
 				<Avatar
 					photo={photoForMember(member.firstName, member.lastName)}
@@ -168,9 +166,7 @@
 		</div>
 	{/each}
 	{#if ordered.autres.length > 0}
-		<div
-			class="flex items-center justify-between gap-3 rounded-lg border border-dashed border-line px-3 py-2"
-		>
+		<div class="flex items-center justify-between gap-3 rounded-2xl bg-card2/50 px-3.5 py-2.5">
 			<span class="text-[11px] font-medium tracking-wide text-muted-foreground uppercase"
 				>Total autres</span
 			>
@@ -179,23 +175,19 @@
 			>
 		</div>
 	{/if}
-	<div
-		class="flex items-center justify-between gap-3 rounded-lg border border-line bg-glass-1 px-3 py-2"
-	>
+	<div class="flex items-center justify-between gap-3 rounded-2xl bg-card2 px-3.5 py-2.5">
 		<span class="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase"
 			>Total</span
 		>
-		<span class="text-[13.5px] font-bold text-foreground"
-			>{euro.format(grandTotals.caTotal)}</span
-		>
+		<span class="text-[13.5px] font-bold text-foreground">{euro.format(grandTotals.caTotal)}</span>
 	</div>
 </div>
 
 <!-- Desktop / tablette : tableau complet -->
-<div class="hidden overflow-x-auto rounded-xl border border-line md:block">
-	<Table class="min-w-[1000px]">
+<div class="hidden overflow-x-auto rounded-2xl md:block">
+	<Table class="min-w-[1000px] border-separate border-spacing-y-1.5">
 		<TableHeader>
-			<TableRow class="border-line bg-transparent hover:bg-transparent">
+			<TableRow class="border-transparent bg-transparent hover:bg-transparent">
 				<TableHead
 					class="px-2.5 py-2 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
 				>
@@ -242,17 +234,17 @@
 					CA HT
 				</TableHead>
 				<TableHead
-					class="px-2.5 py-2 text-right text-[11.5px] font-semibold tracking-wide text-sky-700 dark:text-sky-300/70 uppercase"
+					class="px-2.5 py-2 text-right text-[11.5px] font-semibold tracking-wide text-sky-700 uppercase dark:text-sky-300/70"
 				>
 					EN ATTENTE
 				</TableHead>
 				<TableHead
-					class="px-2.5 py-2 text-right text-[11.5px] font-semibold tracking-wide text-orange-700 dark:text-orange-300/70 uppercase"
+					class="px-2.5 py-2 text-right text-[11.5px] font-semibold tracking-wide text-orange-700 uppercase dark:text-orange-300/70"
 				>
 					ERREUR
 				</TableHead>
 				<TableHead
-					class="px-2.5 py-2 text-right text-[11.5px] font-semibold tracking-wide text-red-700 dark:text-red-300/70 uppercase"
+					class="px-2.5 py-2 text-right text-[11.5px] font-semibold tracking-wide text-red-700 uppercase dark:text-red-300/70"
 				>
 					ANNULÉES
 				</TableHead>
@@ -265,7 +257,9 @@
 		</TableHeader>
 		<TableBody>
 			{#each ordered.commerciaux as member (member._id ?? `${member.firstName} ${member.lastName}`)}
-				<TableRow class="border-line/60 hover:bg-glass-1">
+				<TableRow
+					class="border-0 transition-colors [&:hover>td]:bg-glass-3 [&>td]:bg-card2 [&>td:first-child]:rounded-l-xl [&>td:last-child]:rounded-r-xl"
+				>
 					<TableCell class="px-2.5 py-1.5">
 						<div class="flex items-center gap-2">
 							<Avatar
@@ -349,16 +343,18 @@
 			{#if ordered.autres.length > 0}
 				<!-- Ligne « AUTRES » : superviseurs de zone (directeur de zone,
 				     animateur de zone) — pas d'objectifs, hors total des commerciaux. -->
-				<TableRow class="border-line bg-glass-1/70 hover:bg-glass-1/70">
+				<TableRow class="border-0 hover:bg-transparent">
 					<TableCell
 						colspan={13}
-						class="px-2.5 py-1 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase"
+						class="rounded-xl bg-card2/50 px-2.5 py-1 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase"
 					>
 						Autres — animation
 					</TableCell>
 				</TableRow>
 				{#each ordered.autres as member (member._id ?? `${member.firstName} ${member.lastName}`)}
-					<TableRow class="border-line/60 hover:bg-glass-1">
+					<TableRow
+						class="border-0 transition-colors [&:hover>td]:bg-glass-3 [&>td]:bg-card2 [&>td:first-child]:rounded-l-xl [&>td:last-child]:rounded-r-xl"
+					>
 						<TableCell class="px-2.5 py-1.5">
 							<div class="flex items-center gap-2">
 								<Avatar
@@ -366,9 +362,7 @@
 									label={`${member.firstName[0]}${member.lastName[0]}`}
 									class="size-7 bg-muted text-[10px] font-bold text-muted-foreground"
 								/>
-								<span
-									class="text-[14px] font-medium whitespace-nowrap text-foreground"
-								>
+								<span class="text-[14px] font-medium whitespace-nowrap text-foreground">
 									{member.firstName}
 									{member.lastName}
 								</span>
@@ -436,7 +430,7 @@
 			{/if}
 
 			{#if members.length === 0}
-				<TableRow class="border-line/60 hover:bg-transparent">
+				<TableRow class="border-0 hover:bg-transparent">
 					<TableCell colspan={13} class="px-4 py-8 text-center text-[13px] text-muted-foreground">
 						Aucun membre pour le moment.
 					</TableCell>
@@ -446,7 +440,9 @@
 			{#if ordered.autres.length > 0}
 				<!-- Total du groupe AUTRES (superviseurs de zone) : mêmes colonnes
 				     que les commerciaux, sauf les objectifs (ils n'en ont pas). -->
-				<TableRow class="hover:bg-transparent">
+				<TableRow
+					class="border-0 hover:bg-transparent [&>td]:bg-card2/50 [&>td:first-child]:rounded-l-xl [&>td:last-child]:rounded-r-xl"
+				>
 					<TableCell
 						class="px-2.5 py-1.5 text-[13px] font-semibold tracking-wide text-muted-foreground uppercase"
 					>
@@ -509,73 +505,75 @@
 
 			<!-- Total : toute l'agence (commerciaux + superviseurs de zone). Sans
 			     superviseur, il reste le total des commerciaux. -->
-			<TableRow class="border-t-2 border-line bg-glass-1 hover:bg-glass-1">
-					<TableCell
-						class="px-2.5 py-1.5 text-[13.5px] font-bold tracking-wider text-foreground uppercase"
-					>
-						Total
-					</TableCell>
-					<TableCell
-						class="px-2.5 py-1.5 text-right text-[13.5px] font-bold whitespace-nowrap text-foreground"
-					>
-						{euro.format(grandTotals.objectiveCa)}
-					</TableCell>
-					<TableCell
-						class="px-2.5 py-1.5 text-right text-[13.5px] font-bold whitespace-nowrap text-foreground"
-					>
-						{grandTotals.objectiveRdv}
-					</TableCell>
-					<TableCell
-						class="px-2.5 py-1.5 text-right text-[13.5px] font-bold whitespace-nowrap text-foreground"
-					>
-						{count(grandTotals.rdvTap)}
-					</TableCell>
-					<TableCell
-						class="px-2.5 py-1.5 text-right text-[13.5px] font-bold whitespace-nowrap text-foreground"
-					>
-						{count(grandTotals.rdvGms)}
-					</TableCell>
-					<TableCell
-						class="px-2.5 py-1.5 text-right text-[13.5px] font-bold whitespace-nowrap text-foreground"
-					>
-						{count(grandTotals.total)}
-					</TableCell>
-					<TableCell
-						class="px-2.5 py-1.5 text-right text-[13.5px] font-bold whitespace-nowrap text-foreground"
-					>
-						{count(grandTotals.rdvTraites)}
-					</TableCell>
-					<TableCell
-						class="px-2.5 py-1.5 text-right text-[13.5px] font-bold whitespace-nowrap text-foreground"
-					>
-						{count(grandTotals.ventes)}
-					</TableCell>
-					<TableCell
-						class="px-2.5 py-1.5 text-right text-[13.5px] font-bold whitespace-nowrap text-foreground"
-					>
-						{euro.format(grandTotals.caPeriode)}
-					</TableCell>
-					<TableCell
-						class="px-2.5 py-1.5 text-right text-[13.5px] font-bold whitespace-nowrap text-sky-700 dark:text-sky-300"
-					>
-						{euro.format(grandTotals.caAttente)}
-					</TableCell>
-					<TableCell
-						class="px-2.5 py-1.5 text-right text-[13.5px] font-bold whitespace-nowrap text-orange-700 dark:text-orange-300"
-					>
-						{euro.format(grandTotals.caErreur)}
-					</TableCell>
-					<TableCell
-						class="px-2.5 py-1.5 text-right text-[13.5px] font-bold whitespace-nowrap text-red-700 dark:text-red-300"
-					>
-						{euro.format(grandTotals.caAnnulations)}
-					</TableCell>
-					<TableCell
-						class="px-2.5 py-1.5 text-right text-[13.5px] font-bold whitespace-nowrap text-foreground"
-					>
-						{euro.format(grandTotals.caTotal)}
-					</TableCell>
-				</TableRow>
+			<TableRow
+				class="border-0 hover:bg-transparent [&>td]:bg-card2 [&>td:first-child]:rounded-l-xl [&>td:last-child]:rounded-r-xl"
+			>
+				<TableCell
+					class="px-2.5 py-1.5 text-[13.5px] font-bold tracking-wider text-foreground uppercase"
+				>
+					Total
+				</TableCell>
+				<TableCell
+					class="px-2.5 py-1.5 text-right text-[13.5px] font-bold whitespace-nowrap text-foreground"
+				>
+					{euro.format(grandTotals.objectiveCa)}
+				</TableCell>
+				<TableCell
+					class="px-2.5 py-1.5 text-right text-[13.5px] font-bold whitespace-nowrap text-foreground"
+				>
+					{grandTotals.objectiveRdv}
+				</TableCell>
+				<TableCell
+					class="px-2.5 py-1.5 text-right text-[13.5px] font-bold whitespace-nowrap text-foreground"
+				>
+					{count(grandTotals.rdvTap)}
+				</TableCell>
+				<TableCell
+					class="px-2.5 py-1.5 text-right text-[13.5px] font-bold whitespace-nowrap text-foreground"
+				>
+					{count(grandTotals.rdvGms)}
+				</TableCell>
+				<TableCell
+					class="px-2.5 py-1.5 text-right text-[13.5px] font-bold whitespace-nowrap text-foreground"
+				>
+					{count(grandTotals.total)}
+				</TableCell>
+				<TableCell
+					class="px-2.5 py-1.5 text-right text-[13.5px] font-bold whitespace-nowrap text-foreground"
+				>
+					{count(grandTotals.rdvTraites)}
+				</TableCell>
+				<TableCell
+					class="px-2.5 py-1.5 text-right text-[13.5px] font-bold whitespace-nowrap text-foreground"
+				>
+					{count(grandTotals.ventes)}
+				</TableCell>
+				<TableCell
+					class="px-2.5 py-1.5 text-right text-[13.5px] font-bold whitespace-nowrap text-foreground"
+				>
+					{euro.format(grandTotals.caPeriode)}
+				</TableCell>
+				<TableCell
+					class="px-2.5 py-1.5 text-right text-[13.5px] font-bold whitespace-nowrap text-sky-700 dark:text-sky-300"
+				>
+					{euro.format(grandTotals.caAttente)}
+				</TableCell>
+				<TableCell
+					class="px-2.5 py-1.5 text-right text-[13.5px] font-bold whitespace-nowrap text-orange-700 dark:text-orange-300"
+				>
+					{euro.format(grandTotals.caErreur)}
+				</TableCell>
+				<TableCell
+					class="px-2.5 py-1.5 text-right text-[13.5px] font-bold whitespace-nowrap text-red-700 dark:text-red-300"
+				>
+					{euro.format(grandTotals.caAnnulations)}
+				</TableCell>
+				<TableCell
+					class="px-2.5 py-1.5 text-right text-[13.5px] font-bold whitespace-nowrap text-foreground"
+				>
+					{euro.format(grandTotals.caTotal)}
+				</TableCell>
+			</TableRow>
 		</TableBody>
 	</Table>
 </div>

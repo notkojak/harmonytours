@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { pageEmojis } from '$lib/data/dashboard';
 	import { Check, Sprout } from '@lucide/svelte';
 	import { useMutation, useQuery } from 'convex-svelte';
 	import { api } from '../../convex/_generated/api.js';
@@ -85,26 +86,27 @@
 </script>
 
 <div class="mx-auto max-w-6xl space-y-4">
-	<Card class="gap-0 rounded-2xl border-line py-0 shadow-none">
+	<Card class="gap-0 rounded-2xl border-0 py-0 shadow-none">
 		<CardHeader class="flex flex-wrap items-center justify-between gap-3 px-5 pt-5 pb-0">
-			<CardTitle class="flex items-center gap-2.5 font-display text-[16px] font-semibold">
-				<span
-					class="grid size-8 place-items-center rounded-full border border-brand/20 bg-brand/10 text-brand"
-				>
-					<Sprout class="size-4" strokeWidth={1.7} />
-				</span>
-				{isManager ? 'Arbres de progression' : 'Mon arbre de progression'}
-				<span
-					class="rounded-full bg-glass-3 px-2 py-0.5 text-[11px] font-semibold text-ink-soft tabular-nums"
-				>
-					{treesDone}/{TREES.length}
-				</span>
-			</CardTitle>
+			<div class="min-w-0">
+				<CardTitle class="flex items-center gap-2.5 text-[14px] font-semibold">
+					<span class="text-[15px] leading-none" aria-hidden="true"
+						>{pageEmojis['/progression']}</span
+					>
+					{isManager ? 'Arbres de progression' : 'Mon arbre de progression'}
+					<span
+						class="rounded-full bg-card2 px-2 py-0.5 text-[11px] font-semibold text-muted-foreground tabular-nums"
+					>
+						{treesDone}/{TREES.length}
+					</span>
+				</CardTitle>
+				<p class="mt-1 pl-6 text-[11.5px] font-medium text-muted-foreground">
+					Valide tes étapes et suis ta montée en compétences
+				</p>
+			</div>
 
 			{#if isManager && (people.data?.length ?? 0) > 1}
-				<div
-					class="flex max-w-full items-center gap-0.5 overflow-x-auto rounded-full border border-line bg-card2 p-1"
-				>
+				<div class="flex max-w-full items-center gap-0.5 overflow-x-auto rounded-full bg-card2 p-1">
 					{#each people.data ?? [] as p (p._id)}
 						<button
 							type="button"
@@ -112,8 +114,8 @@
 							class={[
 								'flex shrink-0 items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] whitespace-nowrap transition-colors',
 								selectedId === p._id
-									? 'bg-foreground font-semibold text-background'
-									: 'font-medium text-ink-soft hover:bg-glass-2 hover:text-foreground'
+									? 'bg-primary font-semibold text-primary-foreground shadow-sm'
+									: 'font-medium text-muted-foreground hover:bg-card hover:text-foreground'
 							].join(' ')}
 						>
 							<Avatar
@@ -136,7 +138,7 @@
 
 		<CardContent class="px-5 pt-4 pb-5">
 			<!-- Sélecteur d'arbre : une seule rangée qui défile, onglet actif en
-			     pilule noire, parcours terminé souligné d'un accent bleu. -->
+			     pilule primaire, parcours terminé teinté en vert. -->
 			<div class="mb-5 flex flex-wrap items-center gap-1.5">
 				{#each TREES as t (t.key)}
 					{@const done = validatedByTree[t.key]?.length ?? 0}
@@ -148,10 +150,10 @@
 						class={[
 							'flex items-center justify-center gap-2 rounded-full px-3.5 py-2 text-[12.5px] whitespace-nowrap transition-colors',
 							active
-								? 'bg-foreground font-semibold text-background shadow-[var(--ombre)]'
+								? 'bg-primary font-semibold text-primary-foreground shadow-sm'
 								: complete
-									? 'border border-brand/40 bg-brand/5 font-medium text-foreground hover:border-brand'
-									: 'border border-transparent font-medium text-ink-soft hover:bg-glass-2 hover:text-foreground'
+									? 'bg-emerald-500/12 font-medium text-emerald-700 dark:text-emerald-300'
+									: 'bg-card2 font-medium text-muted-foreground hover:bg-glass-3 hover:text-foreground'
 						].join(' ')}
 					>
 						<span class="text-[13px] leading-none">{t.emoji}</span>
@@ -159,13 +161,15 @@
 						<span
 							class={[
 								'rounded-full px-1.5 py-0.5 text-[10.5px] font-semibold tabular-nums',
-								active ? 'bg-background/15 text-background' : 'bg-glass-3 text-ink-soft'
+								active
+									? 'bg-primary-foreground/15 text-primary-foreground'
+									: 'bg-card text-muted-foreground'
 							].join(' ')}
 						>
 							{done}/{t.steps.length}
 						</span>
 						{#if complete && !active}
-							<Check class="size-3.5 text-brand" strokeWidth={3.5} />
+							<Check class="size-3.5 text-emerald-600 dark:text-emerald-400" strokeWidth={3.5} />
 						{/if}
 					</button>
 				{/each}
@@ -175,7 +179,7 @@
 			<div class="flex flex-col items-center">
 				{#if completeTree}
 					<div
-						class="mb-5 flex w-full max-w-md items-center gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/[0.07] px-4 py-3"
+						class="mb-5 flex w-full max-w-md items-center gap-3 rounded-2xl bg-emerald-500/10 px-4 py-3"
 					>
 						<span
 							class="grid size-9 shrink-0 place-items-center rounded-full bg-emerald-600 text-white"
@@ -183,9 +187,7 @@
 							<Check class="size-4.5" strokeWidth={3} />
 						</span>
 						<div class="min-w-0 leading-tight">
-							<p
-								class="font-display text-[13.5px] font-semibold text-emerald-700 dark:text-emerald-300"
-							>
+							<p class="text-[13.5px] font-semibold text-emerald-700 dark:text-emerald-300">
 								Catégorie validée 🎉
 							</p>
 							<p class="text-[11.5px] text-emerald-700 dark:text-emerald-300/80">
@@ -203,7 +205,7 @@
 				{:else}
 					{#if toggleError}
 						<p
-							class="mb-4 w-full max-w-md rounded-2xl border border-destructive/40 bg-destructive/10 px-3.5 py-2.5 text-[12px] text-destructive"
+							class="mb-4 w-full max-w-md rounded-2xl bg-destructive/10 px-3.5 py-2.5 text-[12px] text-destructive"
 						>
 							{toggleError}
 						</p>
@@ -212,23 +214,21 @@
 						{@const done = validatedByTree[treeKey]?.length ?? 0}
 						<div class="w-full max-w-2xl">
 							<div class="flex items-baseline justify-between">
-								<span class="font-display text-[13px] font-semibold text-foreground">
-									Progression
-								</span>
-								<span class="text-[12px] font-medium text-ink-soft tabular-nums">
+								<span class="text-[13px] font-semibold text-foreground"> Progression </span>
+								<span class="text-[12px] font-medium text-muted-foreground tabular-nums">
 									{done}/{currentTree.steps.length} élément{done > 1 ? 's' : ''} validé{done > 1
 										? 's'
 										: ''}
 								</span>
 							</div>
-							<div class="mt-2 h-1.5 overflow-hidden rounded-full bg-glass-3">
+							<div class="mt-2 h-1.5 overflow-hidden rounded-full bg-card2">
 								<div
 									class="h-full rounded-full bg-brand transition-all duration-500"
 									style={`width:${(done / currentTree.steps.length) * 100}%`}
 								></div>
 							</div>
 							{#if canEdit}
-								<p class="mt-2 text-[11px] text-ink-soft">
+								<p class="mt-2 text-[11px] text-muted-foreground">
 									Clique sur un rond pour valider la formation — reclique pour la retirer.
 								</p>
 							{/if}
@@ -249,15 +249,15 @@
 											: `Valider « ${step.label} »`
 										: step.label}
 									class={[
-										'flex items-center gap-3 rounded-2xl border px-3.5 py-2.5 text-left transition-colors',
-										canEdit ? 'cursor-pointer hover:border-brand/50' : 'cursor-default',
-										active ? 'border-brand/50 bg-brand/5' : 'border-line bg-card'
+										'flex items-center gap-3 rounded-2xl px-3.5 py-2.5 text-left transition-colors',
+										canEdit ? 'cursor-pointer hover:bg-card' : 'cursor-default',
+										active ? 'bg-brand/10' : 'bg-card2'
 									].join(' ')}
 								>
 									<span
 										class={[
-											'grid size-6 shrink-0 place-items-center rounded-full border-2 transition-colors',
-											active ? 'border-brand bg-brand text-white' : 'border-line bg-card'
+											'grid size-6 shrink-0 place-items-center rounded-full transition-colors',
+											active ? 'bg-brand text-white' : 'bg-card'
 										].join(' ')}
 									>
 										{#if active}
@@ -267,7 +267,7 @@
 									<span
 										class={[
 											'text-[12.5px] leading-snug',
-											active ? 'font-semibold text-foreground' : 'font-medium text-ink-soft'
+											active ? 'font-semibold text-foreground' : 'font-medium text-muted-foreground'
 										].join(' ')}
 									>
 										<span class="mr-1.5 text-[13px]">{step.emoji}</span>

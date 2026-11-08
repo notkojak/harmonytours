@@ -17,6 +17,7 @@ export const navSections = [
 		label: 'Fichiers clients',
 		items: [
 			{ label: 'Clients', icon: 'users', href: '/clients' },
+			{ label: 'Ventes', icon: 'receipt', href: '/ventes' },
 			{ label: 'Contacts', icon: 'contact', href: '/contacts' }
 		]
 	},
@@ -164,3 +165,19 @@ export const contactsWeek: ContactWeek[] = [
 		phone: '06 55 44 33 22'
 	}
 ];
+
+// Émoji de chaque page, repris du menu : affiché à côté des titres.
+export const pageEmojis: Record<string, string> = {
+	'/': '🌤️',
+	'/agenda': '📅',
+	'/zones': '🗺️',
+	'/bilan': '📊',
+	'/clients': '👥',
+	'/ventes': '🧾',
+	'/contacts': '🤝',
+	'/chiffrage': '🧮',
+	'/progression': '🌱',
+	'/books': '📚',
+	'/administration': '⚙️',
+	'/direction': '🧭'
+};

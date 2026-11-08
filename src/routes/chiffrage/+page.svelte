@@ -1,14 +1,6 @@
 <script lang="ts">
-	import {
-		ArrowLeft,
-		CircleCheck,
-		Percent,
-		Plus,
-		Search,
-		Sparkles,
-		TriangleAlert,
-		X
-	} from '@lucide/svelte';
+	import { pageEmojis } from '$lib/data/dashboard';
+	import { ArrowLeft, CircleCheck, Percent, Plus, Search, TriangleAlert, X } from '@lucide/svelte';
 	import {
 		chiffrer,
 		cotesMedianes,
@@ -33,11 +25,13 @@
 		type LigneDevis,
 		type OptionTarif
 	} from '$lib/data/book';
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
+	import { page as appPage } from '$app/state';
 	import GrillePicker from '$lib/components/chiffrage/GrillePicker.svelte';
 	import PanneauDevis from '$lib/components/chiffrage/PanneauDevis.svelte';
 	import DevisEnregistres from '$lib/components/chiffrage/DevisEnregistres.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
+	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card/index.js';
 	import { FOCUS_CHAMP } from '$lib/chiffrage-style';
 	import { chargerDevis, prochainNumeroLigne, sauverDevis } from '$lib/devis-local';
 	import type { Deblocage } from '$lib/data/deblocage';
@@ -72,7 +66,17 @@
 	// ------------------------------------------------------------ État écran
 	let familleId = $state<string | null>(null);
 	let article = $state<Article | null>(null);
-	let query = $state('');
+	let query = $state(appPage.url.searchParams.get('q') ?? '');
+
+	// Recherche globale : ?q=… préremplit la recherche du book.
+	$effect(() => {
+		const q = appPage.url.searchParams.get('q');
+		if (q !== null) {
+			untrack(() => {
+				if (query !== q) query = q;
+			});
+		}
+	});
 
 	let h = $state(0);
 	let l = $state(0);
@@ -322,31 +326,30 @@
 	);
 </script>
 
-<div class="mx-auto max-w-6xl space-y-4">
+<div class="mx-auto max-w-6xl space-y-5">
 	<!-- En-tête -->
-	<div class="flex flex-wrap items-center justify-between gap-3">
-		<div class="flex items-center gap-2.5">
-			<span
-				class="grid size-9 place-items-center rounded-full border border-brand/20 bg-brand/10 text-brand"
-			>
-				<Sparkles class="size-4.5" strokeWidth={1.7} />
-			</span>
-			<div>
-				<h1 class="text-[17px] font-bold text-foreground">Chiffrage</h1>
-				<p class="text-[12.5px] text-muted-foreground">
+	<Card class="gap-0 rounded-2xl border-0 py-0 shadow-none">
+		<CardHeader class="flex flex-wrap items-center justify-between gap-3 px-5 py-5">
+			<div class="min-w-0">
+				<CardTitle class="flex items-center gap-2.5 text-[14px] font-semibold">
+					<span class="text-[15px] leading-none" aria-hidden="true">{pageEmojis['/chiffrage']}</span
+					>
+					Chiffrage
+				</CardTitle>
+				<p class="mt-1 pl-6 text-[11.5px] font-medium text-muted-foreground">
 					Book tarifaire 2026 · prix HT à l'annonce, fourniture et pose comprises
 				</p>
 			</div>
-		</div>
-		{#if lignes.length}
-			<div class="flex items-center gap-2 rounded-full border border-line bg-card2 px-3.5 py-1.5">
-				<span class="text-[11px] font-medium text-muted-foreground">Devis</span>
-				<span class="text-[13px] font-bold text-brand tabular-nums"
-					>{euro.format(totalTTC)} TTC</span
-				>
-			</div>
-		{/if}
-	</div>
+			{#if lignes.length}
+				<div class="flex items-center gap-2 rounded-full bg-card2 px-3.5 py-1.5">
+					<span class="text-[11px] font-medium text-muted-foreground">Devis</span>
+					<span class="text-[13px] font-bold text-brand tabular-nums"
+						>{euro.format(totalTTC)} TTC</span
+					>
+				</div>
+			{/if}
+		</CardHeader>
+	</Card>
 
 	<div class="grid gap-4 lg:grid-cols-[1fr_360px]">
 		<!-- Parcours -->
@@ -354,14 +357,14 @@
 			<!-- Recherche -->
 			<div class="relative">
 				<div
-					class="flex h-11 items-center gap-2.5 rounded-full border border-input bg-card px-5 transition-[border-color,box-shadow] focus-within:border-brand focus-within:ring-4 focus-within:ring-brand/15"
+					class="flex h-11 items-center gap-2.5 rounded-full bg-card2 px-5 transition-[box-shadow] focus-within:ring-2 focus-within:ring-ink/10"
 				>
 					<Search class="size-4 shrink-0 text-ink-mute" strokeWidth={1.7} />
 					<input
 						type="search"
 						placeholder="Rechercher : fenêtre PVC, PAC 10 kW, volet 41, pergola…"
 						bind:value={query}
-						class="h-full w-full bg-transparent text-[15px] text-foreground outline-none placeholder:text-ink-mute [&::-webkit-search-cancel-button]:hidden"
+						class="h-full w-full bg-transparent text-[13px] text-foreground outline-none placeholder:text-ink-mute [&::-webkit-search-cancel-button]:hidden"
 					/>
 					{#if query}
 						<button
@@ -375,7 +378,7 @@
 				</div>
 				{#if query.trim().length >= 2}
 					<div
-						class="absolute inset-x-0 top-12 z-30 max-h-80 overflow-y-auto rounded-2xl border border-line bg-popover p-1.5 shadow-[var(--ombre-forte)]"
+						class="absolute inset-x-0 top-12 z-30 max-h-80 overflow-y-auto rounded-2xl bg-popover p-1.5 shadow-[var(--ombre-forte)]"
 					>
 						{#each resultats as r (r.famille + r.libelle)}
 							<button
@@ -425,7 +428,7 @@
 								type="button"
 								onclick={() => choisirFamille(f.id)}
 								disabled={n === 0}
-								class="group flex items-start gap-3 rounded-2xl border border-line bg-card2/60 p-3 text-left transition-all hover:-translate-y-0.5 hover:border-brand/50 hover:bg-glass-2 disabled:opacity-40"
+								class="group flex items-start gap-3 rounded-2xl bg-card2 p-3 text-left transition-all hover:-translate-y-0.5 hover:bg-glass-3 disabled:opacity-40"
 							>
 								<span class="text-xl leading-none">{f.emoji}</span>
 								<span class="min-w-0 flex-1">
@@ -486,7 +489,7 @@
 									<button
 										type="button"
 										onclick={() => ouvrir(a, famille.id)}
-										class="flex items-center gap-3 rounded-2xl border border-line bg-card2/60 px-3 py-2.5 text-left transition-all hover:border-brand/50 hover:bg-glass-2"
+										class="flex items-center gap-3 rounded-2xl bg-card2 px-3 py-2.5 text-left transition-all hover:bg-glass-3"
 									>
 										<span class="min-w-0 flex-1">
 											<span class="block text-[12.5px] leading-snug font-semibold text-foreground">
@@ -524,7 +527,7 @@
 
 			{#if article}
 				<!-- Étape 3 : cotes -->
-				<div class="space-y-2 rounded-2xl border border-line bg-card p-3.5">
+				<div class="space-y-2 rounded-2xl bg-card2 p-3.5">
 					<p
 						class="flex items-center gap-2 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase"
 					>
@@ -549,7 +552,7 @@
 						{/if}
 						<div class="flex flex-wrap items-center gap-3">
 							<div
-								class="flex items-center gap-1 rounded-full border border-line bg-card2 p-0.5 transition-[border-color,box-shadow] focus-within:border-brand focus-within:ring-4 focus-within:ring-brand/15"
+								class="flex items-center gap-1 rounded-full bg-card p-0.5 transition-[box-shadow] focus-within:ring-2 focus-within:ring-ink/10"
 							>
 								<button
 									type="button"
@@ -583,7 +586,7 @@
 
 				<!-- Étape 4 : options -->
 				{#if sections.length}
-					<div class="space-y-3 rounded-2xl border border-line bg-card p-3.5">
+					<div class="space-y-3 rounded-2xl bg-card2 p-3.5">
 						<div class="flex flex-wrap items-center gap-2">
 							<p
 								class="flex items-center gap-2 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase"
@@ -638,15 +641,14 @@
 											disabled={inclus || bloque}
 											title={bloque ? 'Cette cote sort de la grille du book' : (o.detail ?? o.nom)}
 											class={[
-												'flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium',
-												FOCUS_CHAMP,
+												'flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium',
 												inclus
-													? 'cursor-default border-dashed border-line bg-card2 text-ink-mute'
+													? 'cursor-default bg-card text-ink-mute'
 													: bloque
-														? 'cursor-not-allowed border-line bg-card2 text-ink-mute/60'
+														? 'cursor-not-allowed bg-card text-ink-mute/60'
 														: actif
-															? 'border-brand bg-brand/15 text-brand'
-															: 'border-line bg-card2 text-ink-soft hover:border-brand/50 hover:text-ink'
+															? 'bg-primary text-primary-foreground'
+															: 'bg-card text-ink-soft hover:bg-glass-3 hover:text-ink'
 											].join(' ')}
 										>
 											{#if inclus}
@@ -675,7 +677,7 @@
 											min="1"
 											max="9"
 											bind:value={carreaux}
-											class="w-14 rounded-full border border-input bg-card px-3 py-1 text-right font-semibold text-ink tabular-nums {FOCUS_CHAMP}"
+											class="w-14 rounded-full bg-card px-3 py-1 text-right text-[13px] font-semibold text-ink tabular-nums {FOCUS_CHAMP}"
 										/>
 									</label>
 								{/if}
@@ -688,7 +690,7 @@
 											max="4"
 											value={nbVantaux}
 											onchange={(e) => (vantauxForce = Number(e.currentTarget.value) || 1)}
-											class="w-14 rounded-full border border-input bg-card px-3 py-1 text-right font-semibold text-ink tabular-nums {FOCUS_CHAMP}"
+											class="w-14 rounded-full bg-card px-3 py-1 text-right text-[13px] font-semibold text-ink tabular-nums {FOCUS_CHAMP}"
 										/>
 									</label>
 								{/if}
@@ -706,7 +708,7 @@
 													1000,
 													Math.max(400, Number(e.currentTarget.value) || 600)
 												))}
-											class="w-20 rounded-full border border-input bg-card px-3 py-1 text-right font-semibold text-ink tabular-nums {FOCUS_CHAMP}"
+											class="w-20 rounded-full bg-card px-3 py-1 text-right text-[13px] font-semibold text-ink tabular-nums {FOCUS_CHAMP}"
 										/>
 										mm
 									</label>
@@ -717,9 +719,7 @@
 				{/if}
 
 				<!-- Barre de prix -->
-				<div
-					class="sticky bottom-0 z-20 rounded-2xl border border-line-strong bg-card p-3 shadow-[var(--ombre-forte)]"
-				>
+				<div class="sticky bottom-0 z-20 rounded-2xl bg-card2 p-3 shadow-[var(--ombre-forte)]">
 					<div class="flex flex-wrap items-center justify-between gap-3">
 						<div class="min-w-0 flex-1">
 							<p class="truncate text-[12.5px] font-semibold text-ink">{designation}</p>
@@ -729,7 +729,7 @@
 						<div class="flex flex-wrap items-center gap-2">
 							{#if grille}
 								<div
-									class="flex items-center gap-1 rounded-full border border-line bg-card2 p-0.5 transition-[border-color,box-shadow] focus-within:border-brand focus-within:ring-4 focus-within:ring-brand/15"
+									class="flex items-center gap-1 rounded-full bg-card p-0.5 transition-[box-shadow] focus-within:ring-2 focus-within:ring-ink/10"
 								>
 									<button
 										type="button"
@@ -779,7 +779,7 @@
 			{/if}
 
 			<!-- Aide TVA -->
-			<details class="rounded-2xl border border-line bg-card2/60 px-3.5 py-2.5">
+			<details class="rounded-2xl bg-card2 px-3.5 py-2.5">
 				<summary
 					class="flex cursor-pointer items-center gap-2 text-[12px] font-semibold text-ink-soft"
 				>
@@ -787,16 +787,14 @@
 				</summary>
 				<div class="mt-2.5 space-y-2.5">
 					<p
-						class="flex items-start gap-2 rounded-2xl border border-line bg-card px-3 py-2.5 text-[11px] leading-snug text-ink-soft"
+						class="flex items-start gap-2 rounded-2xl bg-card px-3 py-2.5 text-[11px] leading-snug text-ink-soft"
 					>
 						<TriangleAlert class="mt-0.5 size-3.5 shrink-0 text-ink-mute" strokeWidth={2} />
 						<span>{TVA_ALERTE}</span>
 					</p>
 					<div class="grid gap-x-4 gap-y-1 sm:grid-cols-2">
 						{#each TVA_RECAP as t (t.gamme)}
-							<div
-								class="flex items-center justify-between gap-2 border-b border-line/60 py-0.5 text-[11.5px]"
-							>
+							<div class="flex items-center justify-between gap-2 py-0.5 text-[11.5px]">
 								<span class="truncate text-ink-soft">{t.gamme}</span>
 								<span class="shrink-0 font-semibold text-ink tabular-nums">{t.tva}</span>
 							</div>

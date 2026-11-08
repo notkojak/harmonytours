@@ -1,14 +1,10 @@
 <script lang="ts">
-	import { LayoutDashboard, Menu, Moon, Sun } from '@lucide/svelte';
+	import { Menu, Moon, Sun } from '@lucide/svelte';
 	import StatPeriodPicker from './StatPeriodPicker.svelte';
+	import GlobalSearch from './GlobalSearch.svelte';
 	import { getTheme, setTheme, type Theme } from '$lib/theme';
 
-	let {
-		title = 'Tableau de bord',
-		subtitle = '',
-		showPeriod = true,
-		onMenu
-	}: { title?: string; subtitle?: string; showPeriod?: boolean; onMenu?: () => void } = $props();
+	let { showPeriod = false, onMenu }: { showPeriod?: boolean; onMenu?: () => void } = $props();
 
 	let theme = $state<Theme>(getTheme());
 
@@ -16,54 +12,35 @@
 		theme = theme === 'dark' ? 'light' : 'dark';
 		setTheme(theme);
 	}
-
-	function capitalize(value: string) {
-		return value.charAt(0).toUpperCase() + value.slice(1);
-	}
-
-	const dateDuJour = capitalize(
-		new Date().toLocaleDateString('fr-FR', {
-			weekday: 'long',
-			day: 'numeric',
-			month: 'long',
-			year: 'numeric'
-		})
-	);
 </script>
 
-<header
-	class="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-line bg-surface/80 px-4 py-2.5 backdrop-blur sm:px-5"
->
-	<div class="flex min-w-0 items-center gap-2.5">
-		<button
-			type="button"
-			class="grid size-8 shrink-0 place-items-center rounded-full border border-line bg-card text-muted-foreground transition-colors hover:border-brand/40 hover:text-brand lg:hidden"
-			onclick={() => onMenu?.()}
-			aria-label="Ouvrir le menu"
-		>
-			<Menu class="size-4" strokeWidth={1.7} />
-		</button>
-		<span
-			class="grid size-7 shrink-0 place-items-center rounded-full border border-brand/20 bg-brand/10 text-brand"
-		>
-			<LayoutDashboard class="size-3.5" strokeWidth={1.7} />
-		</span>
-		<h1 class="truncate text-[15px] font-semibold text-foreground">{title}</h1>
-		{#if subtitle}
-			<p class="truncate text-[12px] text-muted-foreground">{subtitle}</p>
-		{/if}
+<!-- Barre supérieure de la zone graphite : recherche à gauche, réglages de page à
+     droite. La présentation (accueil, heure, météo) vit désormais dans le tableau
+     de bord, sur le fond clair. -->
+<header class="flex shrink-0 items-center gap-2 px-1 pt-1 pb-1.5 sm:gap-3 sm:px-2">
+	<button
+		type="button"
+		class="grid size-8 shrink-0 place-items-center rounded-full bg-white/10 text-white/70 transition-colors hover:bg-white/15 hover:text-white lg:hidden"
+		onclick={() => onMenu?.()}
+		aria-label="Ouvrir le menu"
+	>
+		<Menu class="size-4" strokeWidth={1.7} />
+	</button>
+
+	<!-- Recherche globale, alignée à gauche de la zone noire. -->
+	<div class="max-w-md min-w-0 flex-1 sm:max-w-lg">
+		<GlobalSearch variant="dark" />
 	</div>
 
-	<div class="flex items-center gap-2 sm:gap-3">
-		<span class="hidden text-[12px] font-medium text-muted-foreground md:block">
-			{dateDuJour}
-		</span>
+	<div class="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
 		{#if showPeriod}
-			<StatPeriodPicker />
+			<div class="hidden xl:block">
+				<StatPeriodPicker />
+			</div>
 		{/if}
 		<button
 			type="button"
-			class="grid size-8 shrink-0 place-items-center rounded-full border border-line bg-card text-muted-foreground transition-colors hover:border-brand/40 hover:text-brand"
+			class="grid size-8 shrink-0 place-items-center rounded-full bg-white/10 text-white/70 transition-colors hover:bg-white/15 hover:text-white"
 			onclick={toggleTheme}
 			aria-label={theme === 'dark' ? 'Passer en mode clair' : 'Passer en mode sombre'}
 			title={theme === 'dark' ? 'Mode clair' : 'Mode sombre'}

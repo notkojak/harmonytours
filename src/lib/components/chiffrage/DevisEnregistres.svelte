@@ -150,7 +150,7 @@
 	};
 </script>
 
-<div class="mt-3 rounded-2xl border border-line bg-card p-3.5">
+<div class="mt-3 rounded-2xl bg-card2 p-3.5">
 	<div class="flex items-center gap-2">
 		<FileCheck2 class="size-4 text-ink-soft" strokeWidth={1.7} />
 		<p class="text-[13px] font-semibold text-ink">Devis enregistrés</p>
@@ -181,7 +181,7 @@
 
 	<div class="mt-2 space-y-1.5">
 		{#each devis.data ?? [] as d (d._id)}
-			<div class="rounded-xl border border-line bg-base px-2.5 py-2">
+			<div class="rounded-xl bg-card px-2.5 py-2">
 				<div class="flex items-center gap-2">
 					<span class="font-mono text-[10.5px] text-ink-mute">{d.numero}</span>
 					<span class="min-w-0 flex-1 truncate text-[12.5px] font-medium text-ink"
@@ -200,7 +200,7 @@
 								e.currentTarget.value as 'brouillon' | 'envoyé' | 'accepté' | 'refusé'
 							)}
 						class={[
-							'rounded-md border-0 px-1.5 py-0.5 text-[10.5px] font-semibold outline-none',
+							'rounded-full border-0 px-1.5 py-0.5 text-[10.5px] font-semibold outline-none',
 							statutClass[d.statut] ?? statutClass.brouillon
 						].join(' ')}
 						aria-label="Statut du devis"
@@ -259,7 +259,7 @@
 </div>
 
 <Dialog bind:open={dialogOpen}>
-	<DialogContent class="max-w-md rounded-xl border-line bg-card">
+	<DialogContent class="max-w-md rounded-2xl border-0 bg-card shadow-none">
 		<DialogHeader>
 			<DialogTitle class="text-[14px] font-semibold">Enregistrer le devis</DialogTitle>
 		</DialogHeader>
@@ -271,7 +271,7 @@
 					id="devisClient"
 					bind:value={clientName}
 					placeholder="Nom du client"
-					class="border-input bg-base"
+					class="border-0 bg-card2 shadow-none"
 				/>
 				{#if contactLabel}
 					<p class="text-[11px] text-emerald-700 dark:text-emerald-300">
@@ -286,15 +286,15 @@
 					id="devisContactSearch"
 					bind:value={contactQuery}
 					placeholder="Rechercher un nom, un téléphone…"
-					class="border-input bg-base"
+					class="border-0 bg-card2 shadow-none"
 				/>
 				{#if (contacts.data?.length ?? 0) > 0}
-					<div class="max-h-36 overflow-y-auto rounded-md border border-line bg-base">
+					<div class="max-h-36 overflow-y-auto rounded-xl bg-card2">
 						{#each contacts.data ?? [] as c (c._id)}
 							<button
 								type="button"
 								onclick={() => choisirContact(c)}
-								class="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px] text-foreground hover:bg-glass-2"
+								class="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px] text-foreground hover:bg-glass-3"
 							>
 								<span class="min-w-0 flex-1 truncate">{c.name}</span>
 								<span class="shrink-0 text-[10.5px] text-muted-foreground">

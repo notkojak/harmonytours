@@ -1,9 +1,7 @@
 <script lang="ts">
-	import {
-		foyerLabel,
-		stripQualificationBlock,
-		type QualifAnswers
-	} from '$lib/data/qualification';
+	import { portal } from '$lib/actions/portal';
+	import { printPage } from '$lib/actions/print-page';
+	import { foyerLabel, stripQualificationBlock, type QualifAnswers } from '$lib/data/qualification';
 
 	type PrintContact = {
 		name: string;
@@ -101,11 +99,6 @@
 		if (a.connait === 'oui' && a.concurrence)
 			lines.push({ label: 'Concurrence', value: a.concurrence });
 		if (a.age) lines.push({ label: 'Âge', value: a.age });
-		if (a.changer)
-			lines.push({
-				label: 'Veut changer',
-				value: `${a.changer}${a.pourQuand ? ` — ${a.pourQuand}` : ''}`
-			});
 		if (a.soncas.length > 0) lines.push({ label: 'SONCAS', value: a.soncas.join(', ') });
 		return lines;
 	});
@@ -123,54 +116,66 @@
 	function has(...values: string[]): boolean {
 		return values.some((value) => project.includes(value));
 	}
-
-
 </script>
 
-<div class="contact-print-sheet" aria-hidden="true">
+<div class="contact-print-sheet" use:portal use:printPage={'landscape'} aria-hidden="true">
 	{#snippet cbox(active: boolean)}
-		<span class="cbox">{#if active}<span class="cross">✕</span>{/if}</span>
+		<span class="cbox"
+			>{#if active}<span class="cross">✕</span>{/if}</span
+		>
 	{/snippet}
 	<div class="print-page">
 		<div class="sheet-grid">
 			<!-- Moitié gauche : la fiche contact papier -->
 			<section class="fiche-col">
 				<div class="top-grid">
-				<section class="identity-block">						<div class="brand-row">
-							<img class="brand-logo" src="/bravaux-logo-print.png" alt="Bravaux" />
+					<section class="identity-block">
+						<div class="brand-row">
+							<img
+								class="brand-logo"
+								src="/bravaux-logo-print.png"
+								alt="Bravaux"
+								decoding="sync"
+								loading="eager"
+							/>
 						</div>
-					<div class="title-band">FICHE DE CONTACT</div>
-					<div class="line-row"><b>N°</b><span class="dotted"></span></div>
-					<div class="line-row">
-						<b>Source</b><span class="value">{contact.source ?? ''}</span><span class="dotted"></span>
-					</div>
-					<div class="line-row">
-						<b>Date</b><span class="value">{today}</span><span class="dotted"></span>
-					</div>
-					<div class="line-row">
-						<b>Technicien conseil</b><span class="value">{contact.createdByName ?? ''}</span><span
-							class="dotted"
-						></span>
-					</div>
-				</section>
-				<section class="coordinates-block">
-					<div class="section-heading">
-						<span class="blocks">▪▪▪</span> COORDONNÉES <span class="blocks">▪▪▪</span>
-					</div>
-					<div class="check-row">
-						<span>{@render cbox(isCiv('Melle'))} Melle</span><span>{@render cbox(isCiv('Mme'))} Mme</span><span>{@render cbox(isCiv('M.'))} M.</span><span>Âge : <strong>{answers?.age ?? ''}</strong></span>
-					</div>
-					<div class="line-row name-row">
-						<b>Nom</b><span class="value">{lastName}</span><span class="dotted"></span>
-					</div>
-					<div class="line-row">
-						<b>Prénom</b><span class="value">{firstName}</span><span class="dotted"></span>
-					</div>
-					<div class="line-row">
-						<b>Adresse</b><span class="value">{street}</span><span class="dotted"></span>
-					</div>						<div class="line-row">
-							<b></b><span class="value">{extraAddressLines.join(', ')}</span><span
+						<div class="title-band">FICHE DE CONTACT</div>
+						<div class="line-row"><b>N°</b><span class="dotted"></span></div>
+						<div class="line-row">
+							<b>Source</b><span class="value">{contact.source ?? ''}</span><span class="dotted"
+							></span>
+						</div>
+						<div class="line-row">
+							<b>Date</b><span class="value">{today}</span><span class="dotted"></span>
+						</div>
+						<div class="line-row">
+							<b>Technicien conseil</b><span class="value">{contact.createdByName ?? ''}</span><span
 								class="dotted"
+							></span>
+						</div>
+					</section>
+					<section class="coordinates-block">
+						<div class="section-heading">
+							<span class="blocks">▪▪▪</span> COORDONNÉES <span class="blocks">▪▪▪</span>
+						</div>
+						<div class="check-row">
+							<span>{@render cbox(isCiv('Melle'))} Melle</span><span
+								>{@render cbox(isCiv('Mme'))} Mme</span
+							><span>{@render cbox(isCiv('M.'))} M.</span><span
+								>Âge : <strong>{answers?.age ?? ''}</strong></span
+							>
+						</div>
+						<div class="line-row name-row">
+							<b>Nom</b><span class="value">{lastName}</span><span class="dotted"></span>
+						</div>
+						<div class="line-row">
+							<b>Prénom</b><span class="value">{firstName}</span><span class="dotted"></span>
+						</div>
+						<div class="line-row">
+							<b>Adresse</b><span class="value">{street}</span><span class="dotted"></span>
+						</div>
+						<div class="line-row">
+							<b></b><span class="value">{extraAddressLines.join(', ')}</span><span class="dotted"
 							></span>
 						</div>
 						<div class="line-row cp-row">
@@ -178,14 +183,13 @@
 								class="city-label">Ville</b
 							><span class="value">{city}</span><span class="dotted"></span>
 						</div>
-					<div class="line-row">
-						<b>Tel</b><span class="value">{contact.phone ?? ''}</span><span class="dotted"
-						></span>
-					</div>
-				</section>
-			</div>
+						<div class="line-row">
+							<b>Tel</b><span class="value">{contact.phone ?? ''}</span><span class="dotted"></span>
+						</div>
+					</section>
+				</div>
 
-			<div class="middle-grid">
+				<div class="middle-grid">
 					<section class="prequal block">
 						<div class="section-heading">
 							<span class="blocks">▪▪▪</span> PRÉQUALIFICATION <span class="blocks">▪▪▪</span>
@@ -209,8 +213,9 @@
 							></span>
 						</div>
 						<div class="line-row">
-							<b>Réalisation du projet</b><span class="value">{answers?.pourQuand ?? ''}</span
-							><span class="dotted"></span>
+							<b>Réalisation du projet</b><span class="value">{answers?.pourQuand ?? ''}</span><span
+								class="dotted"
+							></span>
 						</div>
 						<div class="check-row deadline-row">
 							<span>{@render cbox(answers?.pourQuand === '2 mois')} 2 mois</span><span
@@ -222,24 +227,33 @@
 						<div class="line-row">
 							<b>Pourquoi ?</b><span class="dotted"></span>
 						</div>
-					</section>					<section class="rdv block">
+					</section>
+					<section class="rdv block">
 						<div class="section-heading">
-							<span class="blocks">▪▪▪</span> {isRappel ? 'DATE DE RAPPEL' : 'DATE DU RENDEZ-VOUS'}
+							<span class="blocks">▪▪▪</span>
+							{isRappel ? 'DATE DE RAPPEL' : 'DATE DU RENDEZ-VOUS'}
 							<span class="blocks">▪▪▪</span>
 						</div>
 						<div class="line-row">
 							<b>Date</b><span class="value">{rdvDate}</span><span class="dotted"></span>
 						</div>
 						<div class="line-row">
-							<b>Heure</b><span class="value">{contact.followUp?.time ?? ''}</span><span class="dotted"
+							<b>Heure</b><span class="value">{contact.followUp?.time ?? ''}</span><span
+								class="dotted"
 							></span>
 						</div>
 						<div class="line-row"><b>À confirmer</b><span class="dotted"></span></div>
 						<div class="check-row">
-							<span>Couple présent :</span><span>{@render cbox(true)} Oui</span><span>{@render cbox(false)} Non</span>
+							<span>Couple présent :</span><span>{@render cbox(true)} Oui</span><span
+								>{@render cbox(false)} Non</span
+							>
 						</div>
 						<div class="check-row"><span>Le client a-t-il 1 heure à nous consacrer</span></div>
-						<div class="check-row"><span>pour la présentation ? : {@render cbox(true)} Oui</span><span>{@render cbox(false)} Non</span></div>
+						<div class="check-row">
+							<span>pour la présentation ? : {@render cbox(true)} Oui</span><span
+								>{@render cbox(false)} Non</span
+							>
+						</div>
 					</section>
 				</div>
 
@@ -311,9 +325,8 @@
 						<div class="item-line">
 							<span>FACTURE EDF</span>
 							<span
-								>Montant <span class="thin">{answers?.chauffageCout ?? ''}</span>{answers?.chauffageCout
-									? ' €/mois'
-									: ''} <i></i></span
+								>Montant <span class="thin">{answers?.chauffageCout ?? ''}</span
+								>{answers?.chauffageCout ? ' €/mois' : ''} <i></i></span
 							>
 						</div>
 					</section>
@@ -339,7 +352,8 @@
 				{/if}
 
 				<div class="section-heading note-heading">
-					<span class="blocks">▪▪▪</span> INFORMATIONS SUR LE CONTACT <span class="blocks">▪▪▪</span>
+					<span class="blocks">▪▪▪</span> INFORMATIONS SUR LE CONTACT
+					<span class="blocks">▪▪▪</span>
 				</div>
 				<div class="note-box">
 					<p class="note-text">{noteText || '—'}</p>
@@ -354,12 +368,10 @@
 		display: none;
 	}
 	@media print {
-		@page {
-			size: A4 landscape;
-			margin: 0;
-		}
+		:global(html),
 		:global(body) {
 			margin: 0 !important;
+			padding: 0 !important;
 			background: white !important;
 		}
 		:global(body *) {
@@ -369,12 +381,18 @@
 		.contact-print-sheet * {
 			visibility: visible !important;
 		}
+		/* Portée sous <body> (action `portal`) : la feuille part toujours du coin
+		   supérieur gauche de la page imprimée, quel que soit le conteneur depuis
+		   lequel l'impression est lancée. */
 		.contact-print-sheet {
 			display: block;
 			position: absolute;
-			inset: 0;
+			top: 0;
+			left: 0;
 			width: 297mm;
-			height: 210mm;
+			/* Léger retrait sous les 210 mm : évite une page supplémentaire due à
+			   un arrondi navigateur. */
+			height: 209.7mm;
 			background: white;
 			color: #222;
 			font-family: Arial, Helvetica, sans-serif;
@@ -387,7 +405,7 @@
 		.print-page {
 			box-sizing: border-box;
 			width: 297mm;
-			height: 210mm;
+			height: 209.7mm;
 			padding: 8mm 10mm 6mm;
 			overflow: hidden;
 		}
@@ -399,15 +417,15 @@
 			height: 100%;
 			min-height: 0;
 		}
-			.fiche-col,
-			.note-col {
-				min-width: 0;
-				min-height: 0;
-			}
-			.fiche-col {
-				overflow: hidden;
-			}
-			.top-grid {
+		.fiche-col,
+		.note-col {
+			min-width: 0;
+			min-height: 0;
+		}
+		.fiche-col {
+			overflow: hidden;
+		}
+		.top-grid {
 			display: grid;
 			grid-template-columns: 1fr 1fr;
 			align-items: start;
@@ -430,60 +448,61 @@
 		.coordinates-block .line-row b,
 		.coordinates-block .line-row b:empty {
 			min-width: 13mm;
-		}			.project-card {
-				margin-bottom: 4mm;
-				border: 1px solid #222;
-				border-radius: 1.5mm;
-				background: #f1f1f1;
-				padding: 2.5mm 3mm;
-				text-align: center;
-			}
-			.project-label {
-				font-size: 8pt;
-				font-weight: 700;
-				letter-spacing: 0.8px;
-				color: #555;
-			}
-			.project-value {
-				margin-top: 1mm;
-				font-size: 16pt;
-				font-weight: 900;
-				letter-spacing: 0.3px;
-				line-height: 1.15;
-				color: #111;
-				text-transform: uppercase;
-				overflow-wrap: anywhere;
-			}
-			.note-col {
-
+		}
+		.project-card {
+			margin-bottom: 4mm;
+			border: 1px solid #222;
+			border-radius: 1.5mm;
+			background: #f1f1f1;
+			padding: 2.5mm 3mm;
+			text-align: center;
+		}
+		.project-label {
+			font-size: 8pt;
+			font-weight: 700;
+			letter-spacing: 0.8px;
+			color: #555;
+		}
+		.project-value {
+			margin-top: 1mm;
+			font-size: 16pt;
+			font-weight: 900;
+			letter-spacing: 0.3px;
+			line-height: 1.15;
+			color: #111;
+			text-transform: uppercase;
+			overflow-wrap: anywhere;
+		}
+		.note-col {
 			display: flex;
 			flex-direction: column;
-		}			.brand-row {
-				display: flex;
-				align-items: center;
-				height: 24mm;
-			}
-			.brand-logo {
-				display: block;
-				width: 100%;
-				height: auto;
-				max-height: 22mm;
-				object-fit: contain;
-				object-position: left center;
-			}
+		}
+		.brand-row {
+			display: flex;
+			align-items: center;
+			height: 24mm;
+		}
+		.brand-logo {
+			display: block;
+			width: 100%;
+			height: auto;
+			max-height: 22mm;
+			object-fit: contain;
+			object-position: left center;
+		}
 
-			.title-band,
-			.study-band {
-				-webkit-print-color-adjust: exact;
-				print-color-adjust: exact;
-				background: #777;
-				color: white;
-				text-align: center;
-				font-size: 10pt;
-				font-weight: 700;
-				letter-spacing: 0.5px;
-				padding: 1.2mm 2mm;
-			}
+		.title-band,
+		.study-band {
+			-webkit-print-color-adjust: exact;
+			print-color-adjust: exact;
+			background: #777;
+			color: white;
+			text-align: center;
+			font-size: 10pt;
+			font-weight: 700;
+			letter-spacing: 0.5px;
+			padding: 1.2mm 2mm;
+		}
 
 		.section-heading {
 			display: flex;
@@ -511,28 +530,29 @@
 			flex: none;
 			font-weight: 700;
 			white-space: nowrap;
-		}			.line-row .value {
-				white-space: nowrap;
-				overflow: hidden;
-				text-overflow: ellipsis;
-				max-width: 42mm;
-			}
-			/* Ligne C.P. / Ville : comme les autres lignes (pointillés sur la
+		}
+		.line-row .value {
+			white-space: nowrap;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			max-width: 42mm;
+		}
+		/* Ligne C.P. / Ville : comme les autres lignes (pointillés sur la
 			   ligne de base), mais sans limite de largeur sur les valeurs. */
-			.cp-row {
-				display: flex;
-				flex-wrap: nowrap;
-			}
-			.cp-row .value {
-				max-width: none;
-				overflow: visible;
-				text-overflow: clip;
-				white-space: nowrap;
-				flex: none;
-			}
-			.cp-row .city-label {
-				margin-left: 3mm;
-			}
+		.cp-row {
+			display: flex;
+			flex-wrap: nowrap;
+		}
+		.cp-row .value {
+			max-width: none;
+			overflow: visible;
+			text-overflow: clip;
+			white-space: nowrap;
+			flex: none;
+		}
+		.cp-row .city-label {
+			margin-left: 3mm;
+		}
 
 		.dotted {
 			flex: 1;
@@ -564,33 +584,34 @@
 		.deadline-row {
 			margin-top: 1.5mm;
 			margin-bottom: 1.5mm;
-		}			.check-row strong {
-				font-weight: 400;
-			}
-			.cbox {
-				display: inline-block;
-				position: relative;
-				box-sizing: border-box;
-				width: 3.6mm;
-				height: 3.6mm;
-				border: 0.45mm solid #111;
-				margin-right: 1mm;
-				vertical-align: -0.9mm;
-			}
-			/* La croix dépasse volontairement de la case, comme cochée à la main. */
-			.cross {
-				position: absolute;
-				left: 50%;
-				top: 50%;
-				transform: translate(-50%, -50%);
-				font-size: 15pt;
-				font-weight: 900;
-				line-height: 1;
-				color: #000;
-			}
-			.thin {
-				font-weight: 400;
-			}
+		}
+		.check-row strong {
+			font-weight: 400;
+		}
+		.cbox {
+			display: inline-block;
+			position: relative;
+			box-sizing: border-box;
+			width: 3.6mm;
+			height: 3.6mm;
+			border: 0.45mm solid #111;
+			margin-right: 1mm;
+			vertical-align: -0.9mm;
+		}
+		/* La croix dépasse volontairement de la case, comme cochée à la main. */
+		.cross {
+			position: absolute;
+			left: 50%;
+			top: 50%;
+			transform: translate(-50%, -50%);
+			font-size: 15pt;
+			font-weight: 900;
+			line-height: 1;
+			color: #000;
+		}
+		.thin {
+			font-weight: 400;
+		}
 		.item-line i {
 			display: inline-block;
 			min-width: 6mm;

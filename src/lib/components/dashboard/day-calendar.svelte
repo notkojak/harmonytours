@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { CalendarClock } from '@lucide/svelte';
 	import { useQuery } from 'convex-svelte';
 	import { api } from '../../../convex/_generated/api.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
@@ -133,22 +132,23 @@
 	}
 </script>
 
-<Card class="flex h-full flex-col gap-0 rounded-2xl border-line py-0 shadow-none">
-	<CardHeader class="flex items-center justify-between gap-3 px-5 pt-5 pb-0">
-		<CardTitle class="flex items-center gap-2.5 text-[14px] font-semibold">
-			<span
-				class="grid size-8 place-items-center rounded-lg border border-line bg-card2 text-muted-foreground"
-			>
-				<CalendarClock class="size-4" strokeWidth={1.7} />
-			</span>
-			{planningTitle}
-			<Badge variant="secondary" class="rounded-full px-2">
-				{dayItems.length}
-				{dayItems.length > 1 ? 'éléments' : 'élément'}
-			</Badge>
-		</CardTitle>
+<Card class="flex h-full flex-col gap-0 rounded-2xl border-0 py-0 shadow-none">
+	<CardHeader class="flex flex-wrap items-center justify-between gap-3 px-5 pt-5 pb-0">
+		<div class="min-w-0">
+			<CardTitle class="flex items-center gap-2.5 text-[14px] font-semibold">
+				<span class="text-[15px] leading-none" aria-hidden="true">📅</span>
+				{planningTitle}
+				<Badge variant="secondary" class="rounded-full bg-card2 px-2">
+					{dayItems.length}
+					{dayItems.length > 1 ? 'éléments' : 'élément'}
+				</Badge>
+			</CardTitle>
+			<p class="mt-1 pl-6 text-[11.5px] font-medium text-muted-foreground">
+				Rendez-vous et événements de la journée
+			</p>
+		</div>
 	</CardHeader>
-	<CardContent class="flex min-h-0 flex-1 flex-col px-5 pt-2 pb-5">
+	<CardContent class="flex min-h-0 flex-1 flex-col px-5 pt-3 pb-5">
 		{#if dayItems.length === 0}
 			<div class="flex flex-1 items-center justify-center py-10">
 				<p class="text-[12.5px] text-muted-foreground">Aucun RDV ni événement ce jour.</p>
@@ -160,7 +160,7 @@
 						<button
 							type="button"
 							onclick={() => openFiche(item.rdv)}
-							class="flex w-full items-center gap-3 rounded-xl border border-line bg-card2 px-3 py-2 text-left transition-colors hover:bg-glass-1"
+							class="flex w-full items-center gap-3 rounded-2xl bg-card2 px-3.5 py-2.5 text-left transition-colors hover:bg-glass-3"
 						>
 							<span class="w-11 shrink-0 font-mono text-[11.5px] font-medium text-foreground">
 								{item.time}
@@ -187,9 +187,7 @@
 						</button>
 					{:else}
 						{@const meta = eventMeta(item.type)}
-						<div
-							class="flex w-full items-center gap-3 rounded-xl border border-line bg-card2 px-3 py-2"
-						>
+						<div class="flex w-full items-center gap-3 rounded-2xl bg-card2 px-3.5 py-2.5">
 							<span class="w-11 shrink-0 font-mono text-[11.5px] font-medium text-foreground">
 								{item.time}
 							</span>

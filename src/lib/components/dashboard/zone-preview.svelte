@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { env } from '$env/dynamic/public';
-	import { Map as MapIcon } from '@lucide/svelte';
 	import { useQuery } from 'convex-svelte';
 	import { api } from '../../../convex/_generated/api.js';
 	import type { Map as MapboxMap, GeoJSONSource } from 'mapbox-gl';
@@ -198,25 +197,26 @@
 	});
 </script>
 
-<Card class="gap-0 overflow-hidden rounded-xl border-line py-0 shadow-none">
-	<CardHeader class="flex flex-wrap items-center justify-between gap-3 px-5 pt-5 pb-3">
-		<CardTitle class="flex items-center gap-2.5 text-[14px] font-semibold">
-			<span
-				class="grid size-8 place-items-center rounded-lg border border-line bg-card2 text-muted-foreground"
-			>
-				<MapIcon class="size-4" strokeWidth={1.7} />
-			</span>
-			Prospection en cours
-		</CardTitle>
+<Card class="gap-0 rounded-2xl border-0 py-0 shadow-none">
+	<CardHeader class="flex flex-wrap items-center justify-between gap-3 px-5 pt-5 pb-0">
+		<div class="min-w-0">
+			<CardTitle class="flex items-center gap-2.5 text-[14px] font-semibold">
+				<span class="text-[15px] leading-none" aria-hidden="true">🗺️</span>
+				Prospection en cours
+			</CardTitle>
+			<p class="mt-1 pl-6 text-[11.5px] font-medium text-muted-foreground">
+				{zones.length} zone{zones.length > 1 ? 's' : ''} · {enCours.length} en prospection
+			</p>
+		</div>
 		<a
 			href="/zones"
-			class="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-[12px] font-semibold text-foreground shadow-sm transition-colors hover:bg-white/90 dark:text-[#0f1115]"
+			class="inline-flex items-center gap-1.5 rounded-full bg-primary px-3.5 py-1.5 text-[12px] font-semibold text-primary-foreground transition-opacity hover:opacity-90"
 		>
 			Ouvrir la carte
 		</a>
 	</CardHeader>
 
-	<CardContent class="px-5 pb-5">
+	<CardContent class="px-5 pt-3 pb-5">
 		<!-- GMS en cours : pins 🏪 avec leur intitulé -->
 		{#if gmsList.length}
 			<div class="mb-3 space-y-1.5">
@@ -225,9 +225,7 @@
 				</p>
 				<div class="flex flex-col gap-1.5">
 					{#each gmsList as g (g.externalId)}
-						<div
-							class="flex items-center gap-2 rounded-lg border border-line bg-card2 px-2.5 py-1.5"
-						>
+						<div class="flex items-center gap-2 rounded-2xl bg-card2 px-3 py-2">
 							<span class="shrink-0 text-[13px]">🏪</span>
 							<span class="truncate text-[12px] font-medium text-foreground">{g.label}</span>
 						</div>
@@ -237,13 +235,17 @@
 		{/if}
 
 		<!-- Mini carte -->
-		<div class="relative h-56 overflow-hidden rounded-lg border border-line bg-card2">
+		<div class="relative h-56 overflow-hidden rounded-2xl bg-card2">
 			{#if noToken}
 				<div class="absolute inset-0 grid place-items-center p-4 text-center">
 					<p class="text-[12px] leading-relaxed text-muted-foreground">
 						Token Mapbox manquant — ajoute
-						<code class="rounded bg-muted px-1 py-0.5 text-amber-700 dark:text-amber-300">PUBLIC_MAPBOX_TOKEN</code>
-						dans <code class="rounded bg-muted px-1 py-0.5 text-amber-700 dark:text-amber-300">.env</code>.
+						<code class="rounded bg-muted px-1 py-0.5 text-amber-700 dark:text-amber-300"
+							>PUBLIC_MAPBOX_TOKEN</code
+						>
+						dans
+						<code class="rounded bg-muted px-1 py-0.5 text-amber-700 dark:text-amber-300">.env</code
+						>.
 					</p>
 				</div>
 			{/if}

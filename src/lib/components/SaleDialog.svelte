@@ -22,6 +22,7 @@
 	} from '$lib/components/ui/select/index.js';
 	import { FAMILLES } from '$lib/data/catalogue';
 	import { dateInputToMs, msToDateInput } from '$lib/data/dates';
+	import { FI_STATUTS, fiStatutOf, type FiStatut } from '$lib/data/vente-suivi';
 
 	let {
 		open = $bindable(false),
@@ -41,9 +42,8 @@
 			vendeurId?: string | null;
 			// Date de la vente (ms) affichée dans le champ date.
 			date?: number | null;
-			// Suivi commercial de la vente.
-			confortee?: boolean | null;
 			paiement?: 'comptant' | 'financement' | null;
+			fiStatut?: string | null;
 			fiAccepte?: boolean | null;
 		} | null;
 	} = $props();
@@ -55,11 +55,12 @@
 	const vendeurs = useQuery(api.employes.listVendeurs, () => (open ? {} : 'skip'));
 	let vendeurId = $state<string | undefined>();
 	let venteDate = $state(msToDateInput(Date.now()));
-	// Suivi commercial : vente confortée, paiement comptant / financement, et
-	// acceptation du dossier de financement (FI) le cas échéant.
-	let confortee = $state(false);
+	// Paiement comptant / financement, et acceptation du dossier de financement
+	// (FI) le cas échéant. Le suivi du dossier (confortation, métrage, pose) se
+	// règle après coup, depuis la fiche client/vente.
+
 	let paiement = $state<'comptant' | 'financement'>('comptant');
-	let fiAccepte = $state(false);
+	let fiStatut = $state<FiStatut>('en attente');
 
 	const isEdit = $derived(!!venteId);
 	const titre = $derived(isEdit ? 'Modifier la vente' : 'Ajouter une vente');
@@ -118,18 +119,16 @@
 				};
 				vendeurId = initialVente.vendeurId ?? undefined;
 				venteDate = msToDateInput(initialVente.date ?? Date.now());
-				confortee = !!initialVente.confortee;
 				paiement = initialVente.paiement ?? 'comptant';
-				fiAccepte = !!initialVente.fiAccepte;
+				fiStatut = fiStatutOf(initialVente.fiStatut, initialVente.fiAccepte);
 			} else {
 				famille = '';
 				prixHT = '';
 				tvaMontants = vide();
 				vendeurId = undefined;
 				venteDate = msToDateInput(Date.now());
-				confortee = false;
 				paiement = 'comptant';
-				fiAccepte = false;
+				fiStatut = 'en attente';
 			}
 		});
 	});
@@ -178,9 +177,8 @@
 					venteId: venteId as Id<'ventes'>,
 					produits,
 					tvaDetail,
-					confortee,
 					paiement,
-					...(paiement === 'financement' ? { fiAccepte } : {}),
+					...(paiement === 'financement' ? { fiStatut, fiAccepte: fiStatut === 'accepté' } : {}),
 					...(vendeurId ? { vendeurId: vendeurId as Id<'users'> } : {}),
 					...(date ? { date } : {})
 				});
@@ -189,9 +187,8 @@
 					contactId: contactId as Id<'contacts'>,
 					produits,
 					tvaDetail,
-					confortee,
 					paiement,
-					...(paiement === 'financement' ? { fiAccepte } : {}),
+					...(paiement === 'financement' ? { fiStatut, fiAccepte: fiStatut === 'accepté' } : {}),
 					...(vendeurId ? { vendeurId: vendeurId as Id<'users'> } : {}),
 					...(date ? { date } : {})
 				});
@@ -210,13 +207,11 @@
 
 <Dialog bind:open>
 	<DialogContent
-		class="max-h-[calc(100vh-2rem)] overflow-y-auto rounded-2xl border-line bg-card sm:max-w-md"
+		class="max-h-[calc(100vh-2rem)] overflow-y-auto rounded-2xl border-0 bg-card shadow-none sm:max-w-md"
 	>
 		<DialogHeader>
 			<DialogTitle class="flex items-center gap-2 text-[14px] font-semibold">
-				<span
-					class="grid size-8 place-items-center rounded-lg border border-line bg-card2 text-muted-foreground"
-				>
+				<span class="grid size-8 place-items-center rounded-xl bg-card2 text-muted-foreground">
 					🛍️
 				</span>
 				{titre}
@@ -227,7 +222,7 @@
 			<div class="space-y-1">
 				<Label for="famille" class="text-[11px] text-muted-foreground">Famille de produit</Label>
 				<Select type="single" value={famille} onValueChange={(v) => (famille = v as string)}>
-					<SelectTrigger id="famille" class="w-full border-input bg-base">
+					<SelectTrigger id="famille" class="w-full border-0 bg-card2 shadow-none">
 						<span data-slot="select-value">{famille || 'Choisir une famille'}</span>
 					</SelectTrigger>
 					<SelectContent class="max-h-64 overflow-y-auto">
@@ -248,7 +243,7 @@
 					inputmode="decimal"
 					placeholder="0,00"
 					bind:value={prixHT}
-					class="border-input bg-base tabular-nums"
+					class="border-0 bg-card2 tabular-nums shadow-none"
 				/>
 			</div>
 
@@ -269,7 +264,7 @@
 								inputmode="decimal"
 								placeholder="0,00"
 								bind:value={tvaMontants[taux]}
-								class="border-input bg-base px-2 text-center tabular-nums"
+								class="border-0 bg-card2 px-2 text-center tabular-nums shadow-none"
 							/>
 						</div>
 					{/each}
@@ -279,13 +274,13 @@
 			<!-- Paiement : comptant, ou financement avec suivi du dossier FI. -->
 			<div class="space-y-1">
 				<Label class="text-[11px] text-muted-foreground">Paiement</Label>
-				<div class="grid grid-cols-2 gap-1 rounded-lg border border-input bg-base p-1">
+				<div class="grid grid-cols-2 gap-1 rounded-full bg-card2 p-1">
 					<button
 						type="button"
 						onclick={() => (paiement = 'comptant')}
-						class="h-8 rounded-md text-[12px] font-semibold transition-colors {paiement ===
+						class="h-8 rounded-full text-[12px] font-semibold transition-colors {paiement ===
 						'comptant'
-							? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+							? 'bg-primary text-primary-foreground'
 							: 'text-muted-foreground hover:text-foreground'}"
 					>
 						Comptant
@@ -293,9 +288,9 @@
 					<button
 						type="button"
 						onclick={() => (paiement = 'financement')}
-						class="h-8 rounded-md text-[12px] font-semibold transition-colors {paiement ===
+						class="h-8 rounded-full text-[12px] font-semibold transition-colors {paiement ===
 						'financement'
-							? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+							? 'bg-primary text-primary-foreground'
 							: 'text-muted-foreground hover:text-foreground'}"
 					>
 						Financement
@@ -304,67 +299,33 @@
 			</div>
 
 			{#if paiement === 'financement'}
-				<div
-					class="flex items-center justify-between gap-3 rounded-lg border border-line bg-card2/60 px-3 py-2"
-				>
-					<div class="min-w-0">
-						<p class="text-[12px] font-semibold text-ink">FI accepté</p>
-						<p class="text-[10.5px] text-muted-foreground">
-							Le dossier de financement a été accepté.
-						</p>
+				<div class="space-y-1">
+					<Label class="text-[11px] text-muted-foreground">Dossier de financement</Label>
+					<div class="grid grid-cols-3 gap-1 rounded-full bg-card2 p-1">
+						{#each FI_STATUTS as etat}
+							<button
+								type="button"
+								onclick={() => (fiStatut = etat)}
+								class="h-8 rounded-full text-[12px] font-semibold transition-colors {fiStatut ===
+								etat
+									? etat === 'refusé'
+										? 'bg-red-500/15 text-red-700 dark:text-red-300'
+										: etat === 'accepté'
+											? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+											: 'bg-orange-500/15 text-orange-700 dark:text-orange-300'
+									: 'text-muted-foreground hover:text-foreground'}"
+							>
+								{etat === 'en attente' ? 'En attente' : etat === 'accepté' ? 'Accepté' : 'Refusé'}
+							</button>
+						{/each}
 					</div>
-					<button
-						type="button"
-						role="switch"
-						aria-checked={fiAccepte}
-						aria-label="Financement accepté"
-						onclick={() => (fiAccepte = !fiAccepte)}
-						class="relative h-6 w-11 shrink-0 rounded-full transition-colors {fiAccepte
-							? 'bg-emerald-500'
-							: 'bg-glass-3'}"
-					>
-						<span
-							class="absolute top-0.5 left-0.5 size-5 rounded-full bg-white shadow transition-transform {fiAccepte
-								? 'translate-x-5'
-								: 'translate-x-0'}"
-						></span>
-					</button>
 				</div>
 			{/if}
-
-			<div
-				class="flex items-center justify-between gap-3 rounded-lg border border-line bg-card2/60 px-3 py-2"
-			>
-				<div class="min-w-0">
-					<p class="text-[12px] font-semibold text-ink">Vente confortée</p>
-					<p class="text-[10.5px] text-muted-foreground">
-						Le client a confirmé la vente après réflexion.
-					</p>
-				</div>
-				<button
-					type="button"
-					role="switch"
-					aria-checked={confortee}
-					aria-label="Vente confortée"
-					onclick={() => (confortee = !confortee)}
-					class="relative h-6 w-11 shrink-0 rounded-full transition-colors {confortee
-						? 'bg-emerald-500'
-						: 'bg-glass-3'}"
-				>
-					<span
-						class="absolute top-0.5 left-0.5 size-5 rounded-full bg-white shadow transition-transform {confortee
-							? 'translate-x-5'
-							: 'translate-x-0'}"
-					></span>
-				</button>
-			</div>
 
 			<!-- Même hauteur de champ que les saisies, mais en lecture seule. -->
 			<div class="space-y-1">
 				<Label class="text-[11px] text-muted-foreground">Total TTC</Label>
-				<div
-					class="flex h-11 items-center justify-between gap-3 rounded-md border border-input bg-card px-3.5"
-				>
+				<div class="flex h-11 items-center justify-between gap-3 rounded-xl bg-card2 px-3.5">
 					<span class="text-[11px] font-semibold tracking-wider text-brand uppercase">TTC</span>
 					<span class="text-[15px] font-bold text-ink tabular-nums">{fmt(totalTTC)} €</span>
 				</div>

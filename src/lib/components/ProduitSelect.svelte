@@ -1,7 +1,12 @@
 <script lang="ts">
 	import { FAMILLES, produitsOf, familleOf } from '$lib/data/catalogue';
 	import { Label } from '$lib/components/ui/label/index.js';
-	import { Select, SelectContent, SelectItem, SelectTrigger } from '$lib/components/ui/select/index.js';
+	import {
+		Select,
+		SelectContent,
+		SelectItem,
+		SelectTrigger
+	} from '$lib/components/ui/select/index.js';
 
 	let {
 		produit = $bindable(''),
@@ -35,7 +40,7 @@
 <div class="space-y-1.5">
 	<Label>{label}</Label>
 	<Select type="single" value={famille} onValueChange={(v) => onFamilleChange(v as string)}>
-		<SelectTrigger class="w-full border-input bg-base text-[12.5px]">
+		<SelectTrigger class="w-full border-input bg-base text-[13px]">
 			<span data-slot="select-value">{famille || 'Choisir une famille'}</span>
 		</SelectTrigger>
 		<SelectContent class="max-h-64 overflow-y-auto">
@@ -46,7 +51,7 @@
 	</Select>
 	{#if famille}
 		<Select type="single" bind:value={produit}>
-			<SelectTrigger class="w-full border-input bg-base text-[12.5px]">
+			<SelectTrigger class="w-full border-input bg-base text-[13px]">
 				<span data-slot="select-value">{produit || produitPlaceholder}</span>
 			</SelectTrigger>
 			<SelectContent class="max-h-64 overflow-y-auto">

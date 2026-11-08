@@ -35,17 +35,19 @@
 		// Historique des RDV : la raison du passage en rappel et, quand le RDV était
 		// clos avant ce passage, son issue (statut, raisons, motif, commercial,
 		// date planifiée) — rien n'est effacé par le retour en rappel.
-		rdvHistory?: {
-			at: number;
-			reason?: string | null;
-			status?: 'annulé' | 'déballé' | 'vendu' | 'à reprogrammer' | null;
-			nonVenteReason?: string | null;
-			annulationReason?: string | null;
-			annulationDate?: number | null;
-			motif?: 'confortation' | 'gestion' | null;
-			commercial?: string | null;
-			date?: string | null;
-		}[] | null;
+		rdvHistory?:
+			| {
+					at: number;
+					reason?: string | null;
+					status?: 'annulé' | 'déballé' | 'vendu' | 'à reprogrammer' | null;
+					nonVenteReason?: string | null;
+					annulationReason?: string | null;
+					annulationDate?: number | null;
+					motif?: 'confortation' | 'gestion' | null;
+					commercial?: string | null;
+					date?: string | null;
+			  }[]
+			| null;
 		// Date et raison du marquage « traité » : rejouées dans l'historique.
 		treatedAt?: number | null;
 		treatedReason?: string | null;
@@ -60,12 +62,25 @@
 </script>
 
 <script lang="ts">
+	import { tick } from 'svelte';
+	import {
+		confortationClass,
+		confortationLabel,
+		dateCourt,
+		paiementClass,
+		paiementLabel,
+		PUCE,
+		suiviClass,
+		suiviDeVente,
+		suiviLabel,
+		prenoms
+	} from '$lib/data/vente-suivi';
 	import {
 		AlertTriangle,
 		CalendarDays,
-		CalendarPlus,
 		Check,
 		CheckCircle2,
+		Clock,
 		Copy,
 		Ellipsis,
 		LoaderCircle,
@@ -114,7 +129,7 @@
 	import ErreurVenteDialog from './ErreurVenteDialog.svelte';
 	import SaleDialog from './SaleDialog.svelte';
 	import AgendaApercuDialog from './agenda-apercu-dialog.svelte';
-	import { canAccessAdministration, canReassignContact } from '$lib/data/roles';
+	import { canAccessAdministration, canReassignContact, canWriteCrm } from '$lib/data/roles';
 	import { dateInputToMs, msToDateInput } from '$lib/data/dates';
 	import {
 		contactQualif,
@@ -125,9 +140,10 @@
 		toQualifDoc
 	} from '$lib/data/qualification';
 	import QualificationQuestions from './QualificationQuestions.svelte';
-	import ContactPrintSheet from './ContactPrintSheet.svelte';
+	import ContactPrintSheet from './contact-print-sheet.svelte';
+	import ContactPrintSheetClassic from './contact-print-sheet-classic.svelte';
+	import { waitForPrintAssets } from '$lib/actions/print-page';
 	import ContactJournal from './ContactJournal.svelte';
-	import ConfortationDialog from './ConfortationDialog.svelte';
 	import { ANNULATION_REASONS, NON_VENTE_REASONS, reasonLabel } from '$lib/data/reasons';
 
 	let {
@@ -146,9 +162,13 @@
 
 	const profile = useQuery(api.users.getProfile, () => (authState.isAuthenticated ? {} : 'skip'));
 	const isManager = $derived(canAccessAdministration(profile.data?.role));
+	// Écriture CRM : le commercial est en consultation seule (même règle côté
+	// serveur, convex/permissions.ts). Il garde la main sur sa fiche (coordonnées,
+	// note, questions découverte) mais pas sur l'issue du RDV ni sur les ventes.
+	const canWrite = $derived(canWriteCrm(profile.data?.role));
 	const myId = $derived((profile.data?._id as string | undefined) ?? undefined);
-	// Suppression possible pour le créateur du contact ou pour un manager.
-	const canDelete = $derived(!!contact && (isManager || myId === contact.createdBy));
+	// Suppression possible pour un rôle qui écrit dans le CRM.
+	const canDelete = $derived(!!contact && canWrite);
 	// « Qui a pris le contact » : réservé au directeur de zone et au directeur
 	// d'agence (le serveur applique la même règle).
 	const canReassign = $derived(canReassignContact(profile.data?.role));
@@ -191,12 +211,6 @@
 	let saleOpen = $state(false);
 	let saleEditOpen = $state(false);
 
-	// RDV de confortation : rendez-vous de suivi après la vente, hors stats RDV.
-	let confortationOpen = $state(false);
-	function confortationCreated(followUp: unknown) {
-		if (!contact) return;
-		contact = { ...contact, followUp: followUp as ContactRow['followUp'] };
-	}
 	let editingVente = $state<{
 		_id: string;
 		vendeurId?: string | null;
@@ -234,16 +248,19 @@
 	// Émojis et couleurs pour mettre en évidence les ventes dans la fiche.
 	const venteEmoji = (s: string | undefined | null): string =>
 		s === 'erreur' ? '⚠️' : s === 'annulée' ? '❌' : s === 'en attente' ? '⏳' : '✅';
-	// Fond de la carte assorti au statut, toujours très dilué : la vente validée
-	// est verte, les autres gardent leur teinte (orange, rouge, bleu).
-	const venteCardClass = (s: string | undefined | null): string =>
+	// Fond de la carte assorti à l'état de la vente : une vente annulée reprend le
+	// rouge d'un RDV annulé, une vente posée le vert de sa puce « Posée » ; erreur
+	// et en attente gardent leur teinte, les autres restent très diluées.
+	const venteCardClass = (s: string | undefined | null, suivi?: string | null): string =>
 		s === 'erreur'
-			? 'border-orange-500/30 bg-orange-500/8'
+			? 'bg-orange-500/10'
 			: s === 'annulée'
-				? 'border-red-500/30 bg-red-500/8'
+				? 'bg-red-500/15'
 				: s === 'en attente'
-					? 'border-sky-500/30 bg-sky-500/8'
-					: 'border-emerald-500/35 bg-emerald-500/8';
+					? 'bg-sky-500/10'
+					: suiviLabel(suivi) === 'Posée'
+						? 'bg-emerald-500/15'
+						: 'bg-emerald-500/10';
 	const venteTotalClass = (s: string | undefined | null): string =>
 		s === 'erreur'
 			? 'text-orange-700 dark:text-orange-300'
@@ -255,6 +272,47 @@
 	// Montant lisible partout dans la fiche (TTC, HT, TVA).
 	const fmtMoney = (n: number | null | undefined): string =>
 		(n ?? 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+	const setDatesVente = useMutation(api.ventes.setDatesVente);
+	const setConfortation = useMutation(api.ventes.setConfortation);
+	let suiviError = $state<{ venteId: string; message: string } | null>(null);
+
+	// Confortation : le client a confirmé la vente. Case séparée du suivi.
+	async function toggleConfortation(venteId: string, confortee: boolean) {
+		suiviError = null;
+		try {
+			await setConfortation({ venteId: venteId as Id<'ventes'>, confortee });
+		} catch (e) {
+			console.error(e);
+			suiviError = { venteId, message: 'Changement de confortation impossible.' };
+		}
+	}
+
+	// Dates du dossier : elles s’ajoutent ici, après la vente (jamais au moment
+	// de la saisie), et restent modifiables à tout moment.
+	async function changeDateVente(
+		venteId: string,
+		champ: 'dateMetrage' | 'datePose',
+		valeur: string
+	) {
+		suiviError = null;
+		try {
+			await setDatesVente({ venteId: venteId as Id<'ventes'>, [champ]: valeur });
+		} catch (e) {
+			console.error(e);
+			suiviError = {
+				venteId,
+				message: champ === 'datePose' ? 'Date de pose invalide.' : 'Date de métrage invalide.'
+			};
+		}
+	}
+
+	// Date ISO (YYYY-MM-DD) → valeur du calendrier.
+	const isoVersDate = (iso: string | null | undefined): CalendarDate | undefined => {
+		if (!iso) return undefined;
+		const [y, m, d] = iso.split('-').map(Number);
+		return y && m && d ? new CalendarDate(y, m, d) : undefined;
+	};
+
 	async function changeVenteStatut(venteId: string, statut: VenteStatut) {
 		venteStatutError = null;
 		try {
@@ -413,7 +471,7 @@
 			'rounded-full border px-2.5 py-1 text-[11.5px] font-medium transition-all',
 			active
 				? 'border-primary bg-primary text-primary-foreground shadow-sm shadow-primary/25'
-				: 'border-line bg-card2 text-muted-foreground hover:border-primary/40 hover:text-foreground'
+				: 'border-0 bg-card2 text-muted-foreground hover:border-primary/40 hover:text-foreground'
 		].join(' ');
 	}
 	let editAddress = $state('');
@@ -726,11 +784,6 @@
 		if (a.connait === 'oui' && a.concurrence)
 			items.push({ emoji: '💶', text: `Concurrence : ${a.concurrence}` });
 		if (a.age) items.push({ emoji: '🎂', text: a.age });
-		if (a.changer)
-			items.push({
-				emoji: '🛠️',
-				text: `Veut changer : ${a.changer}${a.pourQuand ? ` — ${a.pourQuand}` : ''}`
-			});
 		if (a.soncas.length > 0) items.push({ emoji: '🧲', text: `SONCAS : ${a.soncas.join(', ')}` });
 		return items;
 	});
@@ -1107,12 +1160,18 @@
 		}
 	}
 
-	// Impression de la fiche : la feuille A4 paysage est déjà rendue (masquée)
-	// dans le dialogue. Après l'impression, le contact est marqué comme imprimé
-	// pour que le bouton reste vert et que la liste sache lesquelles sont faites.
+	// Impression de la fiche : la feuille A4 est déjà rendue (masquée) dans le
+	// dialogue. Après l'impression, le contact est marqué comme imprimé (bouton
+	// vert, liste synchronisée).
 	const isPrinted = $derived(!!contact?.printedAt);
-	async function printContactSheet() {
+	let printModel = $state<'moderne' | 'classique'>('moderne');
+
+	async function printContactSheet(model: 'moderne' | 'classique' = 'moderne') {
 		if (!contact) return;
+		printModel = model;
+		await tick();
+		// Le logo doit être chargé avant que l'aperçu ne fige la feuille.
+		await waitForPrintAssets();
 		window.print();
 		try {
 			await markContactPrinted({ contactId: contact._id as Id<'contacts'> });
@@ -1146,6 +1205,12 @@
 		}
 		editBusy = true;
 		editError = '';
+		// Rôle en consultation seule : le statut du RDV n'est ni exposé ni envoyé
+		// (le serveur refuse tout changement d'issue du RDV).
+		const statusEnvoye =
+			canWrite && editFollowUpType === 'rdv' && editRdvStatus !== NONE
+				? (editRdvStatus as 'annulé' | 'déballé' | 'vendu' | 'à reprogrammer')
+				: undefined;
 		try {
 			await updateContact({
 				contactId: contact._id as Id<'contacts'>,
@@ -1181,10 +1246,7 @@
 					...(editFollowUpType === 'rdv'
 						? {
 								commercial: editRdvCommercial !== NONE ? editRdvCommercial : undefined,
-								status:
-									editRdvStatus !== NONE
-										? (editRdvStatus as 'annulé' | 'déballé' | 'vendu' | 'à reprogrammer')
-										: undefined
+								status: statusEnvoye
 							}
 						: {})
 				}
@@ -1200,12 +1262,63 @@
 
 <Dialog bind:open>
 	<DialogContent
-		class="max-h-[90vh] overflow-y-auto rounded-xl border-line bg-card sm:max-w-lg md:max-w-4xl lg:max-w-5xl xl:max-w-6xl"
+		class="max-h-[90vh] [scrollbar-width:none] overflow-y-auto rounded-[22px] border-0 bg-card shadow-none sm:max-w-lg md:max-w-4xl lg:max-w-5xl xl:max-w-6xl [&::-webkit-scrollbar]:hidden"
 	>
 		<DialogHeader>
-			<DialogTitle class="text-[15px] font-semibold">
-				{mode === 'view' ? 'Fiche contact' : `Modifier ${contact?.name}`}
-			</DialogTitle>
+			<div class="flex items-start gap-3 pr-10">
+				<Avatar
+					photo={photoByName.get(
+						(commerciauxLies[0] ?? contact?.createdByName ?? '').trim().toLowerCase()
+					)}
+					label={initialsOf(contact?.name)}
+					alt={contact?.name ?? undefined}
+					class="size-11 bg-card2 text-[13px] font-bold text-ink-soft"
+				/>
+				<div class="min-w-0 flex-1">
+					<DialogTitle class="truncate text-[17px] font-bold tracking-[-0.02em]">
+						{mode === 'view' ? (contact?.name ?? 'Fiche contact') : `Modifier ${contact?.name}`}
+					</DialogTitle>
+					<div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+						{#if contact}
+							<span
+								class="rounded-full bg-brand/12 px-2 py-0.5 text-[10px] font-semibold tracking-[0.08em] text-brand uppercase"
+							>
+								{contact.isClient ? 'Client' : 'Contact'}
+							</span>
+						{/if}
+					</div>
+				</div>
+				{#if contact && !contact.isClient && contact.followUp?.type === 'rdv' && canWrite}
+					<Select
+						type="single"
+						value={contact.followUp?.status ?? NONE}
+						onValueChange={(v: string) => quickSetStatus(v)}
+					>
+						<SelectTrigger
+							class={[
+								'h-7 w-fit gap-1 rounded-full border-0 pr-2 pl-2.5 text-[12px] font-semibold shadow-none focus-visible:ring-2 focus-visible:ring-brand/40 data-[size=default]:h-7 [&>svg]:size-3.5 [&>svg]:text-current',
+								rdvStatusClass(contact.followUp?.status, contact.followUp?.motif)
+							].join(' ')}
+							aria-label="Changer le statut du RDV"
+						>
+							<span data-slot="select-value">
+								{rdvStatusLabel(contact.followUp?.status, contact.followUp?.motif)}
+							</span>
+						</SelectTrigger>
+						<SelectContent>
+							<SelectItem value={NONE}>📅 Programmé</SelectItem>
+							<SelectItem value="déballé">📦 Déballé</SelectItem>
+							<SelectItem value="à reprogrammer">🔁 À reprogrammer</SelectItem>
+							<SelectItem value="annulé">❌ Annulé</SelectItem>
+							<SelectItem value="vendu">💰 Vendu</SelectItem>
+						</SelectContent>
+					</Select>
+				{:else if contact}
+					<span class="mt-0.5 shrink-0">
+						<span class={[PUCE, statusClass(contact)].join(' ')}>{statusLabel(contact)}</span>
+					</span>
+				{/if}
+			</div>
 		</DialogHeader>
 
 		{#if contact}
@@ -1214,58 +1327,8 @@
 
 				<div class="grid gap-3 md:grid-cols-2">
 					<div class="space-y-3">
-						<div class="overflow-hidden rounded-lg border border-line bg-card2/60">
-							<div
-								class="flex flex-wrap items-center gap-x-2.5 gap-y-2 border-b border-line/70 bg-glass-1 px-3 py-2.5"
-							>
-								<span
-									class="grid size-8 shrink-0 place-items-center rounded-full bg-brand/10 text-[10.5px] font-bold text-brand"
-									aria-hidden="true"
-								>
-									{initialsOf(contact.name)}
-								</span>
-								<p class="min-w-0 flex-1 truncate text-[14.5px] font-semibold text-foreground">
-									{contact.name}
-								</p>
-
-								{#if !contact.isClient && contact.followUp?.type === 'rdv'}
-									<Select
-										type="single"
-										value={contact.followUp?.status ?? NONE}
-										onValueChange={(v: string) => quickSetStatus(v)}
-									>
-										<SelectTrigger
-											class={[
-												'h-7 w-fit gap-1 rounded-sm border-0 pr-1.5 pl-2 text-[12px] font-semibold shadow-none focus-visible:ring-2 focus-visible:ring-brand/40 data-[size=default]:h-7 [&>svg]:size-3.5 [&>svg]:text-current',
-												rdvStatusClass(contact.followUp?.status, contact.followUp?.motif)
-											].join(' ')}
-											aria-label="Changer le statut du RDV"
-										>
-											<span data-slot="select-value">
-												{rdvStatusLabel(contact.followUp?.status, contact.followUp?.motif)}
-											</span>
-										</SelectTrigger>
-										<SelectContent>
-											<SelectItem value={NONE}>📅 Programmé</SelectItem>
-											<SelectItem value="déballé">📦 Déballé</SelectItem>
-											<SelectItem value="à reprogrammer">🔁 À reprogrammer</SelectItem>
-											<SelectItem value="annulé">❌ Annulé</SelectItem>
-											<SelectItem value="vendu">💰 Vendu</SelectItem>
-										</SelectContent>
-									</Select>
-								{:else}
-									<Badge
-										class={[
-											'gap-1.5 rounded-sm px-2 py-0.5 text-[11.5px] font-semibold',
-											statusClass(contact)
-										].join(' ')}
-									>
-										{statusLabel(contact)}
-									</Badge>
-								{/if}
-							</div>
-
-							<div class="flex items-center gap-2 px-3 py-2">
+						<div class="overflow-hidden rounded-2xl bg-card2">
+							<div class="flex items-center gap-2 px-3.5 py-2.5">
 								<PhoneCall class="size-3.5 shrink-0 text-muted-foreground" strokeWidth={1.7} />
 								{#if contact.phone}
 									<a
@@ -1291,8 +1354,7 @@
 									<span class="flex-1 text-[13.5px] text-muted-foreground">Aucun numéro</span>
 								{/if}
 							</div>
-
-							<div class="flex items-start gap-2 border-t border-line/70 px-3 py-2">
+							<div class="flex items-start gap-2 px-3 py-2">
 								<MapPin class="mt-0.5 size-3.5 shrink-0 text-muted-foreground" strokeWidth={1.7} />
 								<p class="min-w-0 flex-1 text-[13px] leading-snug text-foreground">
 									{contact.address ?? 'Adresse non renseignée'}
@@ -1314,7 +1376,7 @@
 								{/if}
 							</div>
 
-							<dl class="border-t border-line/70">
+							<dl class="border-t">
 								<div class="flex items-baseline gap-3 px-3 py-1.5">
 									<dt class="w-28 shrink-0 text-[10.5px] font-medium text-muted-foreground">
 										Projet
@@ -1323,7 +1385,7 @@
 										{contact.projet ?? '—'}
 									</dd>
 								</div>
-								<div class="flex items-center gap-3 border-t border-line/70 px-3 py-1.5">
+								<div class="flex items-center gap-3 px-3 py-1.5">
 									<dt class="w-28 shrink-0 text-[10.5px] font-medium text-muted-foreground">
 										Source
 									</dt>
@@ -1343,7 +1405,7 @@
 									</dd>
 								</div>
 								{#if prochainPas}
-									<div class="flex items-center gap-3 border-t border-line/70 px-3 py-1.5">
+									<div class="flex items-center gap-3 px-3 py-1.5">
 										<dt class="w-28 shrink-0 text-[10.5px] font-medium text-muted-foreground">
 											{prochainPas.rdv ? 'RDV' : 'Rappel'}
 										</dt>
@@ -1371,7 +1433,7 @@
 									</div>
 								{/if}
 
-								<div class="flex items-center gap-3 border-t border-line/70 px-3 py-1.5">
+								<div class="flex items-center gap-3 px-3 py-1.5">
 									<dt class="w-28 shrink-0 text-[10.5px] font-medium text-muted-foreground">
 										Commercial
 									</dt>
@@ -1394,8 +1456,8 @@
 									</dd>
 								</div>
 
-								{#if !contact.isClient && contact.followUp?.type === 'rdv'}
-									<div class="flex items-center gap-3 border-t border-line/70 px-3 py-1.5">
+								{#if !contact.isClient && contact.followUp?.type === 'rdv' && canWrite}
+									<div class="flex items-center gap-3 px-3 py-1.5">
 										<dt class="w-28 shrink-0 text-[10.5px] font-medium text-muted-foreground">
 											Commercial rattaché
 										</dt>
@@ -1406,7 +1468,7 @@
 												onValueChange={(v: string) => quickSetCommercial(v)}
 											>
 												<SelectTrigger
-													class="-my-1 h-7 w-fit gap-1.5 rounded-sm border border-transparent bg-transparent px-1 text-[13px] hover:border-line hover:bg-card"
+													class="-my-1 h-7 w-fit gap-1.5 rounded-sm border-0 bg-transparent px-1 text-[13px] hover:bg-card"
 												>
 													{#if contact.followUp?.commercial}
 														<Avatar
@@ -1449,14 +1511,17 @@
 							</dl>
 
 							{#if resumeSuivi}
-								<p class="border-t border-line/70 px-3 py-1.5 text-[10.5px] text-muted-foreground">
+								<p
+									class="mx-2.5 mb-2.5 flex items-center gap-2 rounded-xl bg-card px-3 py-2 text-[12px] font-semibold text-foreground"
+								>
+									<Clock class="size-3.5 shrink-0 text-brand" strokeWidth={2} />
 									{resumeSuivi}
 								</p>
 							{/if}
 						</div>
 
 						{#if contact.followUp?.status === 'déballé' && contact.followUp?.nonVenteReason}
-							<div class="rounded-lg border border-violet-500/30 bg-violet-500/5 px-3 py-2.5">
+							<div class="rounded-xl bg-violet-500/10 px-3.5 py-3">
 								<p
 									class="mb-1 text-[10px] font-semibold tracking-wider text-violet-700 uppercase dark:text-violet-300"
 								>
@@ -1474,7 +1539,7 @@
 						{/if}
 
 						{#if contact.followUp?.status === 'annulé' && contact.followUp?.annulationReason}
-							<div class="rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-2.5">
+							<div class="rounded-xl bg-red-500/10 px-3.5 py-3">
 								<p
 									class="mb-1 text-[10px] font-semibold tracking-wider text-red-700 uppercase dark:text-red-300"
 								>
@@ -1491,7 +1556,7 @@
 							</div>
 						{/if}
 
-						<div class="rounded-lg border border-line bg-card2/60 px-3 py-2.5">
+						<div class="rounded-xl bg-card2 px-3.5 py-3">
 							<div class="relative pl-4">
 								<div
 									class="absolute top-[6px] bottom-1 left-[4px] w-px bg-line/70"
@@ -1553,7 +1618,7 @@
 
 					<div class="space-y-3">
 						{#if viewQualifItems.length > 0}
-							<div class="rounded-lg border border-line bg-card2/60 px-3 py-2.5">
+							<div class="rounded-xl bg-card2 px-3.5 py-3">
 								<p
 									class="mb-2 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase"
 								>
@@ -1561,9 +1626,7 @@
 								</p>
 								<div class="flex flex-wrap gap-1.5">
 									{#each viewQualifItems as item}
-										<span
-											class="rounded-md border border-line bg-card2 px-2 py-1 text-[11px] text-foreground"
-										>
+										<span class="rounded-full bg-card2 px-2 py-1 text-[11px] text-foreground">
 											<span class="mr-1">{item.emoji}</span>{item.text}
 										</span>
 									{/each}
@@ -1571,7 +1634,7 @@
 							</div>
 						{/if}
 
-						<div class="rounded-lg border border-line bg-card2/60 px-3 py-2.5">
+						<div class="rounded-xl bg-card2 px-3.5 py-3">
 							<p
 								class="mb-1 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase"
 							>
@@ -1599,7 +1662,7 @@
 								})}
 						/>
 
-						<div class="rounded-lg border border-line bg-card2/60 px-3 py-2.5">
+						<div class="rounded-xl bg-card2 px-3.5 py-3">
 							<div class="mb-1 flex items-center justify-between gap-2">
 								<p class="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
 									💰 Ventes
@@ -1612,26 +1675,18 @@
 									{/if}
 								</p>
 								<div class="flex items-center gap-1.5">
-									{#if contact.isClient || (ventes.data?.length ?? 0) > 0}
+									<!-- Sans vente, le bouton est plein : c'est l'action à faire. -->
+									{#if canWrite}
 										<Button
-											variant="outline"
+											variant={(ventes.data?.length ?? 0) > 0 ? 'secondary' : 'default'}
 											size="sm"
-											onclick={() => (confortationOpen = true)}
-											title="RDV de suivi après la vente, hors statistiques"
+											class="rounded-full"
+											onclick={() => (saleOpen = true)}
 										>
-											<CalendarPlus class="size-3.5" />
-											RDV confortation
+											<Plus class="size-3.5" />
+											Ajouter une vente
 										</Button>
 									{/if}
-									<!-- Sans vente, le bouton est plein : c'est l'action à faire. -->
-									<Button
-										variant={(ventes.data?.length ?? 0) > 0 ? 'outline' : 'default'}
-										size="sm"
-										onclick={() => (saleOpen = true)}
-									>
-										<Plus class="size-3.5" />
-										Ajouter une vente
-									</Button>
 								</div>
 							</div>
 							{#if (ventes.data?.length ?? 0) > 0}
@@ -1652,8 +1707,8 @@
 											.join(' + ')}
 										<div
 											class={[
-												'rounded-xl border px-3 py-2.5 transition-colors',
-												venteCardClass(vente.statut)
+												'rounded-2xl px-3.5 py-3 transition-colors',
+												venteCardClass(vente.statut, suiviDeVente(vente))
 											].join(' ')}
 										>
 											<!-- Le montant de la vente et la famille, sur une seule ligne. -->
@@ -1669,13 +1724,25 @@
 														</span>
 														<span class="truncate">{familles}</span>
 													</p>
-													<p class="mt-1 truncate text-[10.5px] text-muted-foreground">
-														{new Date(vente.date).toLocaleDateString('fr-FR', {
-															day: 'numeric',
-															month: 'short',
-															year: 'numeric'
-														})} · {fmtMoney(venteHT)} € HT · TVA {taux} %
-													</p>
+													<div class="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1">
+														<p class="text-[10.5px] text-muted-foreground">
+															{new Date(vente.date).toLocaleDateString('fr-FR', {
+																day: 'numeric',
+																month: 'short',
+																year: 'numeric'
+															})} · {fmtMoney(venteHT)} € HT · TVA {taux} %
+														</p>
+														{#if vente.paiement}
+															<span
+																class={[
+																	'inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[10px] font-semibold',
+																	paiementClass(vente.paiement, vente.fiStatut, vente.fiAccepte)
+																].join(' ')}
+															>
+																{paiementLabel(vente.paiement)}
+															</span>
+														{/if}
+													</div>
 												</div>
 												<div class="shrink-0 text-right">
 													<p
@@ -1694,88 +1761,217 @@
 												</div>
 											</div>
 
-											<!-- Suivi commercial : vente confortée, mode de paiement, dossier FI. -->
-											<div class="mt-2 flex flex-wrap items-center gap-1.5">
-												{#if vente.confortee}
-													<span
-														class="rounded-sm bg-emerald-500/15 px-1.5 py-0.5 text-[9.5px] font-semibold text-emerald-700 dark:text-emerald-300"
+											<!-- État du dossier : confortation (accord client) puis suivi du métrage / pose. -->
+											<div class="mt-2.5 grid grid-cols-2 gap-1.5">
+												<div class="space-y-1">
+													<Label
+														class="text-[9.5px] font-semibold tracking-wider text-muted-foreground uppercase"
 													>
-														✓ Confortée
-													</span>
-												{:else}
-													<span
-														class="rounded-sm bg-glass-2 px-1.5 py-0.5 text-[9.5px] font-semibold text-muted-foreground"
+														Confortation
+													</Label>
+													<button
+														type="button"
+														role="switch"
+														aria-checked={!!vente.confortee}
+														aria-label="Vente confortée"
+														onclick={() => toggleConfortation(vente._id, !vente.confortee)}
+														class="flex h-8 w-full items-center justify-between gap-2 rounded-full border-0 bg-card px-2 transition-colors hover:bg-card2"
 													>
-														Non confortée
-													</span>
-												{/if}
-												<span
-													class="rounded-sm bg-glass-2 px-1.5 py-0.5 text-[9.5px] font-semibold text-muted-foreground"
-												>
-													{vente.paiement === 'financement'
-														? 'Financement'
-														: vente.paiement === 'comptant'
-															? 'Comptant'
-															: 'Paiement —'}
-												</span>
-												{#if vente.paiement === 'financement'}
-													<span
-														class={[
-															'rounded-sm px-1.5 py-0.5 text-[9.5px] font-semibold',
-															vente.fiAccepte
-																? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
-																: 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
-														].join(' ')}
-													>
-														{vente.fiAccepte ? '✓ FI accepté' : 'FI en attente'}
-													</span>
-												{/if}
-											</div>
-
-											<!-- Statut (menu) à gauche, auteur de la vente à droite. -->
-											<div
-												class="mt-2 flex items-center justify-between gap-2 border-t border-line/50 pt-1.5"
-											>
-												<div class="flex min-w-0 items-center gap-1.5">
-													<Select
-														type="single"
-														value={vente.statut ?? 'valide'}
-														onValueChange={(v) => onVenteStatutChange(vente, v)}
-													>
-														<SelectTrigger
-															size="xs"
+														<span
 															class={[
-																'w-fit shrink-0 rounded-md font-semibold [&>svg]:opacity-60',
-																venteStatutClass(vente.statut)
+																'truncate rounded-sm px-1.5 py-0.5 text-[11px] font-bold',
+																confortationClass(vente.confortee)
 															].join(' ')}
 														>
-															<span data-slot="select-value">
-																{venteEmoji(vente.statut)}
-																{venteStatutLabel(vente.statut)}
+															{confortationLabel(vente.confortee)}
+														</span>
+														<span
+															class={[
+																'relative h-4 w-7 shrink-0 rounded-full transition-colors',
+																vente.confortee ? 'bg-emerald-500' : 'bg-muted-foreground/30'
+															].join(' ')}
+														>
+															<span
+																class={[
+																	'absolute top-0.5 size-3 rounded-full bg-white shadow-xs transition-all',
+																	vente.confortee ? 'left-3.5' : 'left-0.5'
+																].join(' ')}
+															></span>
+														</span>
+													</button>
+												</div>
+												<div class="space-y-1">
+													<Label
+														class="text-[9.5px] font-semibold tracking-wider text-muted-foreground uppercase"
+													>
+														Suivi pose
+													</Label>
+													<div
+														class="flex h-8 w-full items-center rounded-full border-0 bg-card px-2"
+														title="Automatique : pose programmée tant que la date est à venir, posée une fois la date passée ; sinon métrage programmé / métrée selon la date de métrage"
+													>
+														<span
+															class={[
+																'truncate rounded-sm px-1.5 py-0.5 text-[11px] font-bold',
+																suiviClass(suiviDeVente(vente))
+															].join(' ')}
+														>
+															{suiviLabel(suiviDeVente(vente))}
+														</span>
+													</div>
+												</div>
+											</div>
+											<!-- Ajout rapide des dates du dossier, directement dans la fiche. -->
+											<div class="mt-1.5 grid grid-cols-2 gap-1.5">
+												<div class="space-y-1">
+													<Label
+														class="text-[9.5px] font-semibold tracking-wider text-muted-foreground uppercase"
+														for={`metrage-${vente._id}`}
+													>
+														Métrage
+													</Label>
+													<Popover>
+														<PopoverTrigger
+															class="flex h-8 w-full items-center justify-between gap-2 rounded-full border-0 bg-card px-2 text-[11.5px] font-medium text-foreground transition-colors hover:bg-card2"
+														>
+															<span class="flex min-w-0 items-center gap-1.5">
+																<CalendarDays
+																	class="size-3 shrink-0 text-muted-foreground"
+																	strokeWidth={1.7}
+																/>
+																<span class="truncate"
+																	>{vente.dateMetrage
+																		? dateCourt(vente.dateMetrage)
+																		: 'Choisir'}</span
+																>
 															</span>
-														</SelectTrigger>
-														<SelectContent>
-															<SelectItem value="valide">Valide</SelectItem>
-															<SelectItem value="en attente">En attente</SelectItem>
-															{#if isManager}
-																<SelectItem value="erreur">Erreur</SelectItem>
+														</PopoverTrigger>
+														<PopoverContent
+															class="w-auto rounded-2xl border-0 bg-card p-0"
+															align="start"
+														>
+															<Calendar
+																locale="fr-FR"
+																type="single"
+																value={isoVersDate(vente.dateMetrage)}
+																onValueChange={(value: DateValue | undefined) => {
+																	if (value)
+																		changeDateVente(vente._id, 'dateMetrage', value.toString());
+																}}
+															/>
+															{#if vente.dateMetrage}
+																<button
+																	type="button"
+																	class="w-full px-3 py-2 text-[11.5px] font-medium text-muted-foreground transition-colors hover:bg-glass-1 hover:text-foreground"
+																	onclick={() => changeDateVente(vente._id, 'dateMetrage', '')}
+																>
+																	Effacer métrage
+																</button>
 															{/if}
-															<SelectItem value="annulée">Annulée</SelectItem>
-														</SelectContent>
-													</Select>
+														</PopoverContent>
+													</Popover>
+												</div>
+												<div class="space-y-1">
+													<Label
+														class="text-[9.5px] font-semibold tracking-wider text-muted-foreground uppercase"
+														for={`pose-${vente._id}`}
+													>
+														Pose
+													</Label>
+													<Popover>
+														<PopoverTrigger
+															class="flex h-8 w-full items-center justify-between gap-2 rounded-full border-0 bg-card px-2 text-[11.5px] font-medium text-foreground transition-colors hover:bg-card2"
+														>
+															<span class="flex min-w-0 items-center gap-1.5">
+																<CalendarDays
+																	class="size-3 shrink-0 text-muted-foreground"
+																	strokeWidth={1.7}
+																/>
+																<span class="truncate"
+																	>{vente.datePose ? dateCourt(vente.datePose) : 'Choisir'}</span
+																>
+															</span>
+														</PopoverTrigger>
+														<PopoverContent
+															class="w-auto rounded-2xl border-0 bg-card p-0"
+															align="start"
+														>
+															<Calendar
+																locale="fr-FR"
+																type="single"
+																value={isoVersDate(vente.datePose)}
+																onValueChange={(value: DateValue | undefined) => {
+																	if (value)
+																		changeDateVente(vente._id, 'datePose', value.toString());
+																}}
+															/>
+															{#if vente.datePose}
+																<button
+																	type="button"
+																	class="w-full px-3 py-2 text-[11.5px] font-medium text-muted-foreground transition-colors hover:bg-glass-1 hover:text-foreground"
+																	onclick={() => changeDateVente(vente._id, 'datePose', '')}
+																>
+																	Effacer pose
+																</button>
+															{/if}
+														</PopoverContent>
+													</Popover>
+												</div>
+											</div>
+											{#if suiviError?.venteId === vente._id}
+												<p class="mt-1 text-[11px] font-medium text-destructive">
+													{suiviError.message}
+												</p>
+											{/if}
+
+											<!-- Statut (menu) -->
+											<div class="mt-2 flex items-center justify-between gap-2 pt-1.5">
+												<div class="flex min-w-0 items-center gap-1.5">
+													{#if canWrite}
+														<Select
+															type="single"
+															value={vente.statut ?? 'valide'}
+															onValueChange={(v) => onVenteStatutChange(vente, v)}
+														>
+															<SelectTrigger
+																size="xs"
+																style="background-color: transparent"
+																class="w-fit shrink-0 border-0 p-0 font-semibold data-[size=xs]:h-auto data-[size=xs]:gap-1 data-[size=xs]:py-0 data-[size=xs]:pr-0.5 data-[size=xs]:pl-0 data-[size=xs]:text-[13px] [&>svg]:opacity-60"
+															>
+																<span
+																	data-slot="select-value"
+																	class={[PUCE, 'font-bold', venteStatutClass(vente.statut)].join(
+																		' '
+																	)}
+																>
+																	{venteEmoji(vente.statut)}
+																	{venteStatutLabel(vente.statut)}
+																</span>
+															</SelectTrigger>
+															<SelectContent>
+																<SelectItem value="valide">Valide</SelectItem>
+																{#if isManager}
+																	<SelectItem value="erreur">Erreur</SelectItem>
+																{/if}
+																<SelectItem value="annulée">Annulée</SelectItem>
+															</SelectContent>
+														</Select>
+													{/if}
 													<span class="truncate text-[10.5px] text-muted-foreground">
-														Vendu par {vente.vendeurDisplay ?? vente.vendeurName}
+														Vendu par {prenoms(vente.vendeurDisplay ?? vente.vendeurName)}
 													</span>
 												</div>
 												<div class="flex shrink-0 items-center gap-0.5">
-													<button
-														type="button"
-														onclick={() => openEditVente(vente)}
-														class="rounded-md p-1 text-muted-foreground transition-colors hover:bg-glass-2 hover:text-foreground"
-														aria-label="Modifier la vente"
-													>
-														<Pencil class="size-3.5" strokeWidth={1.7} />
-													</button>
+													{#if canWrite}
+														<button
+															type="button"
+															onclick={() => openEditVente(vente)}
+															class="rounded-md p-1 text-muted-foreground transition-colors hover:bg-glass-2 hover:text-foreground"
+															aria-label="Modifier la vente"
+														>
+															<Pencil class="size-3.5" strokeWidth={1.7} />
+														</button>
+													{/if}
 													{#if isManager}
 														<button
 															type="button"
@@ -1796,7 +1992,7 @@
 											{/if}
 
 											{#if vente.statut === 'erreur' && vente.erreur}
-												<div class="mt-2 rounded-md bg-orange-500/5 px-2.5 py-2">
+												<div class="mt-3 rounded-xl bg-orange-500/10 px-3 py-2.5">
 													<div class="flex flex-wrap items-center justify-between gap-2">
 														<p
 															class="flex items-center gap-1.5 text-[10.5px] font-semibold tracking-wider text-orange-700 uppercase dark:text-orange-300"
@@ -1840,7 +2036,7 @@
 									{/each}
 								</div>
 							{:else}
-								<div class="rounded-lg border border-dashed border-line px-3 py-4 text-center">
+								<div class="rounded-xl px-3 py-4 text-center">
 									<p class="text-[12.5px] text-muted-foreground">Aucune vente pour l'instant.</p>
 									<p class="mt-0.5 text-[11px] text-muted-foreground/80">
 										Un produit, un montant HT, la TVA : le TTC se calcule seul.
@@ -1873,22 +2069,22 @@
 								id="editContactName"
 								required
 								bind:value={editName}
-								class="border-input bg-base"
+								class="border-0 bg-card2 shadow-none"
 							/>
 						</div>
 
 						<div class="space-y-1.5">
-						<Label for="editContactAddress">Adresse</Label>
-						<AddressInput
-							bind:value={editAddress}
-							onPickDetails={(d) => {
-								editAddressStreet = d.street ?? '';
-								editAddressPostalCode = d.postalCode ?? '';
-								editAddressCity = d.city ?? '';
-								editLatitude = d.latitude;
-								editLongitude = d.longitude;
-							}}
-						/>
+							<Label for="editContactAddress">Adresse</Label>
+							<AddressInput
+								bind:value={editAddress}
+								onPickDetails={(d) => {
+									editAddressStreet = d.street ?? '';
+									editAddressPostalCode = d.postalCode ?? '';
+									editAddressCity = d.city ?? '';
+									editLatitude = d.latitude;
+									editLongitude = d.longitude;
+								}}
+							/>
 						</div>
 
 						<div class="space-y-1.5">
@@ -1901,14 +2097,14 @@
 									editPhone = formatPhone(e.currentTarget.value);
 									onPhoneInput(e);
 								}}
-								class="border-input bg-base"
+								class="border-0 bg-card2 shadow-none"
 							/>
 						</div>
 
 						<div class="space-y-1.5">
 							<Label for="editContactSource">Source</Label>
 							<Select type="single" bind:value={editSource}>
-								<SelectTrigger id="editContactSource" class="w-full border-input bg-base">
+								<SelectTrigger id="editContactSource" class="w-full border-0 bg-card2 shadow-none">
 									<span data-slot="select-value">
 										{editSource ? editSource : 'Choisir une source'}
 									</span>
@@ -1927,14 +2123,14 @@
 								id="editContactDate"
 								type="date"
 								bind:value={editDateContact}
-								class="border-input bg-base"
+								class="border-0 bg-card2 shadow-none"
 							/>
 						</div>
 
 						<div class="space-y-1.5 md:col-span-2">
 							<Label for="editContactProjet">Projet</Label>
 							<Select type="single" bind:value={editProjet}>
-								<SelectTrigger id="editContactProjet" class="w-full border-input bg-base">
+								<SelectTrigger id="editContactProjet" class="w-full border-0 bg-card2 shadow-none">
 									<span data-slot="select-value">
 										{editProjet ? editProjet : 'Choisir une famille'}
 									</span>
@@ -1951,7 +2147,10 @@
 							<div class="space-y-1.5 md:col-span-2">
 								<Label for="editContactCreatedBy">Pris par</Label>
 								<Select type="single" bind:value={editCreatedBy}>
-									<SelectTrigger id="editContactCreatedBy" class="w-full border-input bg-base">
+									<SelectTrigger
+										id="editContactCreatedBy"
+										class="w-full border-0 bg-card2 shadow-none"
+									>
 										<span data-slot="select-value">
 											{preneurOptions.find((o) => o._id === editCreatedBy)?.name ??
 												'Choisir qui a pris le contact'}
@@ -1974,17 +2173,15 @@
 					{#snippet suiviBlock()}
 						<div class="space-y-2">
 							<Label>Suivi</Label>
-							<div
-								class="relative inline-grid grid-cols-2 gap-1 rounded-xl border border-line bg-card2/60 p-0.5"
-							>
+							<div class="relative inline-grid grid-cols-2 gap-1 rounded-full bg-card2 p-0.5">
 								<button
 									type="button"
 									onclick={() => (editFollowUpType = 'rdv')}
 									class={[
-										'flex h-9 items-center justify-center gap-1.5 rounded-lg px-3 text-[12px] font-medium transition-all',
+										'flex h-9 items-center justify-center gap-1.5 rounded-full px-3 text-[12px] font-medium transition-all',
 										editFollowUpType === 'rdv'
 											? 'bg-primary text-primary-foreground shadow-md shadow-primary/25'
-											: 'text-muted-foreground hover:bg-brand/10 hover:text-brand light:hover:text-brand'
+											: 'text-muted-foreground hover:bg-brand/10 hover:text-foreground'
 									].join(' ')}
 								>
 									<span class="text-[13px] leading-none">📅</span>
@@ -1994,10 +2191,10 @@
 									type="button"
 									onclick={() => (editFollowUpType = 'rappel')}
 									class={[
-										'flex h-9 items-center justify-center gap-1.5 rounded-lg px-3 text-[12px] font-medium transition-all',
+										'flex h-9 items-center justify-center gap-1.5 rounded-full px-3 text-[12px] font-medium transition-all',
 										editFollowUpType === 'rappel'
 											? 'bg-primary text-primary-foreground shadow-md shadow-primary/25'
-											: 'text-muted-foreground hover:bg-brand/10 hover:text-brand light:hover:text-brand'
+											: 'text-muted-foreground hover:bg-brand/10 hover:text-foreground'
 									].join(' ')}
 								>
 									<span class="text-[13px] leading-none">🔔</span>
@@ -2010,7 +2207,7 @@
 									type="button"
 									variant="outline"
 									size="sm"
-									class="w-full border-line text-[12px]"
+									class="w-full border-0 text-[12px]"
 									onclick={() => (editAgendaOpen = true)}
 								>
 									<CalendarDays class="size-3.5" />
@@ -2029,7 +2226,7 @@
 										id="editSwitchReason"
 										placeholder="Ex : client injoignable, reporté…"
 										bind:value={editSwitchReason}
-										class="border-input bg-base"
+										class="border-0 bg-card2 shadow-none"
 									/>
 								</div>
 							{/if}
@@ -2039,12 +2236,12 @@
 									<Label>Date</Label>
 									<Popover>
 										<PopoverTrigger
-											class="flex h-9 w-full items-center gap-2 rounded-md border border-line bg-base px-3 text-[12.5px] font-medium text-foreground transition-colors hover:bg-card2"
+											class="flex h-9 w-full items-center gap-2 rounded-full border-0 bg-card2 px-3.5 text-[12.5px] font-medium text-foreground transition-colors hover:bg-glass-3"
 										>
 											<CalendarDays class="size-3.5 text-muted-foreground" strokeWidth={1.7} />
 											{formattedDate}
 										</PopoverTrigger>
-										<PopoverContent class="w-auto rounded-xl border-line bg-card p-0" align="start">
+										<PopoverContent class="w-auto rounded-2xl border-0 bg-card p-0" align="start">
 											<Calendar
 												locale="fr-FR"
 												type="single"
@@ -2064,7 +2261,7 @@
 									<div class="w-28 space-y-1.5">
 										<Label>Heure</Label>
 										<Select type="single" bind:value={editFollowUpTime}>
-											<SelectTrigger class="w-full border-input bg-base">
+											<SelectTrigger class="w-full border-0 bg-card2 shadow-none">
 												<span data-slot="select-value">{editFollowUpTime}</span>
 											</SelectTrigger>
 											<SelectContent>
@@ -2082,7 +2279,7 @@
 									<div class="space-y-1.5">
 										<Label>Commercial rattaché</Label>
 										<Select type="single" bind:value={editRdvCommercial}>
-											<SelectTrigger class="w-full border-input bg-base">
+											<SelectTrigger class="w-full border-0 bg-card2 shadow-none">
 												{#if editRdvCommercial !== NONE}
 													<Avatar
 														photo={photoByName.get(editRdvCommercial.trim().toLowerCase())}
@@ -2112,23 +2309,25 @@
 											</SelectContent>
 										</Select>
 									</div>
-									<div class="space-y-1.5">
-										<Label>Statut</Label>
-										<Select type="single" bind:value={editRdvStatus}>
-											<SelectTrigger class="w-full border-input bg-base">
-												<span data-slot="select-value">
-													{editRdvStatus !== NONE ? rdvStatusLabel(editRdvStatus) : 'Programmé'}
-												</span>
-											</SelectTrigger>
-											<SelectContent>
-												<SelectItem value={NONE}>Programmé</SelectItem>
-												<SelectItem value="déballé">Déballé</SelectItem>
-												<SelectItem value="à reprogrammer">À reprogrammer</SelectItem>
-												<SelectItem value="annulé">Annulé</SelectItem>
-												<SelectItem value="vendu">Vendu</SelectItem>
-											</SelectContent>
-										</Select>
-									</div>
+									{#if canWrite}
+										<div class="space-y-1.5">
+											<Label>Statut</Label>
+											<Select type="single" bind:value={editRdvStatus}>
+												<SelectTrigger class="w-full border-0 bg-card2 shadow-none">
+													<span data-slot="select-value">
+														{editRdvStatus !== NONE ? rdvStatusLabel(editRdvStatus) : 'Programmé'}
+													</span>
+												</SelectTrigger>
+												<SelectContent>
+													<SelectItem value={NONE}>Programmé</SelectItem>
+													<SelectItem value="déballé">Déballé</SelectItem>
+													<SelectItem value="à reprogrammer">À reprogrammer</SelectItem>
+													<SelectItem value="annulé">Annulé</SelectItem>
+													<SelectItem value="vendu">Vendu</SelectItem>
+												</SelectContent>
+											</Select>
+										</div>
+									{/if}
 								</div>
 							{/if}
 						</div>
@@ -2146,7 +2345,7 @@
 							id="editContactNote"
 							rows={4}
 							bind:value={editNote}
-							class="min-h-28 border-input bg-base"
+							class="min-h-28 border-0 bg-card2 shadow-none"
 						/>
 					</div>
 
@@ -2168,7 +2367,7 @@
 			{#if mode === 'view'}
 				<Popover bind:open={actionsOuvertes}>
 					<PopoverTrigger
-						class="order-1 inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-full border border-line-strong px-3.5 text-[12.5px] font-bold tracking-[0.06em] text-foreground uppercase transition-colors hover:border-brand hover:text-brand aria-expanded:border-brand aria-expanded:text-brand sm:order-none sm:mr-auto"
+						class="order-1 inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-full border-0 bg-card2 px-3.5 text-[12.5px] font-bold tracking-[0.06em] text-foreground uppercase transition-colors hover:bg-glass-3 sm:order-none sm:mr-auto"
 					>
 						<Ellipsis class="size-4" />
 						Plus
@@ -2192,7 +2391,7 @@
 							class={itemAction}
 							onclick={() => {
 								actionsOuvertes = false;
-								printContactSheet();
+								printContactSheet('moderne');
 							}}
 						>
 							{#if isPrinted}
@@ -2220,7 +2419,7 @@
 					</PopoverContent>
 				</Popover>
 
-				{#if !contact?.isClient}
+				{#if !contact?.isClient && canWrite}
 					<Button
 						variant={contact?.statut === 'traité' ? 'default' : 'outline'}
 						onclick={() => {
@@ -2258,15 +2457,6 @@
 		</DialogFooter>
 	</DialogContent>
 
-	{#if contact}
-		<ConfortationDialog
-			bind:open={confortationOpen}
-			contactId={contact._id}
-			commercial={contact.followUp?.commercial ?? ''}
-			onCreated={confortationCreated}
-		/>
-	{/if}
-
 	<SaleDialog
 		bind:open={saleOpen}
 		contactId={contact?._id}
@@ -2284,12 +2474,10 @@
 
 	<!-- Confirmation de suppression du contact / client -->
 	<Dialog bind:open={deleteOpen}>
-		<DialogContent class="max-w-sm rounded-xl border-line bg-card">
+		<DialogContent class="max-w-sm rounded-[22px] border-0 bg-card shadow-none">
 			<DialogHeader>
 				<DialogTitle class="flex items-center gap-2 text-[14px] font-semibold">
-					<span
-						class="grid size-8 place-items-center rounded-lg border border-line bg-card2 text-destructive"
-					>
+					<span class="grid size-8 place-items-center rounded-xl bg-card2 text-destructive">
 						<Trash2 class="size-4" strokeWidth={1.7} />
 					</span>
 					Supprimer {contact?.isClient ? 'le client' : 'le contact'}
@@ -2326,15 +2514,10 @@
 
 	<!-- Popup de saisie de la raison de non-vente (RDV passé en déballé) -->
 	<Dialog bind:open={nonVenteOpen}>
-		<DialogContent
-			class="max-w-sm rounded-xl border-line bg-card"
-			onInteractOutside={(event) => event.preventDefault()}
-		>
+		<DialogContent class="max-w-sm rounded-2xl border-0 bg-card shadow-none">
 			<DialogHeader>
 				<DialogTitle class="flex items-center gap-2 text-[14px] font-semibold">
-					<span
-						class="grid size-8 place-items-center rounded-lg border border-line bg-card2 text-muted-foreground"
-					>
+					<span class="grid size-8 place-items-center rounded-xl bg-card2 text-muted-foreground">
 						📦
 					</span>
 					Raison de la non-vente
@@ -2346,7 +2529,7 @@
 				<select
 					id="nonVenteCode"
 					bind:value={nonVenteCode}
-					class="h-9 w-full rounded-md border border-input bg-base px-2.5 text-[12.5px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
+					class="h-9 w-full rounded-full border-0 bg-card2 px-3.5 text-[12.5px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ink/10"
 				>
 					<option value="">Choisir un motif…</option>
 					{#each NON_VENTE_REASONS as r (r.key)}
@@ -2361,7 +2544,7 @@
 					rows={2}
 					placeholder="Ex : devis 2 000 € au-dessus du budget, rappeler en septembre…"
 					bind:value={nonVenteReason}
-					class="min-h-16 border-input bg-base"
+					class="min-h-16 border-0 bg-card2 shadow-none"
 				/>
 			</div>
 
@@ -2375,7 +2558,10 @@
 				>
 					Annuler
 				</Button>
-				<Button onclick={confirmNonVente} disabled={quickBusy || (!nonVenteReason.trim() && !nonVenteCode)}>
+				<Button
+					onclick={confirmNonVente}
+					disabled={quickBusy || (!nonVenteReason.trim() && !nonVenteCode)}
+				>
 					{#if quickBusy}
 						<LoaderCircle class="size-4 animate-spin" />
 					{/if}
@@ -2387,15 +2573,10 @@
 
 	<!-- Popup de saisie de la raison d'annulation (RDV passé en annulé) -->
 	<Dialog bind:open={annulationOpen}>
-		<DialogContent
-			class="max-w-sm rounded-xl border-line bg-card"
-			onInteractOutside={(event) => event.preventDefault()}
-		>
+		<DialogContent class="max-w-sm rounded-2xl border-0 bg-card shadow-none">
 			<DialogHeader>
 				<DialogTitle class="flex items-center gap-2 text-[14px] font-semibold">
-					<span
-						class="grid size-8 place-items-center rounded-lg border border-line bg-card2 text-muted-foreground"
-					>
+					<span class="grid size-8 place-items-center rounded-xl bg-card2 text-muted-foreground">
 						❌
 					</span>
 					Raison d'annulation
@@ -2407,7 +2588,7 @@
 				<select
 					id="annulationCode"
 					bind:value={annulationCode}
-					class="h-9 w-full rounded-md border border-input bg-base px-2.5 text-[12.5px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
+					class="h-9 w-full rounded-full border-0 bg-card2 px-3.5 text-[12.5px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ink/10"
 				>
 					<option value="">Choisir un motif…</option>
 					{#each ANNULATION_REASONS as r (r.key)}
@@ -2422,7 +2603,7 @@
 					rows={2}
 					placeholder="Ex : client absent, reporté, plus intéressé…"
 					bind:value={annulationReason}
-					class="min-h-16 border-input bg-base"
+					class="min-h-16 border-0 bg-card2 shadow-none"
 				/>
 			</div>
 
@@ -2452,6 +2633,10 @@
 	<AgendaApercuDialog bind:open={editAgendaOpen} />
 
 	{#if contact}
-		<ContactPrintSheet {contact} answers={viewQualif} />
+		{#if printModel === 'classique'}
+			<ContactPrintSheetClassic {contact} answers={viewQualif} />
+		{:else}
+			<ContactPrintSheet {contact} answers={viewQualif} />
+		{/if}
 	{/if}
 </Dialog>

@@ -159,12 +159,12 @@
 </script>
 
 <Dialog bind:open>
-	<DialogContent class="max-h-[90vh] overflow-y-auto rounded-xl border-line bg-card sm:max-w-3xl">
+	<DialogContent
+		class="max-h-[90vh] overflow-y-auto rounded-2xl border-0 bg-card shadow-none sm:max-w-3xl"
+	>
 		<DialogHeader>
 			<DialogTitle class="flex items-center gap-2.5 text-[15px] font-semibold">
-				<span
-					class="grid size-8 place-items-center rounded-lg border border-line bg-card2 text-muted-foreground"
-				>
+				<span class="grid size-8 place-items-center rounded-xl bg-card2 text-muted-foreground">
 					<CalendarDays class="size-4" strokeWidth={1.7} />
 				</span>
 				Agenda
@@ -181,27 +181,21 @@
 			</Button>
 		</div>
 
-		<div class="overflow-x-auto rounded-lg border border-line">
-			<div class="grid min-w-[660px] grid-cols-6 border-b border-line bg-card2/50 max-md:min-w-0">
+		<div class="overflow-x-auto rounded-2xl bg-card2 p-1.5">
+			<div class="grid min-w-[660px] grid-cols-6 gap-0.5 max-md:min-w-0">
 				{#each WEEKDAYS as wd}
 					<div
-						class="px-2 py-2 text-center text-[10px] font-semibold tracking-wider text-muted-foreground uppercase"
+						class="rounded-lg bg-card px-2 py-2 text-center text-[10px] font-semibold tracking-wider text-muted-foreground uppercase"
 					>
 						{wd}
 					</div>
 				{/each}
 			</div>
-			<div class="grid min-w-[660px] grid-cols-6 max-md:min-w-0">
-				{#each monthCells as cell, i}
+			<div class="mt-0.5 grid min-w-[660px] grid-cols-6 gap-0.5 max-md:min-w-0">
+				{#each monthCells as cell}
 					{@const inMonth = cell.getMonth() === anchor.getMonth()}
 					{@const dateISO = toISO(cell)}
-					<div
-						class={[
-							'min-h-[92px] p-1.5 max-md:min-h-[64px] max-md:p-1',
-							i % 6 !== 0 ? 'border-l border-line/50' : '',
-							i < 30 ? 'border-b border-line/50' : ''
-						].join(' ')}
-					>
+					<div class="min-h-[92px] rounded-lg bg-card p-1.5 max-md:min-h-[64px] max-md:p-1">
 						<p
 							class={[
 								'mb-1 flex size-6 items-center justify-center rounded-full text-[12px] font-semibold',
@@ -225,10 +219,10 @@
 											{item.time}
 										</span>
 										<span class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
-										<span class="hidden sm:inline">
-											{item.motif === 'confortation' ? CONFORTATION_EMOJI : RDV_EMOJI}
-										</span>
-										{rdvBlockTitle(item.name, item.motif)}
+											<span class="hidden sm:inline">
+												{item.motif === 'confortation' ? CONFORTATION_EMOJI : RDV_EMOJI}
+											</span>
+											{rdvBlockTitle(item.name, item.motif)}
 										</span>
 									</div>
 								{:else if item.kind === 'evenement'}

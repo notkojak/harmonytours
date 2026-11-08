@@ -13,7 +13,12 @@
 	} from '$lib/components/ui/dialog/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
-	import { Select, SelectContent, SelectItem, SelectTrigger } from '$lib/components/ui/select/index.js';
+	import {
+		Select,
+		SelectContent,
+		SelectItem,
+		SelectTrigger
+	} from '$lib/components/ui/select/index.js';
 
 	export type VentePoseOption = {
 		_id: string;
@@ -91,12 +96,10 @@
 </script>
 
 <Dialog bind:open>
-	<DialogContent class="max-w-md rounded-xl border-line bg-card">
+	<DialogContent class="max-w-md rounded-2xl border-0 bg-card shadow-none">
 		<DialogHeader>
 			<DialogTitle class="flex items-center gap-2 text-[14px] font-semibold">
-				<span
-					class="grid size-8 place-items-center rounded-lg border border-line bg-card2 text-muted-foreground"
-				>
+				<span class="grid size-8 place-items-center rounded-xl bg-card2 text-muted-foreground">
 					<Wrench class="size-4" strokeWidth={1.7} />
 				</span>
 				Date de pose
@@ -107,7 +110,7 @@
 			<div class="space-y-1.5">
 				<Label>Vente concernée</Label>
 				<Select type="single" bind:value={venteId}>
-					<SelectTrigger class="w-full border-input bg-base">
+					<SelectTrigger class="w-full border-0 bg-card2 shadow-none">
 						<span data-slot="select-value">
 							{ventesDispo.find((v) => v._id === venteId)?.contactName ?? 'Choisir une vente'}
 						</span>
@@ -130,11 +133,21 @@
 			<div class="flex gap-3">
 				<div class="flex-1 space-y-1.5">
 					<Label for="poseDate">Date</Label>
-					<Input id="poseDate" type="date" bind:value={date} class="border-input bg-base" />
+					<Input
+						id="poseDate"
+						type="date"
+						bind:value={date}
+						class="border-0 bg-card2 shadow-none"
+					/>
 				</div>
 				<div class="w-28 space-y-1.5">
 					<Label for="poseTime">Heure</Label>
-					<Input id="poseTime" type="time" bind:value={time} class="border-input bg-base" />
+					<Input
+						id="poseTime"
+						type="time"
+						bind:value={time}
+						class="border-0 bg-card2 shadow-none"
+					/>
 				</div>
 			</div>
 
@@ -144,7 +157,7 @@
 					id="poseNote"
 					placeholder="Ex : pose portail, 2e intervention…"
 					bind:value={note}
-					class="border-input bg-base"
+					class="border-0 bg-card2 shadow-none"
 				/>
 			</div>
 

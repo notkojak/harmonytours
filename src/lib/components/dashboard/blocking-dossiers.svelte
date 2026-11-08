@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AlertTriangle, FileX } from '@lucide/svelte';
+	import { FileX } from '@lucide/svelte';
 	import { useQuery } from 'convex-svelte';
 	import { api } from '../../../convex/_generated/api.js';
 	import { authState } from '$lib/auth-state.svelte';
@@ -35,27 +35,28 @@
 </script>
 
 {#if (ventesErreur.data?.length ?? 0) > 0}
-	<Card class="gap-0 rounded-2xl border-line py-0 shadow-none">
-		<CardHeader class="flex items-center justify-between gap-3 px-5 pt-5 pb-0">
-			<CardTitle class="flex items-center gap-2.5 text-[14px] font-semibold text-destructive">
-				<span
-					class="grid size-8 place-items-center rounded-lg border border-destructive/30 bg-destructive/10 text-destructive"
-				>
-					<AlertTriangle class="size-4" strokeWidth={1.7} />
-				</span>
-				Dossiers bloquants
-			</CardTitle>
+	<Card class="gap-0 rounded-2xl border-0 py-0 shadow-none">
+		<CardHeader class="flex flex-wrap items-center justify-between gap-3 px-5 pt-5 pb-0">
+			<div class="min-w-0">
+				<CardTitle class="flex items-center gap-2.5 text-[14px] font-semibold text-destructive">
+					<span class="text-[15px] leading-none" aria-hidden="true">⚠️</span>
+					Dossiers bloquants
+				</CardTitle>
+				<p class="mt-1 pl-6 text-[11.5px] font-medium text-muted-foreground">
+					Ventes en erreur à corriger en priorité
+				</p>
+			</div>
 			<Badge variant="destructive" class="rounded-full px-2.5">
 				{ventesErreur.data?.length ?? 0} en erreur
 			</Badge>
 		</CardHeader>
-		<CardContent class="px-5 pt-2 pb-5">
+		<CardContent class="px-5 pt-3 pb-5">
 			<div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
 				{#each ventesErreur.data ?? [] as vente (vente._id)}
 					<button
 						type="button"
 						onclick={() => openContact(vente.contactId)}
-						class="flex w-full cursor-pointer items-start gap-3 rounded-xl bg-destructive/5 px-3.5 py-2.5 text-left transition-colors hover:bg-destructive/10 focus-visible:ring-2 focus-visible:ring-destructive/40 focus-visible:outline-none"
+						class="flex w-full cursor-pointer items-start gap-3 rounded-2xl bg-destructive/5 px-3.5 py-2.5 text-left transition-colors hover:bg-destructive/10 focus-visible:ring-2 focus-visible:ring-destructive/40 focus-visible:outline-none"
 					>
 						<span
 							class="grid size-8 shrink-0 place-items-center rounded-lg bg-destructive/10 text-destructive"

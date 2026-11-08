@@ -1,6 +1,6 @@
 import { mutation, query, type QueryCtx } from './_generated/server';
 import { v } from 'convex/values';
-import { canManageEmployes, getCurrentUser } from './permissions';
+import { assertCanWriteCrm, canManageEmployes, getCurrentUser } from './permissions';
 import { canViewAllCrm, isUserInScope, visibleAgencyIds } from './access';
 import type { Doc, Id } from './_generated/dataModel';
 
@@ -25,6 +25,10 @@ const tvaDetailValidator = v.optional(
 
 // Mode de paiement d'une vente : comptant, ou financement (dossier FI).
 const paiementValidator = v.optional(v.union(v.literal('comptant'), v.literal('financement')));
+
+// Avancement du dossier après la vente (case « Suivi » du tableau).
+// Seuls les deux états finaux se choisissent ; ils se déduisent des dates.
+const suiviValidator = v.union(v.literal('métrée'), v.literal('posée'));
 
 // Nom affiché d'un utilisateur (même format que celui stocké dans vendeurName).
 function userName(u: { firstName?: string; lastName?: string; email?: string }): string {
@@ -102,6 +106,13 @@ function vendeurLabel(
 
 // Ajoute une vente à un contact : le contact devient un client.
 // Le vendeur est l'utilisateur connecté par défaut, ou le commercial choisi (vendeurId).
+// État du dossier de financement : en attente, accepté par l'organisme ou refusé.
+const fiStatutValidator = v.union(
+	v.literal('en attente'),
+	v.literal('accepté'),
+	v.literal('refusé')
+);
+
 export const addVente = mutation({
 	args: {
 		contactId: v.id('contacts'),
@@ -114,11 +125,14 @@ export const addVente = mutation({
 		// Suivi commercial : vente confortée, mode de paiement et acceptation du
 		// financement (FI) quand le paiement est un financement.
 		confortee: v.optional(v.boolean()),
+		suivi: v.optional(suiviValidator),
 		paiement: paiementValidator,
+		fiStatut: v.optional(fiStatutValidator),
 		fiAccepte: v.optional(v.boolean())
 	},
 	handler: async (ctx, args) => {
 		const user = await getCurrentUser(ctx);
+		assertCanWriteCrm(user);
 		const contact = await ctx.db.get(args.contactId);
 		if (!contact) {
 			throw new Error('Contact introuvable.');
@@ -143,14 +157,22 @@ export const addVente = mutation({
 		const totalTVA = args.produits.reduce((sum, p) => sum + (p.montantHT * p.tva) / 100, 0);
 		const totalTTC = totalHT + totalTVA;
 
+		// Dossier de financement : `fiStatut` fait foi, `fiAccepte` reste écrit pour
+		// les lectures historiques (statistiques, anciens écrans).
+		const fiStatut =
+			args.paiement === 'financement'
+				? (args.fiStatut ?? (args.fiAccepte ? 'accepté' : 'en attente'))
+				: undefined;
+
 		const venteId = await ctx.db.insert('ventes', {
 			statutChangedAt: Date.now(),
 			contactId: args.contactId,
 			vendeurId,
 			vendeurName,
-			// Par défaut « en attente » : la vente n'est comptée dans le CA que
-			// lorsqu'elle passe en « valide » (validation du dossier).
-			statut: 'en attente',
+			// Une vente est validée dès sa saisie : plus de statut « en attente ».
+			statut: 'valide',
+			// Le suivi métrage / pose se remplit ensuite, depuis les dates du dossier.
+			...(args.suivi ? { suivi: args.suivi } : {}),
 			date: args.date ?? Date.now(),
 			produits: args.produits,
 			...(args.tvaDetail ? { tvaDetail: args.tvaDetail } : {}),
@@ -160,9 +182,7 @@ export const addVente = mutation({
 			...(args.confortee !== undefined ? { confortee: args.confortee } : {}),
 			...(args.paiement ? { paiement: args.paiement } : {}),
 			// Le FI n'a de sens que pour un financement : au comptant, rien à stocker.
-			...(args.paiement === 'financement' && args.fiAccepte !== undefined
-				? { fiAccepte: args.fiAccepte }
-				: {}),
+			...(fiStatut ? { fiStatut, fiAccepte: fiStatut === 'accepté' } : {}),
 			agencyId: user.agencyId
 		});
 
@@ -194,6 +214,7 @@ export const updateStatut = mutation({
 	},
 	handler: async (ctx, args) => {
 		const user = await getCurrentUser(ctx);
+		assertCanWriteCrm(user);
 		const vente = await ctx.db.get(args.venteId);
 		if (!vente) {
 			throw new Error('Vente introuvable.');
@@ -400,10 +421,12 @@ export const updateVente = mutation({
 		date: v.optional(v.number()),
 		confortee: v.optional(v.boolean()),
 		paiement: paiementValidator,
+		fiStatut: v.optional(fiStatutValidator),
 		fiAccepte: v.optional(v.boolean())
 	},
 	handler: async (ctx, args) => {
 		const user = await getCurrentUser(ctx);
+		assertCanWriteCrm(user);
 		const vente = await ctx.db.get(args.venteId);
 		if (!vente) {
 			throw new Error('Vente introuvable.');
@@ -435,6 +458,7 @@ export const updateVente = mutation({
 			date?: number;
 			confortee?: boolean;
 			paiement?: 'comptant' | 'financement';
+			fiStatut?: 'en attente' | 'accepté' | 'refusé' | undefined;
 			fiAccepte?: boolean | undefined;
 		} = {
 			produits: args.produits,
@@ -448,8 +472,14 @@ export const updateVente = mutation({
 		if (args.confortee !== undefined) patch.confortee = args.confortee;
 		if (args.paiement !== undefined) {
 			patch.paiement = args.paiement;
-			// Repasser au comptant efface le suivi de financement.
-			patch.fiAccepte = args.paiement === 'financement' ? !!args.fiAccepte : undefined;
+			// Repasser au comptant efface le suivi de financement ; sinon `fiStatut`
+			// fait foi et `fiAccepte` reste écrit pour les lectures historiques.
+			const fiStatut =
+				args.paiement === 'financement'
+					? (args.fiStatut ?? (args.fiAccepte ? 'accepté' : 'en attente'))
+					: undefined;
+			patch.fiStatut = fiStatut;
+			patch.fiAccepte = fiStatut ? fiStatut === 'accepté' : undefined;
 		}
 
 		if (args.vendeurId && args.vendeurId !== vente.vendeurId) {
@@ -468,6 +498,108 @@ export const updateVente = mutation({
 	}
 });
 
+// Change l'avancement du dossier d'une vente (case « Suivi » du tableau).
+// Mêmes droits que la modification de la vente.
+export const updateSuivi = mutation({
+	args: { venteId: v.id('ventes'), suivi: suiviValidator },
+	handler: async (ctx, args) => {
+		const user = await getCurrentUser(ctx);
+		assertCanWriteCrm(user);
+		const vente = await ctx.db.get(args.venteId);
+		if (!vente) throw new Error('Vente introuvable.');
+		const contact = await ctx.db.get(vente.contactId);
+		const allowed =
+			vente.vendeurId === user._id ||
+			(contact && contact.createdBy === user._id) ||
+			canManageEmployes(user);
+		if (!allowed) throw new Error('Non autorisé.');
+		await ctx.db.patch(args.venteId, { suivi: args.suivi });
+	}
+});
+
+// Confortation : le client a confirmé la vente. Case séparée du suivi
+// métrage / pose, modifiable à tout moment depuis la fiche.
+export const setConfortation = mutation({
+	args: { venteId: v.id('ventes'), confortee: v.boolean() },
+	handler: async (ctx, args) => {
+		const user = await getCurrentUser(ctx);
+		assertCanWriteCrm(user);
+		const vente = await ctx.db.get(args.venteId);
+		if (!vente || vente.deletedAt) throw new Error('Vente introuvable.');
+		const contact = await ctx.db.get(vente.contactId);
+		const allowed =
+			vente.vendeurId === user._id ||
+			(contact && contact.createdBy === user._id) ||
+			canManageEmployes(user);
+		if (!allowed) throw new Error('Non autorisé.');
+		await ctx.db.patch(args.venteId, { confortee: args.confortee });
+	}
+});
+
+// Dates du dossier d'une vente : métrage technique et pose, saisies après coup
+// depuis la fiche client/vente. Renseigner une pose avance le suivi en « posée »
+// et recopie la date dans `datesPoses` pour l'agenda ; vider une date revient en
+// arrière. Mêmes droits que la modification de la vente.
+export const setDatesVente = mutation({
+	args: {
+		venteId: v.id('ventes'),
+		dateMetrage: v.optional(v.string()),
+		datePose: v.optional(v.string())
+	},
+	handler: async (ctx, args) => {
+		const user = await getCurrentUser(ctx);
+		assertCanWriteCrm(user);
+		const vente = await ctx.db.get(args.venteId);
+		if (!vente || vente.deletedAt) throw new Error('Vente introuvable.');
+		const contact = await ctx.db.get(vente.contactId);
+		const allowed =
+			vente.vendeurId === user._id ||
+			(contact && contact.createdBy === user._id) ||
+			canManageEmployes(user);
+		if (!allowed) throw new Error('Non autorisé.');
+
+		const isIsoDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s);
+		const patch: Record<string, unknown> = {};
+		// Les autres dates de pose (posées depuis l'ancien agenda) sont conservées.
+		const autresPoses = (vente.datesPoses ?? []).filter((d) => d.id !== 'fiche');
+
+		if (args.dateMetrage !== undefined) {
+			if (args.dateMetrage && !isIsoDate(args.dateMetrage)) {
+				throw new Error('Date de métrage invalide.');
+			}
+			patch.dateMetrage = args.dateMetrage || undefined;
+		}
+
+		if (args.datePose !== undefined) {
+			if (args.datePose && !isIsoDate(args.datePose)) {
+				throw new Error('Date de pose invalide.');
+			}
+			patch.datePose = args.datePose || undefined;
+			patch.datesPoses = args.datePose
+				? [...autresPoses, { id: 'fiche', date: args.datePose }]
+				: autresPoses;
+		}
+
+		// Le suivi se déduit des dates et du calendrier : une pose encore à venir
+		// est « pose programmée », du jour ou passée c'est « posée » (état final).
+		// Même règle pour le métrage. Aucune date ⇒ pas de suivi.
+		const metrage = args.dateMetrage !== undefined ? args.dateMetrage : vente.dateMetrage;
+		const pose = args.datePose !== undefined ? args.datePose : vente.datePose;
+		const jour = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Paris' });
+		patch.suivi = pose
+			? pose > jour
+				? 'pose programmée'
+				: 'posée'
+			: metrage
+				? metrage > jour
+					? 'métré programmé'
+					: 'métrée'
+				: undefined;
+
+		await ctx.db.patch(args.venteId, patch as never);
+	}
+});
+
 // Dates de pose (installation / livraison) d'une vente : elles vivent sur la
 // vente et s'affichent dans l'agenda. Autorisé au vendeur, au créateur du
 // contact ou à un manager — même règle que la modification de la vente.
@@ -480,6 +612,7 @@ export const addDatePose = mutation({
 	},
 	handler: async (ctx, args) => {
 		const user = await getCurrentUser(ctx);
+		assertCanWriteCrm(user);
 		const vente = await ctx.db.get(args.venteId);
 		if (!vente || vente.deletedAt) {
 			throw new Error('Vente introuvable.');
@@ -515,6 +648,7 @@ export const removeDatePose = mutation({
 	args: { venteId: v.id('ventes'), datePoseId: v.string() },
 	handler: async (ctx, args) => {
 		const user = await getCurrentUser(ctx);
+		assertCanWriteCrm(user);
 		const vente = await ctx.db.get(args.venteId);
 		if (!vente) {
 			throw new Error('Vente introuvable.');

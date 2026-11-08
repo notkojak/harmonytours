@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { pageEmojis } from '$lib/data/dashboard';
 	import { onMount, tick } from 'svelte';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import { env } from '$env/dynamic/public';
@@ -6,7 +7,6 @@
 		Camera,
 		Check,
 		Lock,
-		Map as MapIcon,
 		Maximize,
 		Minimize,
 		Pencil,
@@ -26,6 +26,7 @@
 	import type MapboxDraw from '@mapbox/mapbox-gl-draw';
 	import type { Feature, FeatureCollection } from 'geojson';
 	import { Button } from '$lib/components/ui/button/index.js';
+	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card/index.js';
 	import {
 		Dialog,
 		DialogContent,
@@ -1461,354 +1462,388 @@
 	});
 </script>
 
-<div
-	bind:this={wrapper}
-	class="relative h-full min-h-[560px] overflow-hidden rounded-xl border border-line bg-card"
-	class:capture-mode={captureMode}
-	class:fixed={captureMode}
-	class:inset-0={captureMode}
-	class:z-50={captureMode}
-	class:rounded-none={captureMode}
-	class:border-0={captureMode}
->
-	{#if noToken}
-		<div
-			class="absolute top-4 left-1/2 z-20 w-[min(92%,420px)] -translate-x-1/2 rounded-xl border border-line bg-card2 p-4 text-center shadow-lg"
-		>
-			<p class="text-[13px] font-semibold text-foreground">Token Mapbox manquant</p>
-			<p class="mt-1 text-[12px] leading-relaxed text-muted-foreground">
-				Ajoute <code class="rounded bg-muted px-1 py-0.5 text-amber-700 dark:text-amber-300">PUBLIC_MAPBOX_TOKEN</code>
-				au fichier <code class="rounded bg-muted px-1 py-0.5 text-amber-700 dark:text-amber-300">.env</code>
-				(récupérable sur account.mapbox.com), puis relance
-				<code class="rounded bg-muted px-1 py-0.5 text-amber-700 dark:text-amber-300">npm run dev</code>.
-			</p>
-		</div>
-	{/if}
+<div class="space-y-5">
+	<Card class="gap-0 rounded-2xl border-0 py-0 shadow-none">
+		<CardHeader class="flex flex-wrap items-center justify-between gap-3 px-5 pt-5 pb-0">
+			<div class="min-w-0">
+				<CardTitle class="flex items-center gap-2.5 text-[14px] font-semibold">
+					<span class="text-[15px] leading-none" aria-hidden="true">{pageEmojis['/zones']}</span>
+					Zones de prospection
+				</CardTitle>
+				<p class="mt-1 pl-6 text-[11.5px] font-medium text-muted-foreground">
+					{zoneCount} zone{zoneCount > 1 ? 's' : ''} · {gmsList.length} GMS en cours
+				</p>
+			</div>
 
-	<!-- Wrapper absolu : mapboxgl force `position: relative` sur le conteneur
+			<div class="flex flex-wrap items-center gap-2">
+				<!-- Recherche d'une ville : la carte se cale dessus -->
+				<div class="relative">
+					<Search
+						class="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground"
+						strokeWidth={1.7}
+					/>
+					<input
+						type="search"
+						value={cityQuery}
+						oninput={onCityInput}
+						onfocus={() => (cityOpen = citySuggestions.length > 0)}
+						placeholder="Chercher une ville…"
+						class="h-9 w-56 rounded-full border-0 bg-card2 pr-3 pl-8 text-[13px] text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ink/10"
+					/>
+					{#if citySearching}
+						<p class="absolute top-full left-0 mt-1 px-1 text-[11px] text-muted-foreground">
+							Recherche…
+						</p>
+					{/if}
+					{#if cityOpen}
+						<div
+							class="absolute z-30 mt-1 flex w-full flex-col overflow-hidden rounded-xl bg-card py-1 shadow-[0_18px_50px_-24px_rgba(0,0,0,0.5)] ring-1 ring-black/5"
+						>
+							{#each citySuggestions as s (s.label)}
+								<button
+									type="button"
+									class="truncate px-3 py-2 text-left text-[12px] text-foreground transition-colors hover:bg-card2"
+									onclick={() => pickCity(s)}
+								>
+									{s.label}
+								</button>
+							{/each}
+						</div>
+					{/if}
+				</div>
+
+				<Button variant="outline" size="sm" class="h-9 gap-1.5 px-3.5" onclick={enterCaptureMode}>
+					<Maximize class="size-3.5" strokeWidth={1.7} />
+					Plein écran
+				</Button>
+
+				{#if $editing}
+					<Button size="sm" class="h-9 gap-1.5 px-3.5" onclick={startDrawing}>
+						<Plus class="size-3.5" strokeWidth={2} />
+						Nouvelle zone
+					</Button>
+					<Button variant="outline" size="sm" class="h-9 gap-1.5 px-3.5" onclick={startPlacingGms}>
+						<span class="text-[13px] leading-none">🏪</span>
+						GMS
+					</Button>
+				{/if}
+			</div>
+		</CardHeader>
+
+		<CardContent class="px-5 pt-4 pb-5">
+			<div
+				bind:this={wrapper}
+				class={[
+					'relative overflow-hidden rounded-2xl bg-card2',
+					captureMode
+						? 'capture-mode fixed inset-0 z-50 h-dvh rounded-none'
+						: 'h-[calc(100dvh-12rem)] min-h-[520px]'
+				].join(' ')}
+			>
+				{#if noToken}
+					<div
+						class="absolute top-4 left-1/2 z-20 w-[min(92%,420px)] -translate-x-1/2 rounded-xl border border-line bg-card2 p-4 text-center shadow-lg"
+					>
+						<p class="text-[13px] font-semibold text-foreground">Token Mapbox manquant</p>
+						<p class="mt-1 text-[12px] leading-relaxed text-muted-foreground">
+							Ajoute <code class="rounded bg-muted px-1 py-0.5 text-amber-700 dark:text-amber-300"
+								>PUBLIC_MAPBOX_TOKEN</code
+							>
+							au fichier
+							<code class="rounded bg-muted px-1 py-0.5 text-amber-700 dark:text-amber-300"
+								>.env</code
+							>
+							(récupérable sur account.mapbox.com), puis relance
+							<code class="rounded bg-muted px-1 py-0.5 text-amber-700 dark:text-amber-300"
+								>npm run dev</code
+							>.
+						</p>
+					</div>
+				{/if}
+
+				<!-- Wrapper absolu : mapboxgl force `position: relative` sur le conteneur
 		     (.mapboxgl-map), ce qui écraserait le `absolute inset-0` de Tailwind
 		     et ferait s'effondrer la carte à 0 px de haut. -->
-	<div class="absolute inset-0">
-		<div class="h-full w-full" bind:this={container}></div>
-	</div>
+				<div class="absolute inset-0">
+					<div class="h-full w-full" bind:this={container}></div>
+				</div>
 
-	<!-- Barre d'outils du mode capture : discrète et masquée automatiquement
+				<!-- Barre d'outils du mode capture : discrète et masquée automatiquement
 	     après quelques secondes, pour laisser la carte totalement dégagée. -->
-	{#if captureMode}
-		<div
-			class="absolute top-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-full border border-white/15 bg-black/60 p-1 shadow-lg backdrop-blur transition-opacity duration-300"
-			class:pointer-events-none={!captureUiVisible}
-			class:opacity-0={!captureUiVisible}
-			class:opacity-100={captureUiVisible}
-		>
-			<button
-				type="button"
-				class="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold text-white transition-colors hover:bg-white/15"
-				title="Télécharger un PNG de la carte (zones et titres inclus)"
-				onclick={downloadMapImage}
-			>
-				<Camera class="size-4" strokeWidth={1.8} />
-				Télécharger l'image
-			</button>
-			<span class="h-4 w-px bg-white/20"></span>
-			<button
-				type="button"
-				class="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold text-white/80 transition-colors hover:bg-white/15 hover:text-white"
-				title="Quitter le plein écran (Échap)"
-				onclick={exitCaptureMode}
-			>
-				<Minimize class="size-4" strokeWidth={1.8} />
-				Quitter
-			</button>
-		</div>
-	{/if}
-
-	{#if !captureMode}
-		<!-- Panneau latéral : actions + légende -->
-		<aside
-			class="absolute top-4 right-4 z-10 flex max-h-[calc(100%-2rem)] w-72 max-w-[calc(100%-2rem)] flex-col gap-3 overflow-y-auto overscroll-contain rounded-xl border border-line bg-surface/85 p-4 shadow-lg backdrop-blur"
-		>
-			<header class="flex items-center justify-between gap-2">
-				<div class="flex min-w-0 items-center gap-2.5">
-					<span
-						class="grid size-8 shrink-0 place-items-center rounded-lg border border-line bg-card2 text-muted-foreground"
-					>
-						<MapIcon class="size-4" strokeWidth={1.7} />
-					</span>
-					<div class="min-w-0 leading-tight">
-						<p class="truncate text-[13px] font-semibold text-foreground">Zones de prospection</p>
-						<p class="text-[11px] font-medium text-muted-foreground">
-							{zoneCount} zone{zoneCount > 1 ? 's' : ''}
-						</p>
-					</div>
-				</div>
-			</header>
-
-			<!-- Recherche d'une ville : la carte se cale dessus -->
-			<div class="relative">
-				<Search
-					class="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground"
-					strokeWidth={1.7}
-				/>
-				<input
-					type="search"
-					value={cityQuery}
-					oninput={onCityInput}
-					onfocus={() => (cityOpen = citySuggestions.length > 0)}
-					placeholder="Chercher une ville…"
-					class="h-9 w-full rounded-lg border border-line bg-base pr-2.5 pl-8 text-[12px] text-foreground placeholder:text-muted-foreground focus:border-line focus:outline-none"
-				/>
-				{#if citySearching}
-					<p class="px-0.5 pt-1 text-[11px] text-muted-foreground">Recherche…</p>
-				{/if}
-				{#if cityOpen}
+				{#if captureMode}
 					<div
-						class="absolute z-20 mt-1 flex w-full flex-col overflow-hidden rounded-lg border border-line bg-card shadow-lg"
+						class="absolute top-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-full border border-white/15 bg-black/60 p-1 shadow-lg backdrop-blur transition-opacity duration-300"
+						class:pointer-events-none={!captureUiVisible}
+						class:opacity-0={!captureUiVisible}
+						class:opacity-100={captureUiVisible}
 					>
-						{#each citySuggestions as s (s.label)}
-							<button
-								type="button"
-								class="truncate px-3 py-2 text-left text-[12px] text-foreground transition-colors hover:bg-glass-3"
-								onclick={() => pickCity(s)}
-							>
-								{s.label}
-							</button>
-						{/each}
-					</div>
-				{/if}
-			</div>
-
-			<Button variant="outline" class="w-full justify-center gap-2" onclick={enterCaptureMode}>
-				<Maximize class="size-4" strokeWidth={1.7} />
-				Plein écran
-			</Button>
-
-			{#if zonesErrorMessage}
-				<div
-					class="flex flex-col gap-1 rounded-lg border border-rose-500/60 bg-rose-500/10 p-2.5 text-[11.5px] leading-relaxed"
-				>
-					<p class="flex items-center gap-1.5 font-semibold text-rose-700 dark:text-rose-300">
-						<TriangleAlert class="size-3.5" strokeWidth={1.7} />
-						Erreur
-					</p>
-					<p class="text-muted-foreground">{zonesErrorMessage}</p>
-				</div>
-			{/if}
-
-			{#if $editing}
-				<Button
-					class="w-full bg-primary text-primary-foreground hover:bg-primary/80"
-					onclick={startDrawing}
-				>
-					<Plus class="size-4" strokeWidth={2} />
-					Nouvelle zone
-				</Button>
-			{/if}
-
-			{#if $editing}
-				<Button variant="outline" class="w-full" onclick={startPlacingGms}>
-					<span class="text-[14px] leading-none">🏪</span>
-					Ajouter une GMS
-				</Button>
-			{/if}
-
-			{#if placingGms}
-				<div
-					class="rounded-lg border border-amber-500/50 bg-amber-500/10 p-2.5 text-[11.5px] leading-relaxed text-amber-700 dark:text-amber-300"
-				>
-					Clique sur la carte à l'emplacement de la GMS pour poser le pin 🏪.
-				</div>
-			{/if}
-
-			{#if $drawing}
-				<div
-					class="rounded-lg border border-amber-500/50 bg-amber-500/10 p-2.5 text-[11.5px] leading-relaxed text-amber-700 dark:text-amber-300"
-				>
-					Clique sur la carte pour poser les points, puis double-clic pour fermer la zone.
-				</div>
-			{/if}
-
-			<div
-				class="hidden flex-col gap-1.5 rounded-lg border border-line bg-card2 p-2.5 text-[11.5px] sm:flex"
-			>
-				<div class="flex items-center gap-2 text-muted-foreground">
-					<span class="size-2.5 shrink-0 rounded-full" style={`background:${ZONE_RED}`}></span>
-					Rouge : jours avant re-prospection
-				</div>
-				<div class="flex items-center gap-2 text-muted-foreground">
-					<span class="size-2.5 shrink-0 rounded-full" style={`background:${DEFAULT_ZONE_COLOR}`}
-					></span>
-					Autres zones : nom des commerciaux
-				</div>
-				<div class="flex items-center gap-2 text-muted-foreground">
-					<span class="size-2.5 shrink-0 rounded-full" style={`background:${COLOR_OLD}`}></span>
-					Repassée en vert après 6 mois
-				</div>
-			</div>
-
-			<!-- GMS en cours : pins 🏪 avec leur intitulé -->
-			{#if gmsList.length}
-				<div class="flex flex-col gap-1.5 rounded-lg border border-line bg-card2 p-2.5">
-					<p class="text-[10.5px] font-semibold tracking-wider text-muted-foreground uppercase">
-						GMS en cours ({gmsList.length})
-					</p>
-					<div class="flex max-h-40 flex-col gap-1 overflow-y-auto pr-0.5">
-						{#each gmsList as g (g.externalId)}
-							<div class="flex items-center justify-between gap-2 rounded-md bg-base px-2 py-1">
-								<span
-									class="flex min-w-0 items-center gap-1.5 text-[12px] font-medium text-foreground"
-								>
-									<span class="shrink-0 text-[12px]">🏪</span>
-									<span class="truncate">{g.label}</span>
-								</span>
-								{#if $editing}
-									<button
-										type="button"
-										class="grid size-5.5 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-glass-3 hover:text-foreground"
-										title="Modifier l'intitulé"
-										onclick={() => openGmsEdit(g.externalId)}
-									>
-										<Pencil class="size-3.5" strokeWidth={1.7} />
-									</button>
-								{/if}
-							</div>
-						{/each}
-					</div>
-				</div>
-			{/if}
-		</aside>
-
-		<!-- Fiche de la zone sélectionnée -->
-		{#if selectedZone}
-			{@const z = selectedZone}
-			<div
-				class="absolute top-4 left-4 z-10 flex w-72 max-w-[calc(100%-2rem)] flex-col gap-2.5 rounded-xl border border-line bg-surface/85 p-4 shadow-lg backdrop-blur"
-			>
-				<div class="flex items-start justify-between gap-2">
-					<div class="flex min-w-0 items-center gap-2">
-						<span
-							class="size-3.5 shrink-0 rounded-full border border-white/40"
-							style={`background:${zoneColor(z)}`}
-						></span>
-						<div class="min-w-0 leading-tight">
-							<p
-								class="line-clamp-2 text-[15px] leading-snug font-semibold tracking-tight text-foreground"
-							>
-								{zoneTitle(z.commercialIds)}
-							</p>
-							<div class="mt-0.5 flex items-center gap-1">
-								{#each z.commercialIds as cid (cid)}
-									<Avatar
-										photo={personPhoto(cid)}
-										label={personName(cid)[0] ?? '·'}
-										class="size-4 border border-line text-[8px]"
-									/>
-								{/each}
-								<p class="text-[11px] font-medium text-muted-foreground">Zone de prospection</p>
-							</div>
-						</div>
-					</div>
-					<div class="flex shrink-0 items-center gap-1">
-						{#if $editing}
-							<button
-								type="button"
-								class="grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-glass-3 hover:text-foreground"
-								title="Modifier le nom et la couleur"
-								onclick={() => openZoneEdit(z)}
-							>
-								<Pencil class="size-3.5" strokeWidth={1.7} />
-							</button>
-						{/if}
 						<button
 							type="button"
-							class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-glass-3 hover:text-foreground"
-							title="Fermer"
-							onclick={() => (selectedId = null)}
+							class="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold text-white transition-colors hover:bg-white/15"
+							title="Télécharger un PNG de la carte (zones et titres inclus)"
+							onclick={downloadMapImage}
 						>
-							<X class="size-3.5" />
+							<Camera class="size-4" strokeWidth={1.8} />
+							Télécharger l'image
+						</button>
+						<span class="h-4 w-px bg-white/20"></span>
+						<button
+							type="button"
+							class="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold text-white/80 transition-colors hover:bg-white/15 hover:text-white"
+							title="Quitter le plein écran (Échap)"
+							onclick={exitCaptureMode}
+						>
+							<Minimize class="size-4" strokeWidth={1.8} />
+							Quitter
 						</button>
 					</div>
-				</div>
+				{/if}
 
-				<div class="space-y-1.5 text-[12px]">
-					<div class="flex items-center justify-between gap-3">
-						<span class="text-muted-foreground">Dernière prospection</span>
-						<span class="font-semibold text-foreground">{formatDate(z.lastProspected)}</span>
-					</div>
-					<div class="flex items-center justify-between gap-3">
-						<span class="text-muted-foreground">Prochaine prospection</span>
-						<span class="font-semibold text-foreground">
-							{z.lastProspected ? formatDate(nextProspectionDateISO(z.lastProspected)) : '—'}
-						</span>
-					</div>
-					<div class="flex items-center justify-between gap-3">
-						<span class="text-muted-foreground">Statut</span>
-						<span class="font-semibold" style={`color:${zoneColor(z)}`}>{zoneStatus(z)}</span>
-					</div>
-				</div>
+				{#if !captureMode}
+					<!-- Panneau repères : légende + GMS -->
+					<aside
+						class="absolute top-4 right-4 z-10 flex max-h-[calc(100%-2rem)] w-64 max-w-[calc(100%-2rem)] flex-col gap-2.5 overflow-y-auto overscroll-contain rounded-2xl bg-surface/90 p-3.5 shadow-[0_18px_50px_-24px_rgba(0,0,0,0.55)] ring-1 ring-black/5 backdrop-blur"
+					>
+						<header class="flex items-center justify-between gap-2 px-0.5">
+							<p class="text-[12px] font-semibold text-foreground">Repères</p>
+							<span
+								class="rounded-full bg-card2 px-2 py-0.5 text-[10.5px] font-semibold text-muted-foreground tabular-nums"
+							>
+								{zoneCount} zone{zoneCount > 1 ? 's' : ''}
+							</span>
+						</header>
 
-				{#if selectedZoneGms.length}
-					<div class="space-y-1.5 border-t border-line pt-2.5">
-						<p class="text-[10.5px] font-semibold tracking-wider text-muted-foreground uppercase">
-							GMS en cours ({selectedZoneGms.length})
-						</p>
-						{#each selectedZoneGms as g (g.externalId)}
+						{#if zonesErrorMessage}
 							<div
-								class="flex items-center justify-between gap-2 rounded-lg border border-line bg-card2 px-2.5 py-1.5"
+								class="flex flex-col gap-1 rounded-xl bg-rose-500/10 p-2.5 text-[11.5px] leading-relaxed"
+							>
+								<p class="flex items-center gap-1.5 font-semibold text-rose-700 dark:text-rose-300">
+									<TriangleAlert class="size-3.5" strokeWidth={1.7} />
+									Erreur
+								</p>
+								<p class="text-muted-foreground">{zonesErrorMessage}</p>
+							</div>
+						{/if}
+
+						{#if placingGms}
+							<div
+								class="rounded-xl bg-amber-500/10 p-2.5 text-[11.5px] leading-relaxed text-amber-700 dark:text-amber-300"
+							>
+								Clique sur la carte à l'emplacement de la GMS pour poser le pin 🏪.
+							</div>
+						{/if}
+
+						{#if $drawing}
+							<div
+								class="rounded-xl bg-amber-500/10 p-2.5 text-[11.5px] leading-relaxed text-amber-700 dark:text-amber-300"
+							>
+								Clique sur la carte pour poser les points, puis double-clic pour fermer la zone.
+							</div>
+						{/if}
+
+						<div class="hidden flex-col gap-1 sm:flex">
+							<div
+								class="flex items-center gap-2 rounded-xl bg-card2 px-2.5 py-1.5 text-[11.5px] text-muted-foreground"
+							>
+								<span class="size-2.5 shrink-0 rounded-full" style={`background:${ZONE_RED}`}
+								></span>
+								Rouge : jours avant re-prospection
+							</div>
+							<div
+								class="flex items-center gap-2 rounded-xl bg-card2 px-2.5 py-1.5 text-[11.5px] text-muted-foreground"
 							>
 								<span
-									class="flex min-w-0 items-center gap-1.5 text-[12px] font-medium text-foreground"
+									class="size-2.5 shrink-0 rounded-full"
+									style={`background:${DEFAULT_ZONE_COLOR}`}
+								></span>
+								Autres zones : nom des commerciaux
+							</div>
+							<div
+								class="flex items-center gap-2 rounded-xl bg-card2 px-2.5 py-1.5 text-[11.5px] text-muted-foreground"
+							>
+								<span class="size-2.5 shrink-0 rounded-full" style={`background:${COLOR_OLD}`}
+								></span>
+								Repassée en vert après 6 mois
+							</div>
+						</div>
+
+						<!-- GMS en cours : pins 🏪 avec leur intitulé -->
+						{#if gmsList.length}
+							<div class="flex flex-col gap-1.5 border-t border-line pt-2.5">
+								<p
+									class="px-0.5 text-[10.5px] font-semibold tracking-wider text-muted-foreground uppercase"
 								>
-									<span class="shrink-0 text-[13px]">🏪</span>
-									<span class="truncate">{g.label}</span>
-								</span>
-								{#if $editing}
+									GMS en cours ({gmsList.length})
+								</p>
+								<div class="flex max-h-40 flex-col gap-1 overflow-y-auto pr-0.5">
+									{#each gmsList as g (g.externalId)}
+										<div
+											class="flex items-center justify-between gap-2 rounded-xl bg-card2 px-2.5 py-1.5"
+										>
+											<span
+												class="flex min-w-0 items-center gap-1.5 text-[12px] font-medium text-foreground"
+											>
+												<span class="shrink-0 text-[12px]">🏪</span>
+												<span class="truncate">{g.label}</span>
+											</span>
+											{#if $editing}
+												<button
+													type="button"
+													class="grid size-5.5 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
+													title="Modifier l'intitulé"
+													onclick={() => openGmsEdit(g.externalId)}
+												>
+													<Pencil class="size-3.5" strokeWidth={1.7} />
+												</button>
+											{/if}
+										</div>
+									{/each}
+								</div>
+							</div>
+						{/if}
+					</aside>
+
+					<!-- Fiche de la zone sélectionnée -->
+					{#if selectedZone}
+						{@const z = selectedZone}
+						<div
+							class="absolute top-4 left-4 z-10 flex w-72 max-w-[calc(100%-2rem)] flex-col gap-2.5 rounded-2xl bg-surface/90 p-4 shadow-[0_18px_50px_-24px_rgba(0,0,0,0.55)] ring-1 ring-black/5 backdrop-blur"
+						>
+							<div class="flex items-start justify-between gap-2">
+								<div class="flex min-w-0 items-center gap-2">
+									<span
+										class="size-3.5 shrink-0 rounded-full border border-white/40"
+										style={`background:${zoneColor(z)}`}
+									></span>
+									<div class="min-w-0 leading-tight">
+										<p
+											class="line-clamp-2 text-[15px] leading-snug font-semibold tracking-tight text-foreground"
+										>
+											{zoneTitle(z.commercialIds)}
+										</p>
+										<div class="mt-0.5 flex items-center gap-1">
+											{#each z.commercialIds as cid (cid)}
+												<Avatar
+													photo={personPhoto(cid)}
+													label={personName(cid)[0] ?? '·'}
+													class="size-4 border border-line text-[8px]"
+												/>
+											{/each}
+											<p class="text-[11px] font-medium text-muted-foreground">
+												Zone de prospection
+											</p>
+										</div>
+									</div>
+								</div>
+								<div class="flex shrink-0 items-center gap-1">
+									{#if $editing}
+										<button
+											type="button"
+											class="grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-glass-3 hover:text-foreground"
+											title="Modifier le nom et la couleur"
+											onclick={() => openZoneEdit(z)}
+										>
+											<Pencil class="size-3.5" strokeWidth={1.7} />
+										</button>
+									{/if}
 									<button
 										type="button"
 										class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-glass-3 hover:text-foreground"
-										title="Modifier l'intitulé"
-										onclick={() => openGmsEdit(g.externalId)}
+										title="Fermer"
+										onclick={() => (selectedId = null)}
 									>
-										<Pencil class="size-3.5" strokeWidth={1.7} />
+										<X class="size-3.5" />
 									</button>
-								{/if}
+								</div>
 							</div>
-						{/each}
-					</div>
-				{/if}
 
-				{#if $editing}
-					<div class="space-y-2 border-t border-line pt-2.5">
-						<div class="space-y-1">
-							<Label class="text-[11px] font-medium text-muted-foreground"
-								>Dernière prospection</Label
-							>
-							<Input
-								type="date"
-								value={z.lastProspected ?? ''}
-								oninput={(e) =>
-									saveZone({
-										id: z.id,
-										name: z.name,
-										lastProspected: e.currentTarget.value,
-										createdAt: z.createdAt,
-										geometry: z.geometry,
-										color: z.color ?? undefined,
-										greenWhenOld: z.greenWhenOld,
-										commercialIds: z.commercialIds as Id<'users'>[]
-									})}
-								class="h-8 border-input bg-base text-[12px]"
-							/>
+							<div class="divide-y divide-line rounded-xl bg-card2 px-3 text-[12px]">
+								<div class="flex items-center justify-between gap-3 py-1.5">
+									<span class="text-muted-foreground">Dernière prospection</span>
+									<span class="font-semibold text-foreground">{formatDate(z.lastProspected)}</span>
+								</div>
+								<div class="flex items-center justify-between gap-3 py-1.5">
+									<span class="text-muted-foreground">Prochaine prospection</span>
+									<span class="font-semibold text-foreground">
+										{z.lastProspected ? formatDate(nextProspectionDateISO(z.lastProspected)) : '—'}
+									</span>
+								</div>
+								<div class="flex items-center justify-between gap-3 py-1.5">
+									<span class="text-muted-foreground">Statut</span>
+									<span
+										class="inline-flex rounded-full bg-card px-2 py-0.5 text-[11px] font-semibold"
+										style={`color:${zoneColor(z)}`}>{zoneStatus(z)}</span
+									>
+								</div>
+							</div>
+
+							{#if selectedZoneGms.length}
+								<div class="space-y-1.5 border-t border-line pt-2.5">
+									<p
+										class="text-[10.5px] font-semibold tracking-wider text-muted-foreground uppercase"
+									>
+										GMS en cours ({selectedZoneGms.length})
+									</p>
+									{#each selectedZoneGms as g (g.externalId)}
+										<div
+											class="flex items-center justify-between gap-2 rounded-xl bg-card2 px-2.5 py-1.5"
+										>
+											<span
+												class="flex min-w-0 items-center gap-1.5 text-[12px] font-medium text-foreground"
+											>
+												<span class="shrink-0 text-[13px]">🏪</span>
+												<span class="truncate">{g.label}</span>
+											</span>
+											{#if $editing}
+												<button
+													type="button"
+													class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-glass-3 hover:text-foreground"
+													title="Modifier l'intitulé"
+													onclick={() => openGmsEdit(g.externalId)}
+												>
+													<Pencil class="size-3.5" strokeWidth={1.7} />
+												</button>
+											{/if}
+										</div>
+									{/each}
+								</div>
+							{/if}
+
+							{#if $editing}
+								<div class="space-y-2 border-t border-line pt-2.5">
+									<div class="space-y-1">
+										<Label class="text-[11px] font-medium text-muted-foreground"
+											>Dernière prospection</Label
+										>
+										<Input
+											type="date"
+											value={z.lastProspected ?? ''}
+											oninput={(e) =>
+												saveZone({
+													id: z.id,
+													name: z.name,
+													lastProspected: e.currentTarget.value,
+													createdAt: z.createdAt,
+													geometry: z.geometry,
+													color: z.color ?? undefined,
+													greenWhenOld: z.greenWhenOld,
+													commercialIds: z.commercialIds as Id<'users'>[]
+												})}
+											class="h-8 rounded-full border-0 bg-card2 text-[12px] shadow-none"
+										/>
+									</div>
+									<Button class="h-8 w-full bg-rose-600 hover:bg-rose-500" onclick={deleteSelected}>
+										<Trash2 class="size-3.5" strokeWidth={1.7} />
+										Supprimer le secteur
+									</Button>
+								</div>
+							{/if}
 						</div>
-						<Button class="h-8 w-full bg-rose-600 hover:bg-rose-500" onclick={deleteSelected}>
-							<Trash2 class="size-3.5" strokeWidth={1.7} />
-							Supprimer le secteur
-						</Button>
-					</div>
+					{/if}
 				{/if}
 			</div>
-		{/if}
-	{/if}
+		</CardContent>
+	</Card>
 </div>
 
 <!-- Déverrouillage / verrouillage de l'édition -->

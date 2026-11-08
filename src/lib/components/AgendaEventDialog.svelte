@@ -306,9 +306,13 @@
 </script>
 
 <Dialog bind:open>
-	<DialogContent class="max-h-[88svh] overflow-y-auto rounded-xl border-line bg-card sm:max-w-md">
+	<DialogContent
+		class="max-h-[88svh] overflow-y-auto rounded-2xl border-0 bg-card shadow-none sm:max-w-md"
+	>
 		<DialogHeader>
-			<DialogTitle>{isEditing ? "Modifier l'événement" : 'Nouvel événement'}</DialogTitle>
+			<DialogTitle class="text-[15px] font-semibold"
+				>{isEditing ? "Modifier l'événement" : 'Nouvel événement'}</DialogTitle
+			>
 			<DialogDescription>
 				{isEditing
 					? "Modifie les informations de l'événement de l'agenda partagé."
@@ -325,10 +329,10 @@
 							type="button"
 							onclick={() => selectType(t.value)}
 							class={[
-								'flex items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-[12px] font-medium transition-colors',
+								'flex items-center gap-2 rounded-full px-2.5 py-2 text-left text-[12px] font-medium transition-colors',
 								type === t.value
-									? `${EVENT_STYLE[t.value]} ring-1 ring-brand/40`
-									: 'border-input bg-base text-muted-foreground hover:text-foreground'
+									? EVENT_STYLE[t.value]
+									: 'bg-card2 text-muted-foreground hover:bg-glass-3 hover:text-foreground'
 							].join(' ')}
 						>
 							<span class="text-[13px] leading-none">{t.emoji}</span>
@@ -344,7 +348,7 @@
 					id="event-titre"
 					bind:value={titre}
 					placeholder="Intitulé de l'événement"
-					class="border-input bg-base"
+					class="border-0 bg-card2 shadow-none"
 				/>
 			</div>
 			<div class="grid grid-cols-2 gap-2">
@@ -352,12 +356,15 @@
 					<Label>Date</Label>
 					<Popover>
 						<PopoverTrigger
-							class="flex h-9 w-full items-center gap-2 rounded-md border border-line bg-base px-3 text-[12.5px] font-medium text-foreground transition-colors hover:bg-card2"
+							class="flex h-9 w-full items-center gap-2 rounded-full bg-card2 px-3 text-[12.5px] font-medium text-foreground transition-colors hover:bg-glass-3"
 						>
 							<CalendarDays class="size-3.5 shrink-0 text-muted-foreground" strokeWidth={1.7} />
 							{formattedDate}
 						</PopoverTrigger>
-						<PopoverContent class="w-auto rounded-xl border-line bg-card p-0" align="start">
+						<PopoverContent
+							class="w-auto rounded-2xl border-0 bg-card p-0 shadow-none"
+							align="start"
+						>
 							<Calendar
 								locale="fr-FR"
 								type="single"
@@ -374,7 +381,7 @@
 							id="event-start"
 							type="time"
 							bind:value={start}
-							class="h-9 border-input bg-base text-[12px]"
+							class="h-9 border-0 bg-card2 text-[13px] shadow-none"
 						/>
 					</div>
 					<div class="space-y-1.5">
@@ -383,7 +390,7 @@
 							id="event-end"
 							type="time"
 							bind:value={end}
-							class="h-9 border-input bg-base text-[12px]"
+							class="h-9 border-0 bg-card2 text-[13px] shadow-none"
 						/>
 					</div>
 				</div>
@@ -404,7 +411,7 @@
 					</div>
 
 					{#each sections as section, si}
-						<div class="space-y-2 rounded-lg border border-line bg-base p-2.5">
+						<div class="space-y-2 rounded-xl bg-card2 p-2.5">
 							<div class="flex items-center justify-between gap-2">
 								<span
 									class="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase"
@@ -426,7 +433,7 @@
 								<Label class="text-[11.5px]">Nom de l'équipe</Label>
 								<Input
 									placeholder="Équipe A, Équipe 2…"
-									class="h-8 border-input bg-base text-[12.5px]"
+									class="h-8 border-0 bg-card2 text-[13px] shadow-none"
 									oninput={(e) => (sections[si].nom = (e.currentTarget as HTMLInputElement).value)}
 								/>
 							</div>
@@ -437,13 +444,13 @@
 									<Input
 										value={sections[si].secteur}
 										placeholder="Ex. : Tours Nord, Châtellerault…"
-										class="border-input bg-base"
+										class="border-0 bg-card2 shadow-none"
 										oninput={(e) => onSecteurInput(e, si)}
 										onblur={() => setTimeout(() => (showSuggestions = false), 150)}
 									/>
 									{#if showSuggestions && suggestIndex === si && suggestions.length > 0}
 										<div
-											class="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border border-line bg-card shadow-lg"
+											class="absolute z-20 mt-1 w-full overflow-hidden rounded-xl bg-card shadow-lg"
 										>
 											{#each suggestions as s}
 												<button
@@ -467,9 +474,7 @@
 								{#if membres.length === 0}
 									<p class="text-[12px] text-muted-foreground">Aucun membre disponible.</p>
 								{:else}
-									<div
-										class="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-line bg-base p-2"
-									>
+									<div class="max-h-40 space-y-1 overflow-y-auto rounded-xl bg-card2 p-2">
 										{#each membres as membre}
 											<label
 												class="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-[12.5px] transition-colors hover:bg-glass-2"
@@ -504,7 +509,7 @@
 				<X class="size-4" />
 				Annuler
 			</Button>
-			<Button onclick={save} disabled={busy} class="bg-white text-black hover:bg-white/90">
+			<Button onclick={save} disabled={busy}>
 				{#if busy}
 					<LoaderCircle class="size-4 animate-spin" />
 				{/if}

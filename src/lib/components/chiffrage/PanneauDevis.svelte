@@ -23,7 +23,7 @@
 	} from '$lib/data/book';
 	import { REMISE_MAX, RESPONSABLE_POSES, type Deblocage } from '$lib/data/deblocage';
 	import { effacerChantiers } from '$lib/data/regroupement';
-	import { CARTE_SUCCES, TEXTE_SUCCES } from '$lib/chiffrage-style';
+	import { TEXTE_SUCCES } from '$lib/chiffrage-style';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { useQuery } from 'convex-svelte';
 	import { api } from '../../../convex/_generated/api.js';
@@ -136,7 +136,7 @@
 	const uniteLabel = (u: string) => (u === 'u' ? '' : u === 'm2' ? ' m²' : ' ml');
 </script>
 
-<div class="flex flex-col gap-3 rounded-2xl border border-line bg-card p-3.5 shadow-[var(--ombre)]">
+<div class="flex flex-col gap-3 rounded-2xl bg-card2 p-3.5">
 	<div class="flex items-center gap-2">
 		<ShoppingCart class="size-4 text-ink-soft" strokeWidth={1.7} />
 		<p class="text-[13px] font-semibold text-ink">Devis</p>
@@ -157,9 +157,7 @@
 	</div>
 
 	{#if lignes.length === 0}
-		<div
-			class="rounded-2xl border border-dashed border-line px-4 py-8 text-center text-[12.5px] text-ink-soft"
-		>
+		<div class="rounded-2xl bg-card px-4 py-8 text-center text-[12.5px] text-ink-soft">
 			Ton devis est vide.<br />
 			Choisis une gamme, règle les cotes, puis ajoute : le total se met à jour en direct.
 		</div>
@@ -168,8 +166,8 @@
 			{#each lignes as l (l.uid)}
 				<div
 					class={[
-						'rounded-2xl border bg-base px-2.5 py-2 transition-colors duration-500',
-						l.uid === flash ? 'border-brand/60 bg-brand/5' : 'border-line'
+						'rounded-2xl px-2.5 py-2 transition-colors duration-500',
+						l.uid === flash ? 'bg-brand/10' : 'bg-card'
 					].join(' ')}
 				>
 					<div class="flex items-start gap-2">
@@ -194,7 +192,7 @@
 					</div>
 					<div class="mt-1.5 flex items-center justify-between gap-2">
 						<div
-							class="flex items-center gap-1 rounded-full border border-line bg-card2 p-0.5 transition-[border-color,box-shadow] focus-within:border-brand focus-within:ring-4 focus-within:ring-brand/15"
+							class="flex items-center gap-1 rounded-full bg-card2 p-0.5 transition-[box-shadow] focus-within:ring-2 focus-within:ring-ink/10"
 						>
 							<button
 								type="button"
@@ -238,7 +236,7 @@
 		<!-- La remise ne se saisit pas : elle s'ouvre avec le code du responsable
 		     des poses, saisi dans le regroupement présenté au client. -->
 		{#if deblocage}
-			<div class={['rounded-2xl border px-2.5 py-2', CARTE_SUCCES].join(' ')}>
+			<div class="rounded-2xl bg-brand/10 px-2.5 py-2">
 				<div class="flex items-center gap-2">
 					<Anneau progres={deblocage.remise / REMISE_MAX} taille={40} epaisseur={3} ton="brand">
 						<span class="text-[10.5px] font-black {TEXTE_SUCCES}">−{deblocage.remise}%</span>
@@ -269,7 +267,7 @@
 		{#if peutValider && (visuelFait || deblocage)}
 			<div class="space-y-1.5">
 				{#if !deblocage}
-					<div class="rounded-2xl border border-line bg-card2 px-3 py-2.5">
+					<div class="rounded-2xl bg-card px-3 py-2.5">
 						<a href={RESPONSABLE_POSES.telLien} class="group flex items-center gap-2.5">
 							<span class="grid size-9 shrink-0 place-items-center rounded-full bg-ink text-white">
 								<PhoneCall class="size-4" strokeWidth={2.2} />
@@ -305,7 +303,7 @@
 			avec les totaux dès qu'un devis ne portait qu'une TVA. Chaque taux garde
 			sa ligne de TVA ; le total par taux n'apparaît que s'il y en a plusieurs.
 		-->
-		<div class="space-y-1 rounded-2xl border border-line bg-card2 px-3 py-2.5">
+		<div class="space-y-1 rounded-2xl bg-card px-3 py-2.5">
 			<div class="flex items-center justify-between text-[12.5px]">
 				<span class="font-medium text-ink-soft">Total HT</span>
 				<span class="flex items-baseline gap-1.5 tabular-nums">
@@ -338,7 +336,7 @@
 					>
 				</div>
 			{/if}
-			<div class="flex items-center justify-between border-t border-line pt-1.5 text-[14px]">
+			<div class="flex items-center justify-between pt-1.5 text-[14px]">
 				<span class="font-semibold text-ink">Total TTC</span>
 				<span class="flex items-baseline gap-1.5 tabular-nums">
 					{#if remise > 0}

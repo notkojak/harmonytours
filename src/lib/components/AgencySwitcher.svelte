@@ -23,48 +23,56 @@
 </script>
 
 <Popover>
-	<!-- Pastille d'en-tête de bravaux.fr : pilule blanche, logo à gauche, ombre douce. -->
+	<!-- Pastille d'en-tête : pilule sans contour, le logo de la marque (favicon.png).
+	     Module volontairement en teintes sombres même en mode clair : la barre latérale
+	     reste graphite dans les deux thèmes, une pilule claire y ferait une tache. -->
 	<PopoverTrigger
-		class="flex w-full items-center gap-2.5 rounded-full border border-line bg-card p-1.5 pr-3 text-left shadow-[var(--ombre)] transition-colors hover:border-brand/40"
+		class="flex h-11 w-full items-center gap-2.5 rounded-full bg-white/[0.06] px-3 text-left transition-colors hover:bg-white/10"
 	>
 		<img
 			src="/favicon.png"
-			alt="Bravaux"
-			class="size-9 shrink-0 rounded-full object-cover ring-1 ring-line"
+			alt=""
+			class="size-8 shrink-0 rounded-[10px] object-cover"
+			aria-hidden="true"
 		/>
 		<span class="min-w-0 flex-1 leading-tight">
-			<span class="block truncate font-display text-[13px] font-semibold text-foreground">
+			<span class="block truncate font-display text-[13px] font-semibold text-white">
 				{current ? agencyLabel(current) : 'Choisir une agence'}
 			</span>
-			<span class="block truncate text-[11px] text-ink-soft"> Bravaux </span>
+			<span class="block truncate text-[11px] text-white/45"> Bravaux </span>
 		</span>
-		<ChevronsUpDown class="size-4 shrink-0 text-muted-foreground" strokeWidth={1.7} />
+		<ChevronsUpDown class="size-4 shrink-0 text-white/40" strokeWidth={1.7} />
 	</PopoverTrigger>
 
-	<PopoverContent class="w-64 rounded-xl border-line bg-card p-1.5" align="start" sideOffset={6}>
+	<PopoverContent
+		class="w-64 rounded-2xl border-0 bg-[#161618] p-1.5 text-white shadow-[0_18px_40px_-18px_rgba(0,0,0,0.75)]"
+		align="start"
+		sideOffset={6}
+	>
 		<div class="space-y-0.5">
-			<p
-				class="px-2 py-1.5 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase"
-			>
+			<p class="px-2 py-1.5 text-[11px] font-semibold tracking-wider text-white/40 uppercase">
 				Agences
 			</p>
 
 			{#if available.length === 0}
-				<p class="px-2 py-2 text-[12px] text-muted-foreground">Aucune agence disponible.</p>
+				<p class="px-2 py-2 text-[12px] text-white/45">Aucune agence disponible.</p>
 			{:else}
 				{#each available as agence}
 					<button
 						type="button"
 						onclick={() => (current = agence.name)}
 						class={[
-							'flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors',
+							'flex w-full items-center gap-2.5 rounded-full px-2 py-2 text-left transition-colors',
 							current === agence.name
-								? 'bg-glass-3 text-foreground'
-								: 'text-muted-foreground hover:bg-glass-2 hover:text-foreground'
+								? 'bg-white/10 text-white'
+								: 'text-white/55 hover:bg-white/[0.06] hover:text-white'
 						].join(' ')}
 					>
 						<span
-							class="grid size-7 shrink-0 place-items-center rounded-md bg-card2 text-muted-foreground"
+							class={[
+								'grid size-7 shrink-0 place-items-center rounded-xl',
+								current === agence.name ? 'bg-white/10 text-white' : 'bg-white/[0.06] text-white/50'
+							].join(' ')}
 						>
 							<Building2 class="size-3.5" strokeWidth={1.7} />
 						</span>

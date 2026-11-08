@@ -13,6 +13,7 @@
 		LogOut,
 		Map,
 		Plus,
+		Receipt,
 		Send,
 		Server,
 		ShieldCheck,
@@ -24,7 +25,7 @@
 	import { goto } from '$app/navigation';
 	import { useQuery } from 'convex-svelte';
 	import { api } from '../../convex/_generated/api.js';
-	import { navSections, quickLinks } from '$lib/data/dashboard';
+	import { navSections, quickLinks, pageEmojis } from '$lib/data/dashboard';
 	import { page } from '$app/state';
 	import { authState } from '$lib/auth-state.svelte';
 	import { signOut } from '$lib/convex-auth';
@@ -63,6 +64,7 @@
 		map: Map,
 		chart: BarChart3,
 		plus: Plus,
+		receipt: Receipt,
 		library: Library,
 		terminal: Terminal,
 		logIn: LogIn
@@ -82,6 +84,13 @@
 
 	const profile = useQuery(api.users.getProfile, () => (authState.isAuthenticated ? {} : 'skip'));
 
+	// Nom affiché dans la pastille de profil : « Prénom Nom » (repli e-mail).
+	const nomComplet = $derived.by(() => {
+		const p = profile.data;
+		if (!p) return '';
+		return [p.firstName, p.lastName].filter(Boolean).join(' ').trim() || p.email || '';
+	});
+
 	// Employé licencié : déconnexion immédiate, même si son JWT est encore
 	// valable. La session est révoquée côté serveur et il revient à /connexion.
 	let expelled = false;
@@ -93,9 +102,7 @@
 
 	// Deux compteurs, une requête : la barre latérale ne charge plus toutes les
 	// fiches et tous les clients à chaque page.
-	const counts = useQuery(api.contacts.counts, () =>
-		authState.isAuthenticated ? {} : 'skip'
-	);
+	const counts = useQuery(api.contacts.counts, () => (authState.isAuthenticated ? {} : 'skip'));
 	const contactsCount = $derived(counts.data?.contacts ?? 0);
 	const clientsCount = $derived(counts.data?.clients ?? 0);
 
@@ -117,14 +124,16 @@
 
 <aside
 	class={[
-		'fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col overflow-hidden bg-base px-3 py-4 transition-transform duration-200 lg:static lg:z-auto lg:w-64 lg:max-w-none lg:translate-x-0 lg:overflow-hidden',
+		'fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col overflow-hidden bg-sidebar px-3 pt-4 pb-4 text-sidebar-foreground transition-transform duration-200 lg:static lg:z-auto lg:my-2 lg:ml-2 lg:w-64 lg:max-w-none lg:translate-x-0 lg:overflow-hidden lg:rounded-[20px] lg:pt-2',
 		mobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full lg:translate-x-0'
 	].join(' ')}
 >
 	<!-- Switcher d'agence -->
 	<AgencySwitcher />
 
-	<div class="mt-5 min-h-0 flex-1 space-y-4 overflow-y-auto">
+	<div
+		class="mt-5 min-h-0 flex-1 [scrollbar-width:none] space-y-4 overflow-y-auto [&::-webkit-scrollbar]:hidden"
+	>
 		{#each navSections as section}
 			{#if section.label === 'Gestion' && !canAccessAdministration(profile.data?.role)}
 				<!-- Section « Gestion » (Administration) : visible uniquement pour
@@ -133,7 +142,7 @@
 				<div>
 					{#if section.label}
 						<p
-							class="mb-2 px-2 text-[10px] font-semibold tracking-[0.18em] text-muted-foreground uppercase"
+							class="mb-2 px-2 text-[10px] font-semibold tracking-[0.16em] text-white/35 uppercase"
 						>
 							{section.label}
 						</p>
@@ -149,33 +158,30 @@
 								<a
 									href={item.href}
 									class={[
-										'relative flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-[13.5px] transition-colors',
+										'relative flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] transition-colors',
 										isActive(item.href)
-											? 'bg-glass-2 font-semibold text-foreground'
-											: 'font-medium text-muted-foreground hover:bg-glass-1 hover:text-foreground'
+											? 'bg-[#222224] font-semibold text-white'
+											: 'font-medium text-white/60 hover:bg-[#222224] hover:text-white'
 									].join(' ')}
 								>
-									{#if isActive(item.href)}
-										<!-- Repère bleu de bravaux.fr sur la page courante -->
-										<span
-											class="absolute top-1/2 left-0 h-4 w-[3px] -translate-y-1/2 rounded-full bg-brand"
-										></span>
+									{#if pageEmojis[item.href]}
+										<span class="w-4 shrink-0 text-center text-[14px] leading-none"
+											>{pageEmojis[item.href]}</span
+										>
+									{:else}
+										<ItemIcon class="size-4" strokeWidth={1.7} />
 									{/if}
-									<ItemIcon
-										class={['size-4', isActive(item.href) ? 'text-brand' : ''].join(' ')}
-										strokeWidth={1.7}
-									/>
 									<span class="min-w-0 flex-1">{item.label}</span>
 									{#if item.href === '/contacts' && contactsCount > 0}
 										<span
-											class="rounded-full bg-glass-3 px-1.5 py-0.5 text-[10.5px] font-semibold text-foreground"
+											class="rounded-full bg-white/10 px-1.5 py-0.5 text-[10.5px] font-semibold text-white/80"
 										>
 											{contactsCount}
 										</span>
 									{/if}
 									{#if item.href === '/clients' && clientsCount > 0}
 										<span
-											class="rounded-full bg-glass-3 px-1.5 py-0.5 text-[10.5px] font-semibold text-foreground"
+											class="rounded-full bg-white/10 px-1.5 py-0.5 text-[10.5px] font-semibold text-white/80"
 										>
 											{clientsCount}
 										</span>
@@ -190,12 +196,12 @@
 
 		<!-- Liens rapides -->
 		{#if quickLinks.length > 0}
-			<div class="mt-4 space-y-0.5 border-t border-line pt-4">
+			<div class="mt-4 space-y-0.5 border-t border-white/10 pt-4">
 				{#each quickLinks as item}
 					{@const ItemIcon = icons[item.icon]}
 					<a
 						href={item.href}
-						class="flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-[13.5px] font-medium text-muted-foreground transition-colors hover:bg-glass-2 hover:text-foreground"
+						class="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium text-white/60 transition-colors hover:bg-[#222224] hover:text-white"
 					>
 						<ItemIcon class="size-4" strokeWidth={1.7} />
 						<span>{item.label}</span>
@@ -209,26 +215,26 @@
 		<button
 			type="button"
 			onclick={() => (contactOpen = true)}
-			class="flex h-11 w-full items-center justify-center gap-2.5 rounded-full bg-primary px-4 text-[13px] font-bold tracking-[0.07em] text-primary-foreground uppercase shadow-[var(--ombre-forte)] transition-all hover:bg-primary/85"
+			class="flex h-11 w-full items-center justify-center gap-2.5 rounded-full bg-white px-4 text-[12.5px] font-bold tracking-[0.06em] text-black uppercase transition-all hover:bg-white/90"
 		>
 			<UserPlus class="size-4" strokeWidth={1.7} />
 			<span>Nouveau Contact</span>
 		</button>
 
 		{#if authState.isAuthenticated}
-			<div class="rounded-xl border border-line bg-card p-3">
+			<div class="rounded-xl bg-white/5 p-3">
 				{#if profile.data}
 					<div class="flex items-center gap-2.5">
 						<Avatar
 							photo={profile.data.photo}
 							label={(profile.data.firstName ?? profile.data.email ?? '')[0]?.toUpperCase()}
-							class="size-9 shrink-0 bg-muted text-sm font-bold text-muted-foreground"
+							class="size-9 shrink-0 bg-white/15 text-sm font-bold text-white"
 						/>
 						<div class="min-w-0 flex-1 leading-tight">
-							<p class="truncate text-[13px] font-semibold text-foreground">
-								Bonjour, {profile.data.firstName ?? profile.data.email} 😊
+							<p class="truncate text-[13px] font-semibold text-white">
+								{nomComplet}
 							</p>
-							<p class="mt-0.5 truncate text-[11.5px] font-medium text-muted-foreground">
+							<p class="mt-0.5 truncate text-[11.5px] font-medium text-white/45">
 								{capitalizeRole(profile.data.role)}
 							</p>
 						</div>
@@ -242,13 +248,13 @@
 						</div>
 					</div>
 				{:else}
-					<p class="text-[13px] font-semibold text-foreground">Bonjour 😊</p>
+					<p class="text-[13px] font-semibold text-white">Bonjour 😊</p>
 				{/if}
 
 				<button
 					type="button"
 					onclick={handleSignOut}
-					class="mt-2.5 flex w-full items-center justify-center gap-2 rounded-full border border-line bg-base px-3 py-2 text-[11.5px] font-bold tracking-[0.06em] text-muted-foreground uppercase transition-colors hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive"
+					class="mt-2.5 flex w-full items-center justify-center gap-2 rounded-full bg-white/5 px-3 py-2 text-[11.5px] font-bold tracking-[0.06em] text-white/55 uppercase transition-colors hover:bg-red-500/15 hover:text-red-300"
 				>
 					<LogOut class="size-3.5" strokeWidth={1.7} />
 					<span>Déconnexion</span>
@@ -257,7 +263,7 @@
 		{:else}
 			<a
 				href="/connexion"
-				class="flex items-center gap-2.5 rounded-xl border border-line bg-card px-2.5 py-2 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-glass-2 hover:text-foreground"
+				class="flex items-center gap-2.5 rounded-lg bg-white/5 px-2.5 py-2 text-[13px] font-medium text-white/60 transition-colors hover:bg-white/10 hover:text-white"
 			>
 				<LogIn class="size-4" strokeWidth={1.7} />
 				<span>Connexion</span>

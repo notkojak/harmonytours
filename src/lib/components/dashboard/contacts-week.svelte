@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { PhoneCall } from '@lucide/svelte';
 	import { useQuery } from 'convex-svelte';
 	import { api } from '../../../convex/_generated/api.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
@@ -39,21 +38,22 @@
 	}
 </script>
 
-<Card class="flex h-full flex-col gap-0 rounded-2xl border-line py-0 shadow-none">
-	<CardHeader class="flex items-center justify-between gap-3 px-5 pt-5 pb-0">
-		<CardTitle class="flex items-center gap-2.5 text-[14px] font-semibold">
-			<span
-				class="grid size-8 place-items-center rounded-lg border border-line bg-card2 text-muted-foreground"
-			>
-				<PhoneCall class="size-4" strokeWidth={1.7} />
-			</span>
-			Contacts à rappeler
-			<Badge variant="secondary" class="rounded-full px-2">
-				{dueContacts.length} contacts
-			</Badge>
-		</CardTitle>
+<Card class="flex h-full flex-col gap-0 rounded-2xl border-0 py-0 shadow-none">
+	<CardHeader class="flex flex-wrap items-center justify-between gap-3 px-5 pt-5 pb-0">
+		<div class="min-w-0">
+			<CardTitle class="flex items-center gap-2.5 text-[14px] font-semibold">
+				<span class="text-[15px] leading-none" aria-hidden="true">📞</span>
+				Contacts à rappeler
+				<Badge variant="secondary" class="rounded-full bg-card2 px-2">
+					{dueContacts.length} contacts
+				</Badge>
+			</CardTitle>
+			<p class="mt-1 pl-6 text-[11.5px] font-medium text-muted-foreground">
+				Rappels arrivés à échéance
+			</p>
+		</div>
 	</CardHeader>
-	<CardContent class="flex min-h-0 flex-1 flex-col px-5 pt-2 pb-5">
+	<CardContent class="flex min-h-0 flex-1 flex-col px-5 pt-3 pb-5">
 		{#if dueContacts.length === 0}
 			<div class="flex flex-1 items-center justify-center py-10">
 				<p class="text-[12.5px] text-muted-foreground">Aucun contact à rappeler aujourd'hui.</p>
@@ -64,7 +64,7 @@
 					<button
 						type="button"
 						onclick={() => openFiche(contact)}
-						class="flex w-full items-center gap-3 rounded-xl bg-amber-500/10 px-3.5 py-2.5 text-left transition-colors hover:bg-amber-500/15"
+						class="flex w-full items-center gap-3 rounded-2xl bg-amber-500/10 px-3.5 py-2.5 text-left transition-colors hover:bg-amber-500/15"
 					>
 						<span
 							class="grid size-8 shrink-0 place-items-center rounded-full bg-amber-500/25 text-[10px] font-bold text-amber-700 dark:text-amber-300"

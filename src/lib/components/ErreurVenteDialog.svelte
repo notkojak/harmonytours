@@ -81,7 +81,7 @@
 </script>
 
 <Dialog bind:open>
-	<DialogContent class="sm:max-w-xl">
+	<DialogContent class="rounded-2xl border-0 bg-card shadow-none sm:max-w-xl">
 		<DialogHeader>
 			<DialogTitle class="flex items-center gap-2">
 				<AlertTriangle class="size-4 text-orange-700 dark:text-orange-300" />
@@ -114,10 +114,10 @@
 							type="button"
 							onclick={() => toggleManquant(doc)}
 							class={[
-								'rounded-full border px-3 py-1.5 text-[12px] font-medium transition-colors',
+								'rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors',
 								selected.includes(doc)
-									? 'border-orange-500/60 bg-orange-500/15 text-orange-700 dark:text-orange-300'
-									: 'border-input bg-base text-muted-foreground hover:bg-glass-2 hover:text-foreground'
+									? 'bg-orange-500/15 text-orange-700 dark:text-orange-300'
+									: 'bg-card2 text-muted-foreground hover:bg-glass-3 hover:text-foreground'
 							].join(' ')}
 						>
 							{doc}
@@ -132,7 +132,7 @@
 					bind:value={note}
 					rows={6}
 					placeholder="Explique pourquoi le dossier est bloqué, ce qui manque, ce qui a été demandé…"
-					class="border-input bg-base"
+					class="border-0 bg-card2 shadow-none"
 				/>
 			</div>
 

@@ -1,7 +1,7 @@
 import { type MutationCtx, type QueryCtx, mutation, query } from './_generated/server';
 import { v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
-import { canManageEmployes, canReassignContact, getCurrentUser } from './permissions';
+import { assertCanWriteCrm, canManageEmployes, canReassignContact, canWriteCrm, getCurrentUser } from './permissions';
 import { canViewAllCrm, isUserInScope, visibleAgencyIds } from './access';
 import { qualifValidator } from './schema';
 
@@ -292,6 +292,7 @@ export const setFollowUpFields = mutation({
 	},
 	handler: async (ctx, args) => {
 		const user = await getCurrentUser(ctx);
+		assertCanWriteCrm(user);
 		const contact = await ctx.db.get(args.contactId);
 		if (!contact) {
 			throw new Error('Contact introuvable.');
@@ -379,6 +380,7 @@ export const markTreated = mutation({
 	},
 	handler: async (ctx, { contactId, treated, reason }) => {
 		const user = await getCurrentUser(ctx);
+		assertCanWriteCrm(user);
 		const contact = await ctx.db.get(contactId);
 		if (!contact) {
 			throw new Error('Contact introuvable.');
@@ -599,6 +601,7 @@ export const remove = mutation({
 	args: { contactId: v.id('contacts') },
 	handler: async (ctx, args) => {
 		const user = await getCurrentUser(ctx);
+		assertCanWriteCrm(user);
 		const contact = await ctx.db.get(args.contactId);
 		if (!contact) {
 			throw new Error('Contact introuvable.');
@@ -627,6 +630,7 @@ export const restore = mutation({
 	args: { contactId: v.id('contacts') },
 	handler: async (ctx, args) => {
 		const user = await getCurrentUser(ctx);
+		assertCanWriteCrm(user);
 		const contact = await ctx.db.get(args.contactId);
 		if (!contact) {
 			throw new Error('Contact introuvable.');
@@ -813,6 +817,16 @@ export const update = mutation({
 		const contact = await ctx.db.get(args.contactId);
 		if (!contact) {
 			throw new Error('Contact introuvable.');
+		}
+		// Le commercial peut corriger sa fiche (coordonnées, note, questions
+		// découverte) mais pas changer l'issue du RDV : le statut (vendu, déballé,
+		// annulé, à reprogrammer) est réservé aux rôles qui écrivent dans le CRM.
+		if (
+			!canWriteCrm(user) &&
+			args.followUp !== undefined &&
+			args.followUp.status !== contact.followUp?.status
+		) {
+			throw new Error('Non autorisé : ton rôle est en consultation seule sur le CRM.');
 		}
 		const isCreator = contact.createdBy === user._id;
 		const myName = `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim().toLowerCase();

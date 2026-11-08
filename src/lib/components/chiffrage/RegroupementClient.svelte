@@ -30,14 +30,7 @@
 	import AddressInput from '$lib/components/AddressInput.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import CarteRegroupement from './CarteRegroupement.svelte';
-	import {
-		CARTE_ALERTE,
-		CARTE_SUCCES,
-		CTA_MUET,
-		SUCCES_PLEIN,
-		TEXTE_ALERTE,
-		TEXTE_SUCCES
-	} from '$lib/chiffrage-style';
+	import { CTA_MUET, SUCCES_PLEIN, TEXTE_ALERTE, TEXTE_SUCCES } from '$lib/chiffrage-style';
 
 	// Le visuel que l'on met sous les yeux du client, en trois temps :
 	//   1 · les quatre conditions du regroupement,
@@ -359,11 +352,11 @@
 
 <Dialog bind:open>
 	<DialogContent
-		class="max-h-[94vh] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-3xl p-0 sm:max-w-4xl"
+		class="max-h-[94vh] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-2xl border-0 bg-card p-0 shadow-none sm:max-w-4xl"
 		showCloseButton={false}
 	>
 		<!-- En-tête : la seule chose que le client voit arriver, donc la plus soignée. -->
-		<header class="relative overflow-hidden border-b border-line px-5 py-4 sm:px-7 sm:py-5">
+		<header class="relative overflow-hidden px-5 py-4 sm:px-7 sm:py-5">
 			<div
 				class="pointer-events-none absolute -top-24 -right-16 size-56 rounded-full bg-brand/12 blur-3xl"
 			></div>
@@ -407,14 +400,14 @@
 					{@const fait = phase > e.n}
 					<span
 						class="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors {actif
-							? 'bg-brand text-white'
+							? 'bg-primary text-primary-foreground'
 							: fait
 								? 'bg-brand/15 text-brand'
-								: 'bg-glass-2 text-ink-mute'}"
+								: 'bg-card2 text-ink-mute'}"
 					>
 						<span
 							class="grid size-4 place-items-center rounded-full text-[9.5px] {actif
-								? 'bg-white/25'
+								? 'bg-primary-foreground/25'
 								: ''}"
 						>
 							{fait ? '✓' : e.n}
@@ -446,9 +439,9 @@
 									basculer(p);
 								}
 							}}
-							class="flex w-full animate-in cursor-pointer items-start gap-3 rounded-2xl border p-3.5 text-left transition-colors duration-300 fade-in slide-in-from-bottom-2 {actif
-								? CARTE_SUCCES
-								: 'border-line bg-card2/60 hover:bg-glass-2/60'}"
+							class="flex w-full animate-in cursor-pointer items-start gap-3 rounded-2xl p-3.5 text-left transition-colors duration-300 fade-in slide-in-from-bottom-2 {actif
+								? 'bg-brand/10'
+								: 'bg-card2 hover:bg-glass-3'}"
 							style="animation-delay:{i * 70}ms;animation-fill-mode:both"
 						>
 							{#if p.photo}
@@ -461,17 +454,17 @@
 										photoSrc = p.photo ?? '';
 										photoOuverte = true;
 									}}
-									class="grid size-10 shrink-0 place-items-center rounded-full border text-lg transition-transform hover:scale-105 {actif
-										? 'border-brand/40 bg-brand/15'
-										: 'border-input bg-base'}"
+									class="grid size-10 shrink-0 place-items-center rounded-full text-lg transition-transform hover:scale-105 {actif
+										? 'bg-brand/15'
+										: 'bg-card'}"
 								>
 									{p.emoji}
 								</button>
 							{:else}
 								<span
-									class="grid size-10 shrink-0 place-items-center rounded-full border text-lg transition-colors {actif
-										? 'border-brand/40 bg-brand/15'
-										: 'border-input bg-base'}"
+									class="grid size-10 shrink-0 place-items-center rounded-full text-lg transition-colors {actif
+										? 'bg-brand/15'
+										: 'bg-card'}"
 								>
 									{p.emoji}
 								</span>
@@ -481,9 +474,9 @@
 								<span class="mt-0.5 block text-[11.5px] leading-snug text-ink-soft">{p.aide}</span>
 							</span>
 							<span
-								class="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full border transition-all duration-300 {actif
-									? 'scale-100 border-brand bg-brand text-white'
-									: 'border-line-strong text-transparent'}"
+								class="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full transition-all duration-300 {actif
+									? 'scale-100 bg-brand text-white'
+									: 'bg-glass-3 text-transparent'}"
 							>
 								<svg
 									viewBox="0 0 24 24"
@@ -501,7 +494,7 @@
 				</div>
 
 				<!-- Progression + appel à l'action -->
-				<div class="mt-4 rounded-2xl border border-line bg-card2/60 px-3.5 py-3">
+				<div class="mt-4 rounded-2xl bg-card2 px-3.5 py-3">
 					<div class="flex items-center justify-between gap-3">
 						<p class="text-[12px] font-semibold text-ink">
 							{pointsValides}/{POINTS_A_VALIDER.length} conditions validées
@@ -548,9 +541,7 @@
 			{:else if phase === 2}
 				<!-- ------------------------------------------------------ L'ADRESSE -->
 				<div class="space-y-3">
-					<div
-						class="animate-in rounded-2xl border border-line bg-card2/60 px-3.5 py-3.5 fade-in slide-in-from-bottom-2"
-					>
+					<div class="animate-in rounded-2xl bg-card2 px-3.5 py-3.5 fade-in slide-in-from-bottom-2">
 						<p class="flex items-center gap-2 text-[13px] font-bold text-ink">
 							<MapPin class="size-4 {TEXTE_SUCCES}" strokeWidth={2.1} />
 							Où se trouve votre maison ?
@@ -579,7 +570,7 @@
 						</div>
 						{#if adresseRatee}
 							<div
-								class="mt-2 flex flex-wrap items-center gap-2 rounded-2xl border {CARTE_ALERTE} px-2.5 py-2"
+								class="mt-2 flex flex-wrap items-center gap-2 rounded-2xl bg-destructive/10 px-2.5 py-2"
 							>
 								<p class="flex items-center gap-1.5 text-[11px] {TEXTE_ALERTE}">
 									<TriangleAlert class="size-3.5 shrink-0" strokeWidth={2.2} />
@@ -594,7 +585,7 @@
 
 					{#if maison}
 						<div
-							class="animate-in rounded-2xl border {CARTE_SUCCES} px-3.5 py-3 fade-in slide-in-from-bottom-2"
+							class="animate-in rounded-2xl bg-brand/10 px-3.5 py-3 fade-in slide-in-from-bottom-2"
 						>
 							<p class="flex items-center gap-2 text-[12.5px] font-bold text-ink">
 								<span class="grid size-5 place-items-center rounded-full {SUCCES_PLEIN}">
@@ -619,9 +610,7 @@
 				<!-- ------------------------------------------------- LE REGROUPEMENT -->
 				<div class="space-y-3">
 					<div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
-						<div
-							class="animate-in rounded-2xl border border-line bg-card2/60 px-3 py-2.5 zoom-in-95 fade-in"
-						>
+						<div class="animate-in rounded-2xl bg-card2 px-3 py-2.5 zoom-in-95 fade-in">
 							<p class="text-[10px] font-bold tracking-wider text-ink-mute uppercase">
 								Chantiers programmés
 							</p>
@@ -631,7 +620,7 @@
 							</p>
 						</div>
 						<div
-							class="animate-in rounded-2xl border border-line bg-card2/60 px-3 py-2.5 zoom-in-95 fade-in"
+							class="animate-in rounded-2xl bg-card2 px-3 py-2.5 zoom-in-95 fade-in"
 							style="animation-delay:70ms;animation-fill-mode:both"
 						>
 							<p class="text-[10px] font-bold tracking-wider text-ink-mute uppercase">
@@ -642,7 +631,7 @@
 							</p>
 						</div>
 						<div
-							class="col-span-2 animate-in rounded-2xl border border-line bg-card2/60 px-3 py-2.5 zoom-in-95 fade-in sm:col-span-1"
+							class="col-span-2 animate-in rounded-2xl bg-card2 px-3 py-2.5 zoom-in-95 fade-in sm:col-span-1"
 							style="animation-delay:140ms;animation-fill-mode:both"
 						>
 							<p class="text-[10px] font-bold tracking-wider text-ink-mute uppercase">
@@ -683,7 +672,7 @@
 					</div>
 
 					<!-- La piste des poses, qui se remplit au rythme de la carte -->
-					<div class="rounded-2xl border border-line bg-card2/60 px-3.5 py-3">
+					<div class="rounded-2xl bg-card2 px-3.5 py-3">
 						<div class="flex items-center justify-between gap-3">
 							<p class="text-[12px] font-semibold text-ink">Les poses prévues dans votre zone</p>
 							<span class="text-[11px] font-semibold text-ink-mute tabular-nums">
@@ -708,7 +697,7 @@
 								<!-- Les deux premiers chantiers emportent une demande de DO (10 % puis
 								     20 %) : toute la ligne est cliquable, sans rien afficher. -->
 								<div
-									class="relative flex animate-in items-center gap-2.5 rounded-2xl border border-line bg-base px-2.5 py-2 fade-in slide-in-from-bottom-2"
+									class="relative flex animate-in items-center gap-2.5 rounded-2xl bg-card px-2.5 py-2 fade-in slide-in-from-bottom-2"
 								>
 									<span
 										class="grid size-8 shrink-0 place-items-center rounded-full bg-brand/15 text-[10px] font-extrabold text-brand"
@@ -742,7 +731,7 @@
 								<!-- La place ouverte par le responsable : la pose du client rejoint
 								     le regroupement, juste après les chantiers déjà programmés. -->
 								<div
-									class="flex animate-in items-center gap-2.5 rounded-2xl border border-brand/45 bg-brand/8 px-2.5 py-2 fade-in slide-in-from-bottom-2"
+									class="flex animate-in items-center gap-2.5 rounded-2xl bg-brand/10 px-2.5 py-2 fade-in slide-in-from-bottom-2"
 								>
 									<span
 										class="grid size-8 shrink-0 place-items-center rounded-full bg-brand text-white"
@@ -775,7 +764,7 @@
 								<!-- Place ouverte par le responsable : le geste commercial est le
 								     dernier argument, il prend la largeur et le prix final en gros. -->
 								<div
-									class="animate-in overflow-hidden rounded-2xl border-2 border-brand/45 shadow-xl shadow-brand/15 fade-in slide-in-from-bottom-2"
+									class="animate-in overflow-hidden rounded-2xl shadow-xl shadow-brand/15 fade-in slide-in-from-bottom-2"
 								>
 									<div class="flex items-center gap-2.5 bg-brand px-4 py-3 text-white">
 										<span class="grid size-7 shrink-0 place-items-center rounded-full bg-white/20">
@@ -804,7 +793,7 @@
 											<span>Remise regroupement</span>
 											<span class="tabular-nums">−{euro0.format(montantRemise)}</span>
 										</div>
-										<div class="flex items-end justify-between border-t border-brand/25 pt-1.5">
+										<div class="flex items-end justify-between pt-1.5">
 											<span class="text-[12px] font-bold text-ink">Nouveau prix TTC</span>
 											<span class="text-[22px] leading-none font-black text-brand tabular-nums">
 												{euro0.format(nouveauPrix)}
@@ -817,7 +806,7 @@
 								</div>
 							{:else}
 								<div
-									class="animate-in overflow-hidden rounded-2xl border-2 border-destructive/45 shadow-lg shadow-destructive/10 fade-in slide-in-from-bottom-2"
+									class="animate-in overflow-hidden rounded-2xl shadow-lg shadow-destructive/10 fade-in slide-in-from-bottom-2"
 								>
 									<div class="flex items-center gap-2.5 bg-destructive px-4 py-3 text-white">
 										<span class="grid size-7 shrink-0 place-items-center rounded-full bg-white/20">
@@ -869,7 +858,7 @@
 								</button>
 
 								{#if codeOuvert}
-									<div class="rounded-2xl border border-line bg-card2 px-3 py-2.5">
+									<div class="rounded-2xl bg-card2 px-3 py-2.5">
 										<p class="text-[12px] font-bold text-ink">Code de déblocage</p>
 										{#key secousseCode}
 											<div class={secousseCode > 0 ? 'secouer mt-2 flex gap-2' : 'mt-2 flex gap-2'}>
@@ -879,7 +868,7 @@
 													bind:value={codeSaisi}
 													onkeydown={(e) => e.key === 'Enter' && validerLeCode()}
 													placeholder="Code du responsable"
-													class="min-w-0 flex-1 rounded-xl border border-input bg-base px-3 py-2 text-[13px] font-bold tracking-[0.2em] text-ink uppercase transition-[border-color,box-shadow] outline-none placeholder:font-normal placeholder:tracking-normal placeholder:normal-case focus:border-brand focus:ring-4 focus:ring-brand/15"
+													class="min-w-0 flex-1 rounded-xl border-0 bg-card px-3 py-2 text-[13px] font-bold tracking-[0.2em] text-ink uppercase shadow-none transition-[box-shadow] outline-none placeholder:font-normal placeholder:tracking-normal placeholder:normal-case focus:ring-2 focus:ring-ink/10"
 												/>
 												<Button
 													class="shrink-0"
@@ -909,7 +898,7 @@
 			{/if}
 		</div>
 
-		<footer class="border-t border-line px-5 py-3 sm:px-7">
+		<footer class="px-5 py-3 sm:px-7">
 			{#if phase === 1}
 				<p class="text-center text-[11px] text-ink-mute">
 					Rien n’est engagé : ces conditions servent uniquement à préparer votre demande.
@@ -943,7 +932,9 @@
 
 <!-- Aperçu de la photo d'une condition : le panneau de chantier réel. -->
 <Dialog bind:open={photoOuverte}>
-	<DialogContent class="max-h-[92vh] gap-3 overflow-hidden rounded-3xl p-3 sm:max-w-2xl">
+	<DialogContent
+		class="max-h-[92vh] gap-3 overflow-hidden rounded-2xl border-0 bg-card p-3 shadow-none sm:max-w-2xl"
+	>
 		{#if photoSrc}
 			<img
 				src={photoSrc}

@@ -1,9 +1,13 @@
 <script lang="ts">
-	import { Download, Pencil, Search, Users } from '@lucide/svelte';
+	import { pageEmojis } from '$lib/data/dashboard';
+	import { PUCE } from '$lib/data/vente-suivi';
+	import { Download, Search, Users } from '@lucide/svelte';
 	import { useQuery } from 'convex-svelte';
 	import { api } from '../../convex/_generated/api.js';
 	import type { Id } from '../../convex/_generated/dataModel.js';
 	import { authState } from '$lib/auth-state.svelte';
+	import { page } from '$app/state';
+	import { untrack } from 'svelte';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
@@ -31,7 +35,17 @@
 
 	let selected = $state<ContactRow | null>(null);
 	let dialogOpen = $state(false);
-	let search = $state('');
+	let search = $state(page.url.searchParams.get('q') ?? '');
+
+	// Recherche globale : la page peut être ouverte avec ?q=… pour préremplir.
+	$effect(() => {
+		const q = page.url.searchParams.get('q');
+		if (q !== null) {
+			untrack(() => {
+				if (search !== q) search = q;
+			});
+		}
+	});
 
 	const fmt = (n: number) =>
 		n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -126,19 +140,30 @@
 </script>
 
 <div class="space-y-5">
-	<Card class="gap-0 rounded-2xl border-line py-0">
+	<Card class="gap-0 rounded-2xl border-0 py-0 shadow-none">
 		<CardHeader class="flex flex-wrap items-center justify-between gap-3 px-5 pt-5 pb-0">
-			<CardTitle class="flex items-center gap-2.5 text-[14px] font-semibold">
-				<span
-					class="grid size-8 place-items-center rounded-full border border-brand/20 bg-brand/10 text-brand"
-				>
-					<Users class="size-4" strokeWidth={1.7} />
-				</span>
-				Clients
-			</CardTitle>
-			<PersonTabs bind:value={person} />
+			<div class="min-w-0">
+				<CardTitle class="flex items-center gap-2.5 text-[14px] font-semibold">
+					<span class="text-[15px] leading-none" aria-hidden="true">{pageEmojis['/clients']}</span>
+					Clients
+				</CardTitle>
+				<p class="mt-1 pl-6 text-[11.5px] font-medium text-muted-foreground">
+					Ventes et coordonnées
+				</p>
+			</div>
 			<div class="flex items-center gap-2">
-				<div class="relative">
+				<Badge variant="secondary" class="rounded-full bg-card2 px-2.5">
+					{filtered.length}
+				</Badge>
+				<Button variant="outline" size="sm" class="hidden gap-1.5" onclick={exporter}>
+					<Download class="size-3.5" /> CSV
+				</Button>
+			</div>
+		</CardHeader>
+		<CardContent class="px-5 pt-4 pb-5">
+			<div class="mb-4 flex flex-wrap items-center gap-2">
+				<PersonTabs bind:value={person} />
+				<div class="relative ml-auto">
 					<Search
 						class="absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground"
 						strokeWidth={1.7}
@@ -147,30 +172,22 @@
 						type="search"
 						placeholder="Rechercher par nom…"
 						bind:value={search}
-						class="h-9 w-56 border-input bg-card pl-8"
+						class="h-9 w-64 rounded-full border-0 bg-card2 pr-3 pl-8 text-[13px] shadow-none focus-visible:ring-2 focus-visible:ring-ink/10"
 					/>
 				</div>
-				<Badge variant="secondary" class="rounded-full px-2">
-					{filtered.length}
-				</Badge>
-				<Button variant="outline" size="sm" class="gap-1.5" onclick={exporter}>
-					<Download class="size-3.5" /> CSV
-				</Button>
 			</div>
-		</CardHeader>
-		<CardContent class="px-5 pt-3 pb-5">
 			{#if !clients.isLoading && (clients.data?.length ?? 0) === 0}
 				<div class="flex flex-col items-center justify-center gap-2 py-14 text-center">
 					<p class="text-[13px] font-medium text-foreground">Aucun client pour le moment.</p>
-					<p class="max-w-sm text-[12px] text-muted-foreground">
+					<p class="max-w-sm text-[13px] text-muted-foreground">
 						Les clients apparaissent ici dès qu'une vente est ajoutée à un contact depuis sa fiche.
 					</p>
 				</div>
 			{:else}
-				<div class="overflow-x-auto rounded-2xl border border-line">
-					<Table class="min-w-[680px]">
+				<div class="overflow-x-auto rounded-2xl">
+					<Table class="min-w-[680px] border-separate border-spacing-y-1.5">
 						<TableHeader>
-							<TableRow class="border-line bg-transparent hover:bg-transparent">
+							<TableRow class="border-transparent bg-transparent hover:bg-transparent">
 								<TableHead
 									class="px-4 py-3 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
 								>
@@ -206,30 +223,21 @@
 								>
 									Total TTC
 								</TableHead>
-								<TableHead
-									class="px-4 py-3 text-right text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
-								>
-									Fiche
-								</TableHead>
 							</TableRow>
 						</TableHeader>
 						<TableBody>
 							{#each filtered as client (client.contact._id)}
 								<TableRow
-									class="cursor-pointer border-line/60 transition-colors hover:bg-glass-1"
+									class="cursor-pointer border-0 transition-colors [&:hover>td]:bg-glass-3 [&>td]:bg-card2 [&>td:first-child]:rounded-l-xl [&>td:last-child]:rounded-r-xl"
 									onclick={() => openFiche(client)}
 								>
 									<TableCell class="px-4 py-3">
-										<span
-											class="inline-flex items-center rounded-sm bg-brand/12 px-2 py-0.5 text-[11.5px] font-semibold text-brand"
-										>
-											Client
-										</span>
+										<span class={[PUCE, 'bg-brand/12 text-brand'].join(' ')}> Client </span>
 									</TableCell>
 									<TableCell class="px-4 py-3">
 										{#if client.contact.followUp}
 											<span class="inline-flex items-center gap-2 whitespace-nowrap">
-												<span class="inline-block min-w-[4.5rem] text-[13.5px] text-foreground">
+												<span class="inline-block min-w-[4.5rem] text-[13px] text-foreground">
 													{formatDate(client.contact.followUp.date)}
 												</span>
 												{#if client.contact.followUp.time}
@@ -239,13 +247,13 @@
 												{/if}
 											</span>
 										{:else}
-											<span class="text-[13.5px] text-muted-foreground">—</span>
+											<span class="text-[13px] text-muted-foreground">—</span>
 										{/if}
 									</TableCell>
-									<TableCell class="px-4 py-3 text-[14px] font-medium text-foreground">
+									<TableCell class="px-4 py-3 text-[13px] font-medium text-foreground">
 										{client.contact.name}
 									</TableCell>
-									<TableCell class="px-4 py-3 text-[13.5px] text-muted-foreground">
+									<TableCell class="px-4 py-3 text-[13px] text-muted-foreground">
 										{#if vendeurNamesOf(client).length > 0}
 											<span class="flex flex-wrap items-center gap-x-3 gap-y-1">
 												{#each vendeurNamesOf(client) as vendeur}
@@ -263,30 +271,25 @@
 											—
 										{/if}
 									</TableCell>
-									<TableCell class="px-4 py-3 font-mono text-[13.5px] text-muted-foreground">
+									<TableCell class="px-4 py-3 font-mono text-[13px] text-muted-foreground">
 										{formatPhone(client.contact.phone) || '—'}
 									</TableCell>
 									<TableCell
-										class="w-[200px] max-w-[200px] px-4 py-3 text-[13.5px] text-muted-foreground"
+										class="w-[200px] max-w-[200px] px-4 py-3 text-[13px] text-muted-foreground"
 									>
 										<span class="block truncate" title={produitsOf(client)}
 											>{produitsOf(client) || '—'}</span
 										>
 									</TableCell>
-									<TableCell class="px-4 py-3 text-[13.5px] font-semibold text-foreground">
+									<TableCell class="px-4 py-3 text-[13px] font-semibold text-foreground">
 										{fmt(client.totalTTC)} €
-									</TableCell>
-									<TableCell class="px-4 py-3">
-										<div class="flex justify-end text-muted-foreground">
-											<Pencil class="size-3.5" strokeWidth={1.7} />
-										</div>
 									</TableCell>
 								</TableRow>
 							{/each}
 							{#if filtered.length === 0}
-								<TableRow class="border-line/60 hover:bg-transparent">
+								<TableRow class="border-0 hover:bg-transparent">
 									<TableCell
-										colspan={8}
+										colspan={7}
 										class="px-4 py-8 text-center text-[13px] text-muted-foreground"
 									>
 										{search.trim()

@@ -67,10 +67,10 @@
 	}
 	function chipClass(active: boolean): string {
 		return [
-			'rounded-full border px-2.5 py-1 text-[11.5px] font-medium transition-all',
+			'rounded-full px-2.5 py-1 text-[11.5px] font-medium transition-all',
 			active
-				? 'border-primary bg-primary text-primary-foreground shadow-sm shadow-primary/25'
-				: 'border-line bg-card2 text-muted-foreground hover:border-primary/40 hover:text-foreground'
+				? 'bg-primary text-primary-foreground'
+				: 'bg-card2 text-muted-foreground hover:bg-glass-3 hover:text-foreground'
 		].join(' ');
 	}
 	let address = $state('');
@@ -165,10 +165,7 @@
 		try {
 			await createContact({
 				name: name.trim(),
-				civilites:
-					civilites.length > 0
-						? (civilites as ('M.' | 'Mme' | 'Melle')[])
-						: undefined,
+				civilites: civilites.length > 0 ? (civilites as ('M.' | 'Mme' | 'Melle')[]) : undefined,
 				address: address.trim() || undefined,
 				addressStreet: addressStreet || undefined,
 				addressPostalCode: addressPostalCode || undefined,
@@ -200,14 +197,11 @@
 
 <Dialog bind:open>
 	<DialogContent
-		class="max-h-[90vh] overflow-y-auto rounded-xl border-line bg-card sm:max-w-3xl"
-		onInteractOutside={(event) => event.preventDefault()}
+		class="max-h-[90vh] overflow-y-auto rounded-2xl border-0 bg-card shadow-none sm:max-w-3xl"
 	>
 		<DialogHeader>
 			<DialogTitle class="flex items-center gap-2.5 text-[15px] font-semibold">
-				<span
-					class="grid size-8 place-items-center rounded-lg border border-line bg-card2 text-muted-foreground"
-				>
+				<span class="grid size-8 place-items-center rounded-xl bg-card2 text-muted-foreground">
 					<UserPlus class="size-4" strokeWidth={1.7} />
 				</span>
 				Nouveau contact
@@ -217,7 +211,7 @@
 		<form onsubmit={handleSubmit} class="space-y-4">
 			<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
 				<div class="space-y-1.5">
-					<div class="flex flex-wrap items-center justify-between gap-2">
+					<div class="flex min-h-7 flex-wrap items-center justify-between gap-2">
 						<Label for="contactName">Nom</Label>
 						<div class="flex flex-wrap gap-1.5">
 							{#each CIVILITES as c}
@@ -236,12 +230,14 @@
 						required
 						placeholder="Marie Dupont"
 						bind:value={name}
-						class="border-input bg-base"
+						class="border-0 bg-card2 shadow-none"
 					/>
 				</div>
 
-					<div class="space-y-1.5">
-					<Label for="contactAddress">Adresse</Label>
+				<div class="space-y-1.5">
+					<div class="flex min-h-7 items-center justify-between gap-2">
+						<Label for="contactAddress">Adresse</Label>
+					</div>
 					<AddressInput
 						bind:value={address}
 						onPickDetails={(d) => {
@@ -265,14 +261,14 @@
 							phone = formatPhone(e.currentTarget.value);
 							onPhoneInput(e);
 						}}
-						class="border-input bg-base"
+						class="border-0 bg-card2 shadow-none"
 					/>
 				</div>
 
 				<div class="space-y-1.5">
 					<Label for="contactSource">Source</Label>
 					<Select type="single" bind:value={source}>
-						<SelectTrigger id="contactSource" class="w-full border-input bg-base">
+						<SelectTrigger id="contactSource" class="w-full border-0 bg-card2 shadow-none">
 							<span data-slot="select-value">
 								{source ? source : 'Choisir une source'}
 							</span>
@@ -287,7 +283,7 @@
 
 				{#if (doublons.data?.length ?? 0) > 0}
 					<div
-						class="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11.5px] leading-snug text-amber-800 md:col-span-2 dark:text-amber-200"
+						class="rounded-xl bg-amber-500/10 px-3 py-2 text-[11.5px] leading-snug text-amber-800 md:col-span-2 dark:text-amber-200"
 					>
 						<span class="font-semibold">Doublon probable :</span>
 						ce numéro est déjà sur
@@ -301,7 +297,7 @@
 				<div class="space-y-1.5 md:col-span-2">
 					<Label for="contactProjet">Projet</Label>
 					<Select type="single" bind:value={projet}>
-						<SelectTrigger id="contactProjet" class="w-full border-input bg-base">
+						<SelectTrigger id="contactProjet" class="w-full border-0 bg-card2 shadow-none">
 							<span data-slot="select-value">
 								{projet ? projet : 'Choisir un projet'}
 							</span>
@@ -318,17 +314,15 @@
 			{#snippet suiviBlock()}
 				<div class="space-y-2">
 					<Label>Suivi</Label>
-					<div
-						class="relative inline-grid grid-cols-2 gap-1 rounded-xl border border-line bg-card2/60 p-0.5"
-					>
+					<div class="relative inline-grid grid-cols-2 gap-1 rounded-full bg-card2 p-0.5">
 						<button
 							type="button"
 							onclick={() => (followUpType = 'rdv')}
 							class={[
-								'flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition-all',
+								'flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-all',
 								followUpType === 'rdv'
-									? 'bg-primary text-primary-foreground shadow-md shadow-primary/25'
-									: 'text-muted-foreground hover:bg-brand/10 hover:text-brand light:hover:text-brand'
+									? 'bg-primary text-primary-foreground'
+									: 'text-muted-foreground hover:bg-glass-3 hover:text-foreground'
 							].join(' ')}
 						>
 							<span class="text-[13px] leading-none">📅</span>
@@ -338,10 +332,10 @@
 							type="button"
 							onclick={() => (followUpType = 'rappel')}
 							class={[
-								'flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition-all',
+								'flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-all',
 								followUpType === 'rappel'
-									? 'bg-primary text-primary-foreground shadow-md shadow-primary/25'
-									: 'text-muted-foreground hover:bg-brand/10 hover:text-brand light:hover:text-brand'
+									? 'bg-primary text-primary-foreground'
+									: 'text-muted-foreground hover:bg-glass-3 hover:text-foreground'
 							].join(' ')}
 						>
 							<span class="text-[13px] leading-none">🔔</span>
@@ -354,7 +348,7 @@
 							type="button"
 							variant="outline"
 							size="sm"
-							class="w-full border-line text-[12px]"
+							class="w-full text-[12px]"
 							onclick={() => (agendaOpen = true)}
 						>
 							<CalendarDays class="size-3.5" />
@@ -367,12 +361,15 @@
 							<Label for="contactDate">Date</Label>
 							<Popover>
 								<PopoverTrigger
-									class="flex h-9 w-full items-center gap-2 rounded-md border border-line bg-base px-3 text-[12.5px] font-medium text-foreground transition-colors hover:bg-card2"
+									class="flex h-9 w-full items-center gap-2 rounded-full bg-card2 px-3 text-[12.5px] font-medium text-foreground transition-colors hover:bg-glass-3"
 								>
 									<CalendarDays class="size-3.5 text-muted-foreground" strokeWidth={1.7} />
 									{formattedDate}
 								</PopoverTrigger>
-								<PopoverContent class="w-auto rounded-xl border-line bg-card p-0" align="start">
+								<PopoverContent
+									class="w-auto rounded-2xl border-0 bg-card p-0 shadow-none"
+									align="start"
+								>
 									<Calendar
 										locale="fr-FR"
 										type="single"
@@ -389,7 +386,7 @@
 							<div class="w-28 space-y-1.5">
 								<Label for="contactTime">Heure</Label>
 								<Select type="single" bind:value={followUpTime}>
-									<SelectTrigger id="contactTime" class="w-full border-input bg-base">
+									<SelectTrigger id="contactTime" class="w-full border-0 bg-card2 shadow-none">
 										<span data-slot="select-value">{followUpTime}</span>
 									</SelectTrigger>
 									<SelectContent>
@@ -417,7 +414,7 @@
 					rows={5}
 					placeholder="Notes sur le contact…"
 					bind:value={note}
-					class="min-h-28 border-input bg-base"
+					class="min-h-28 border-0 bg-card2 shadow-none"
 				/>
 			</div>
 

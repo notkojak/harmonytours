@@ -78,7 +78,7 @@
 
 <button
 	type="button"
-	class="absolute top-5 right-5 grid size-10 place-items-center rounded-full border border-line bg-card text-ink-soft shadow-[var(--ombre)] transition-colors hover:border-brand/40 hover:text-brand"
+	class="absolute top-5 right-5 grid size-10 place-items-center rounded-full bg-card2 text-muted-foreground transition-colors hover:bg-glass-3 hover:text-foreground"
 	onclick={toggleTheme}
 	aria-label={theme === 'dark' ? 'Passer en mode clair' : 'Passer en mode sombre'}
 	title={theme === 'dark' ? 'Mode clair' : 'Mode sombre'}
@@ -90,30 +90,26 @@
 	{/if}
 </button>
 
-<!-- Carte de connexion : même langage que les encadrés de bravaux.fr
-     (fond blanc, rayon généreux, ombre portée). -->
-<Card
-	class="w-full max-w-[430px] gap-0 rounded-[28px] border-line py-0 shadow-[var(--ombre-forte)]"
->
-	<CardHeader class="items-center gap-0 px-10 pt-10 pb-0 text-center">
-		<span
-			class="mx-auto grid size-14 place-items-center overflow-hidden rounded-full ring-1 ring-line"
-		>
-			<img src="/favicon.png" alt="Bravaux" class="size-14 object-cover" />
-		</span>
-		<CardTitle class="mt-5 font-display text-[26px] leading-none font-semibold tracking-[-0.02em]">
+<!-- Carte de connexion : sans contour, dans le langage visuel du reste de l'app. -->
+<Card class="w-full max-w-[400px] gap-0 rounded-2xl border-0 py-0 shadow-none">
+	<CardHeader class="items-center gap-0 px-7 pt-8 pb-0 text-center">
+		<img
+			src="/favicon.png"
+			alt="Bravaux"
+			class="mx-auto size-12 rounded-2xl object-cover"
+		/>
+		<CardTitle class="mt-4 font-display text-[18px] leading-none font-semibold tracking-[-0.02em]">
 			Bravaux
 		</CardTitle>
-		<CardDescription class="mt-2 text-[14px] text-ink-soft">
+		<CardDescription class="mt-2 text-[12.5px] text-muted-foreground">
 			Connecte-toi à ton tableau de bord
 		</CardDescription>
 	</CardHeader>
 
-	<CardContent class="px-10 pt-8 pb-10">
-		<form onsubmit={handleSubmit} class="space-y-5">
-			<div class="space-y-2">
-				<!-- Libellé décalé comme sur bravaux.fr, aligné sur la pilule du champ. -->
-				<Label for="email" class="pl-5">Adresse e-mail</Label>
+	<CardContent class="px-7 pt-6 pb-7">
+		<form onsubmit={handleSubmit} class="space-y-4">
+			<div class="space-y-1.5">
+				<Label for="email" class="text-[12px] font-medium text-foreground">Adresse e-mail</Label>
 				<Input
 					id="email"
 					type="email"
@@ -121,12 +117,12 @@
 					autocomplete="email"
 					placeholder="toi@exemple.fr"
 					bind:value={email}
-					class="h-14 px-6"
+					class="h-12 rounded-full border-0 bg-card2 px-5 shadow-none"
 				/>
 			</div>
 
-			<div class="space-y-2">
-				<Label for="password" class="pl-5">Mot de passe</Label>
+			<div class="space-y-1.5">
+				<Label for="password" class="text-[12px] font-medium text-foreground">Mot de passe</Label>
 				<Input
 					id="password"
 					type="password"
@@ -134,7 +130,7 @@
 					autocomplete="current-password"
 					placeholder="••••••••"
 					bind:value={password}
-					class="h-14 px-6"
+					class="h-12 rounded-full border-0 bg-card2 px-5 shadow-none"
 				/>
 			</div>
 
@@ -146,8 +142,16 @@
 			</Button>
 
 			{#if error}
-				<p class="text-center text-[12.5px] text-destructive">{error}</p>
+				<p
+					class="rounded-xl bg-destructive/10 px-3 py-2 text-center text-[12px] font-medium text-destructive"
+				>
+					{error}
+				</p>
 			{/if}
 		</form>
+
+		<p class="mt-6 text-center text-[11px] font-medium text-muted-foreground">
+			Accès réservé à l'équipe Bravaux
+		</p>
 	</CardContent>
 </Card>

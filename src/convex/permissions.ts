@@ -6,6 +6,33 @@ export const ROLE_ADMIN = 'administrateur';
 export const ROLE_ZONE = 'directeur de zone';
 export const ROLE_AGENCE = "directeur d'agence";
 export const ROLE_ANIMATEUR_ZONE = 'animateur de zone';
+export const ROLE_COMMERCIAL = 'commercial';
+
+/**
+ * Rôles autorisés à ÉCRIRE dans le CRM (créer/modifier/supprimer contacts,
+ * clients et ventes, changer un statut). Le commercial en est exclu : il
+ * consulte ses fiches et ses ventes, il ne les modifie pas. La liste est une
+ * autorisation explicite : un rôle inconnu ou vide est refusé, pas accepté.
+ */
+export const CRM_WRITE_ROLES = [
+	ROLE_ADMIN,
+	ROLE_ZONE,
+	ROLE_AGENCE,
+	ROLE_ANIMATEUR_ZONE,
+	"animateur d'équipe",
+	'animateur' // ancien libellé (alias) en attendant la migration
+] as const;
+
+export function canWriteCrm(user: Doc<'users'>): boolean {
+	return !!user.role && (CRM_WRITE_ROLES as readonly string[]).includes(user.role);
+}
+
+/** Refus centralisé : message identique partout pour que l'UI puisse l'afficher. */
+export function assertCanWriteCrm(user: Doc<'users'>): void {
+	if (!canWriteCrm(user)) {
+		throw new Error('Non autorisé : ton rôle est en consultation seule sur le CRM.');
+	}
+}
 
 /**
  * Superviseurs de zone : exclus du tableau de stats (sauf s'ils ont du CA),

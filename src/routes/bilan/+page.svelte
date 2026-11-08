@@ -1,13 +1,13 @@
 <script lang="ts">
+	import { pageEmojis } from '$lib/data/dashboard';
 	import { env } from '$env/dynamic/public';
-	import { BarChart3, ChevronLeft, ChevronRight } from '@lucide/svelte';
+	import { ChevronLeft, ChevronRight } from '@lucide/svelte';
 	import { useQuery } from 'convex-svelte';
 	import { api } from '../../convex/_generated/api.js';
 	import type { Id } from '../../convex/_generated/dataModel.js';
 	import type { Map as MapboxMap, GeoJSONSource } from 'mapbox-gl';
 	import type { Feature, Point } from 'geojson';
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card/index.js';
-	import { Button } from '$lib/components/ui/button/index.js';
 	import { authState } from '$lib/auth-state.svelte';
 	import Avatar from '$lib/components/Avatar.svelte';
 	import { STYLE_URL, LIGHT_STYLE_URL, encreLibellesLieux } from '$lib/zones/colors.js';
@@ -172,6 +172,8 @@
 			badge: 'bg-brand/12 text-brand'
 		}
 	]);
+	// Total des interactions GMS de la période : affiché en sous-titre de section.
+	const gmsTotal = $derived(currentGms.salutation + currentGms.rdv + currentGms.contact);
 
 	// Statut sélectionné pour filtrer la carte (null = tous).
 	let filterStatus = $state<string | null>(null);
@@ -411,25 +413,23 @@
 	// elle passe en plein.
 	const FILTRE_CARTE: Record<string, { repos: string; actif: string; point: string }> = {
 		non_present: {
-			repos:
-				'border-slate-500/30 bg-slate-500/10 text-slate-700 hover:bg-slate-500/20 dark:text-slate-300',
-			actif: 'border-slate-600 bg-slate-600 text-white',
+			repos: 'bg-slate-500/12 text-slate-700 hover:bg-slate-500/20 dark:text-slate-300',
+			actif: 'bg-slate-600 text-white',
 			point: 'bg-slate-500'
 		},
 		refus: {
-			repos: 'border-red-500/30 bg-red-500/10 text-red-700 hover:bg-red-500/20 dark:text-red-300',
-			actif: 'border-red-600 bg-red-600 text-white',
+			repos: 'bg-red-500/12 text-red-700 hover:bg-red-500/20 dark:text-red-300',
+			actif: 'bg-red-600 text-white',
 			point: 'bg-red-500'
 		},
 		rdv: {
-			repos: 'border-sky-500/30 bg-sky-500/10 text-sky-700 hover:bg-sky-500/20 dark:text-sky-300',
-			actif: 'border-sky-600 bg-sky-600 text-white',
+			repos: 'bg-sky-500/12 text-sky-700 hover:bg-sky-500/20 dark:text-sky-300',
+			actif: 'bg-sky-600 text-white',
 			point: 'bg-sky-500'
 		},
 		contact: {
-			repos:
-				'border-violet-500/30 bg-violet-500/10 text-violet-700 hover:bg-violet-500/20 dark:text-violet-300',
-			actif: 'border-violet-600 bg-violet-600 text-white',
+			repos: 'bg-violet-500/12 text-violet-700 hover:bg-violet-500/20 dark:text-violet-300',
+			actif: 'bg-violet-600 text-white',
 			point: 'bg-violet-500'
 		}
 	};
@@ -454,42 +454,55 @@
 </script>
 
 <div class="space-y-5">
-	<Card class="gap-0 rounded-2xl border-line py-0">
+	<Card class="gap-0 rounded-2xl border-0 py-0 shadow-none">
 		<CardHeader class="flex flex-wrap items-center justify-between gap-3 px-5 pt-5 pb-0">
-			<CardTitle class="flex items-center gap-2.5 text-[14px] font-semibold">
-				<span
-					class="grid size-8 place-items-center rounded-full border border-brand/20 bg-brand/10 text-brand"
-				>
-					<BarChart3 class="size-4" strokeWidth={1.7} />
-				</span> Bilan
-			</CardTitle>
-		</CardHeader>
+			<div class="min-w-0">
+				<CardTitle class="flex items-center gap-2.5 text-[14px] font-semibold">
+					<span class="text-[15px] leading-none" aria-hidden="true">{pageEmojis['/bilan']}</span>
+					Bilan
+				</CardTitle>
+				<p class="mt-1 pl-6 text-[11.5px] font-medium text-muted-foreground">
+					Portes sonnées, rendez-vous et contacts
+				</p>
+			</div>
 
-		<CardContent class="px-5 pt-3 pb-5">
-			<!-- Sélecteur mois / jour -->
-			<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-				<div class="flex items-center gap-1">
-					<Button variant="outline" class="h-8 px-2" onclick={prevPeriod}>
-						<ChevronLeft class="size-4" strokeWidth={2} />
-					</Button>
+			<div class="flex flex-wrap items-center gap-2">
+				<!-- Navigation dans la période -->
+				<div class="flex items-center gap-0.5 rounded-full bg-card2 p-1">
+					<button
+						type="button"
+						class="grid size-7 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
+						onclick={prevPeriod}
+						aria-label="Période précédente"
+						title="Période précédente"
+					>
+						<ChevronLeft class="size-3.5" strokeWidth={2} />
+					</button>
 					<span
-						class="min-w-44 px-2 text-center text-[12.5px] font-semibold text-foreground capitalize"
+						class="min-w-36 px-1 text-center text-[12px] font-medium whitespace-nowrap text-foreground capitalize"
 					>
 						{periodLabel}
 					</span>
-					<Button variant="outline" class="h-8 px-2" onclick={nextPeriod}>
-						<ChevronRight class="size-4" strokeWidth={2} />
-					</Button>
+					<button
+						type="button"
+						class="grid size-7 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
+						onclick={nextPeriod}
+						aria-label="Période suivante"
+						title="Période suivante"
+					>
+						<ChevronRight class="size-3.5" strokeWidth={2} />
+					</button>
 				</div>
 
-				<div class="flex items-center gap-1 rounded-full border border-line bg-card2/60 p-0.5">
+				<!-- Vue jour / mois -->
+				<div class="flex items-center gap-1 rounded-full bg-card2 p-1">
 					<button
 						type="button"
 						class={[
-							'rounded-full px-3.5 py-1.5 text-[12px] font-medium transition-colors',
+							'rounded-full px-3 py-1 text-[11.5px] font-medium transition-all duration-150',
 							focusDay
 								? 'bg-primary text-primary-foreground shadow-sm'
-								: 'text-muted-foreground hover:bg-glass-2 hover:text-ink'
+								: 'text-muted-foreground hover:bg-card hover:text-ink'
 						].join(' ')}
 						onclick={focusToday}
 					>
@@ -498,10 +511,10 @@
 					<button
 						type="button"
 						class={[
-							'rounded-full px-3.5 py-1.5 text-[12px] font-medium transition-colors',
+							'rounded-full px-3 py-1 text-[11.5px] font-medium transition-all duration-150',
 							!focusDay
 								? 'bg-primary text-primary-foreground shadow-sm'
-								: 'text-muted-foreground hover:bg-glass-2 hover:text-ink'
+								: 'text-muted-foreground hover:bg-card hover:text-ink'
 						].join(' ')}
 						onclick={() => (focusDay = null)}
 					>
@@ -509,54 +522,49 @@
 					</button>
 				</div>
 			</div>
+		</CardHeader>
 
+		<CardContent class="px-5 pt-4 pb-5">
 			<!-- Onglets équipe (admin / directeur de zone) : « Tous » ou un membre -->
 			{#if isScopeAll && (people.data?.length ?? 0) > 0}
-				<div class="mb-4 flex flex-wrap items-center gap-1.5">
-					<span class="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
-						Équipe :
-					</span>
-					<div
-						class="flex flex-wrap items-center gap-1 rounded-full border border-line bg-card2/60 p-1"
+				<div class="mb-4 flex max-w-full flex-wrap items-center gap-1 rounded-full bg-card2 p-1">
+					<button
+						type="button"
+						onclick={() => (memberId = null)}
+						class={[
+							'flex items-center justify-center gap-1 rounded-full px-3 py-1.5 text-[12px] font-medium whitespace-nowrap transition-all duration-150',
+							memberId === null
+								? 'bg-primary text-primary-foreground shadow-sm'
+								: 'text-muted-foreground hover:bg-card hover:text-ink'
+						].join(' ')}
 					>
+						Tous
+					</button>
+					{#each people.data ?? [] as p}
 						<button
 							type="button"
-							onclick={() => (memberId = null)}
+							onclick={() => (memberId = p._id)}
 							class={[
-								'flex items-center justify-center gap-1 rounded-full px-3.5 py-1.5 text-[12px] font-medium whitespace-nowrap transition-all duration-150',
-								memberId === null
+								'flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium whitespace-nowrap transition-all duration-150',
+								memberId === p._id
 									? 'bg-primary text-primary-foreground shadow-sm'
-									: 'text-muted-foreground hover:bg-glass-2 hover:text-ink'
+									: 'text-muted-foreground hover:bg-card hover:text-ink'
 							].join(' ')}
 						>
-							Tous
+							<Avatar
+								photo={p.photo}
+								label={p.name
+									.trim()
+									.split(/\s+/)
+									.map((w) => w[0] ?? '')
+									.slice(0, 2)
+									.join('')
+									.toUpperCase()}
+								class="size-6 rounded-full bg-muted text-[9px] font-bold text-muted-foreground"
+							/>
+							{p.name}
 						</button>
-						{#each people.data ?? [] as p}
-							<button
-								type="button"
-								onclick={() => (memberId = p._id)}
-								class={[
-									'flex items-center justify-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-medium whitespace-nowrap transition-all duration-150',
-									memberId === p._id
-										? 'bg-primary text-primary-foreground shadow-sm'
-										: 'text-muted-foreground hover:bg-glass-2 hover:text-ink'
-								].join(' ')}
-							>
-								<Avatar
-									photo={p.photo}
-									label={p.name
-										.trim()
-										.split(/\s+/)
-										.map((w) => w[0] ?? '')
-										.slice(0, 2)
-										.join('')
-										.toUpperCase()}
-									class="size-6 rounded-full bg-muted text-[9px] font-bold text-muted-foreground"
-								/>
-								{p.name}
-							</button>
-						{/each}
-					</div>
+					{/each}
 				</div>
 			{/if}
 
@@ -566,47 +574,61 @@
 					<div class="skeleton h-64 w-full rounded-2xl"></div>
 				</div>
 			{:else}
-				<!-- Grands totaux -->
-				<p class="mb-2 flex items-center gap-2 text-[12px] font-semibold text-foreground">
-					🚪 Bilan TAP
-				</p>
-				<div class="mb-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-5">
-					{#each pipelineRows as row}
-						<div class="rounded-2xl border border-line bg-card2 px-2.5 py-2">
-							<div class="flex items-center gap-2">
-								<span
-									class={[
-										'grid size-6 shrink-0 place-items-center rounded-full text-[10.5px] font-bold',
-										row.key === 'portesSonnees'
-											? 'bg-muted text-foreground'
-											: doorStatusBadge(row.status ?? row.key)
-									].join(' ')}
-								>
-									{row.key === 'portesSonnees'
-										? '🚪'
-										: (TAP_STATUS_EMOJI[row.key] ?? row.key.slice(0, 1).toUpperCase())}
-								</span>
-								<span class="truncate text-[11.5px] font-medium text-muted-foreground">
-									{row.label}
-								</span>
-							</div>
-							<p class="mt-1 text-[17px] leading-none font-bold text-foreground">{row.value}</p>
-						</div>
-					{/each}
-				</div>
-
-				<!-- Bilan GMS (même design que le bilan tap) -->
-				<div class="mb-3">
-					<p class="mb-2 flex items-center gap-2 text-[12px] font-semibold text-foreground">
-						🏪 Bilan GMS
-					</p>
-					<div class="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
-						{#each gmsRows as row}
-							<div class="rounded-2xl border border-line bg-card2 px-2.5 py-2">
+				<!-- Bilan TAP -->
+				<section>
+					<header class="mb-2 flex items-baseline justify-between gap-3">
+						<p class="flex items-center gap-2 text-[13px] font-semibold text-foreground">
+							🚪 Bilan TAP
+						</p>
+						<span class="text-[11.5px] font-medium text-muted-foreground">
+							{currentBilan.portesSonnees} portes sonnées
+						</span>
+					</header>
+					<div class="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
+						{#each pipelineRows as row}
+							<div class="rounded-2xl bg-card2 px-3 py-2.5">
 								<div class="flex items-center gap-2">
 									<span
 										class={[
-											'grid size-6 shrink-0 place-items-center rounded-full text-[11px]',
+											'grid size-7 shrink-0 place-items-center rounded-full text-[11px] font-bold',
+											row.key === 'portesSonnees'
+												? 'bg-muted text-foreground'
+												: doorStatusBadge(row.status ?? row.key)
+										].join(' ')}
+									>
+										{row.key === 'portesSonnees'
+											? '🚪'
+											: (TAP_STATUS_EMOJI[row.key] ?? row.key.slice(0, 1).toUpperCase())}
+									</span>
+									<span class="truncate text-[11.5px] font-medium text-muted-foreground">
+										{row.label}
+									</span>
+								</div>
+								<p class="mt-1.5 text-[19px] leading-none font-bold text-foreground tabular-nums">
+									{row.value}
+								</p>
+							</div>
+						{/each}
+					</div>
+				</section>
+
+				<!-- Bilan GMS (même design que le bilan TAP) -->
+				<section class="mt-4 border-t border-line pt-4">
+					<header class="mb-2 flex items-baseline justify-between gap-3">
+						<p class="flex items-center gap-2 text-[13px] font-semibold text-foreground">
+							🏪 Bilan GMS
+						</p>
+						<span class="text-[11.5px] font-medium text-muted-foreground">
+							{gmsTotal} contacts
+						</span>
+					</header>
+					<div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
+						{#each gmsRows as row}
+							<div class="rounded-2xl bg-card2 px-3 py-2.5">
+								<div class="flex items-center gap-2">
+									<span
+										class={[
+											'grid size-7 shrink-0 place-items-center rounded-full text-[11px]',
 											row.badge
 										].join(' ')}
 									>
@@ -616,65 +638,76 @@
 										{row.label}
 									</span>
 								</div>
-								<p class="mt-1 text-[17px] leading-none font-bold text-foreground">{row.value}</p>
+								<p class="mt-1.5 text-[19px] leading-none font-bold text-foreground tabular-nums">
+									{row.value}
+								</p>
 							</div>
 						{/each}
 					</div>
-				</div>
+				</section>
 
-				<!-- Filtre carte -->
-				<div class="mb-3 flex flex-wrap items-center gap-1.5">
-					<span class="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
-						Carte :
-					</span>
-					<button
-						type="button"
-						onclick={() => (filterStatus = null)}
-						class={[
-							'rounded-full border px-2.5 py-1 text-[11.5px] font-medium transition-colors',
-							filterStatus === null
-								? 'border-primary bg-primary text-primary-foreground shadow-sm'
-								: 'border-line bg-card2 text-muted-foreground hover:bg-glass-2 hover:text-ink'
-						].join(' ')}
-					>
-						Tous
-					</button>
-					{#each PIPELINE_ORDER as s}
-						{#if s.key !== 'portesSonnees'}
-							{@const teinte = FILTRE_CARTE[s.status ?? '']}
-							{@const actif = filterStatus === s.status}
-							<button
-								type="button"
-								onclick={() => (filterStatus = actif ? null : s.status)}
-								class={[
-									'flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] font-medium transition-colors',
-									actif ? teinte?.actif : teinte?.repos
-								].join(' ')}
-							>
-								<span
-									class={['size-2 rounded-full', actif ? 'bg-white/80' : teinte?.point].join(' ')}
-								></span>
-								{doorStatusLabel(s.status)}
-							</button>
-						{/if}
-					{/each}
-				</div>
+				<!-- Carte des portes -->
+				<section class="mt-4 border-t border-line pt-4">
+					<header class="mb-2 flex items-baseline justify-between gap-3">
+						<p class="flex items-center gap-2 text-[13px] font-semibold text-foreground">
+							🗺️ Carte des portes
+						</p>
+						<span class="text-[11.5px] font-medium text-muted-foreground">
+							{porteFeatures.length} portes affichées
+						</span>
+					</header>
 
-				<!-- Carte -->
-				<div class="relative h-[30rem] overflow-hidden rounded-2xl border border-line bg-card2">
-					{#if noToken}
-						<div class="absolute inset-0 grid place-items-center p-4 text-center">
-							<p class="text-[12px] leading-relaxed text-muted-foreground">
-								Token Mapbox manquant — ajoute
-								<code class="rounded bg-muted px-1 py-0.5 text-ink">PUBLIC_MAPBOX_TOKEN</code>
-								dans <code class="rounded bg-muted px-1 py-0.5 text-ink">.env</code>.
-							</p>
-						</div>
-					{/if}
-					<div class="absolute inset-0">
-						<div class="h-full w-full" bind:this={container}></div>
+					<!-- Filtre carte -->
+					<div class="mb-2.5 flex flex-wrap items-center gap-1.5">
+						<button
+							type="button"
+							onclick={() => (filterStatus = null)}
+							class={[
+								'rounded-full px-2.5 py-1 text-[11.5px] font-medium transition-colors',
+								filterStatus === null
+									? 'bg-primary text-primary-foreground shadow-sm'
+									: 'bg-card2 text-muted-foreground hover:bg-glass-3 hover:text-ink'
+							].join(' ')}
+						>
+							Tous
+						</button>
+						{#each PIPELINE_ORDER as s}
+							{#if s.key !== 'portesSonnees'}
+								{@const teinte = FILTRE_CARTE[s.status ?? '']}
+								{@const actif = filterStatus === s.status}
+								<button
+									type="button"
+									onclick={() => (filterStatus = actif ? null : s.status)}
+									class={[
+										'flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11.5px] font-medium transition-colors',
+										actif ? teinte?.actif : teinte?.repos
+									].join(' ')}
+								>
+									<span
+										class={['size-2 rounded-full', actif ? 'bg-white/80' : teinte?.point].join(' ')}
+									></span>
+									{doorStatusLabel(s.status)}
+								</button>
+							{/if}
+						{/each}
 					</div>
-				</div>
+
+					<!-- Carte -->
+					<div class="relative h-[30rem] overflow-hidden rounded-2xl bg-card2">
+						{#if noToken}
+							<div class="absolute inset-0 grid place-items-center p-4 text-center">
+								<p class="text-[12px] leading-relaxed text-muted-foreground">
+									Token Mapbox manquant — ajoute
+									<code class="rounded bg-muted px-1 py-0.5 text-ink">PUBLIC_MAPBOX_TOKEN</code>
+									dans <code class="rounded bg-muted px-1 py-0.5 text-ink">.env</code>.
+								</p>
+							</div>
+						{/if}
+						<div class="absolute inset-0">
+							<div class="h-full w-full" bind:this={container}></div>
+						</div>
+					</div>
+				</section>
 			{/if}
 		</CardContent>
 	</Card>

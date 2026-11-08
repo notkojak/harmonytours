@@ -1,5 +1,7 @@
 <script lang="ts">
+	import { pageEmojis } from '$lib/data/dashboard';
 	import { ChevronLeft, ChevronRight } from '@lucide/svelte';
+	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card/index.js';
 
 	// Page « Books » : synthèse des 16 modules du book de formation commercial
 	// Bravaux 2026. Le Module 8 (TAP) contient la trame complète à
@@ -238,19 +240,19 @@
 	// et la règle. Les quatre répliques restent lisibles au premier coup d’œil.
 	const lineChip = {
 		V: { label: 'Vendeur', cls: 'bg-foreground text-background' },
-		C: { label: 'Client', cls: 'bg-glass-3 text-ink-soft' },
-		Q: { label: 'Question', cls: 'border border-brand/40 bg-brand/5 text-brand' },
+		C: { label: 'Client', cls: 'bg-card text-muted-foreground' },
+		Q: { label: 'Question', cls: 'bg-brand/10 text-brand' },
 		R: { label: 'Règle', cls: 'bg-brand/10 text-brand' }
 	};
 
 	// Encadrés : les tons gardent leur sens (alerte, danger, réussite) ; le ton
 	// « violet » était décoratif, il reprend l’accent bleu de la marque.
 	const toneCls: Record<Tone, string> = {
-		amber: 'border-amber-500/40 bg-amber-500/[0.07] text-amber-700 dark:text-amber-300',
-		red: 'border-destructive/40 bg-destructive/[0.07] text-destructive',
-		emerald: 'border-emerald-500/40 bg-emerald-500/[0.07] text-emerald-700 dark:text-emerald-300',
-		violet: 'border-brand/40 bg-brand/[0.07] text-brand',
-		line: 'border-line bg-card2 text-ink-soft'
+		amber: 'bg-amber-500/10 text-amber-700 dark:text-amber-300',
+		red: 'bg-destructive/10 text-destructive',
+		emerald: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+		violet: 'bg-brand/10 text-brand',
+		line: 'bg-card2 text-muted-foreground'
 	};
 
 	const modules: Record<number, ModuleDef> = {
@@ -1240,310 +1242,332 @@
 </script>
 
 <div class="mx-auto max-w-6xl">
-	<div class="flex flex-col gap-5 lg:flex-row">
-		<!-- Sommaire des 16 modules, en colonne sur grand écran -->
-		<aside class="hidden shrink-0 lg:block lg:w-64">
-			<div class="sticky top-2 rounded-2xl border border-line bg-card p-3.5">
-				<p class="px-1 font-display text-[13px] font-semibold text-foreground">Sommaire</p>
-				<p class="px-1 text-[11.5px] text-ink-soft">Les {moduleOrder.length} modules du book</p>
-				<nav class="mt-3 space-y-0.5">
+	<Card class="gap-0 overflow-visible rounded-2xl border-0 py-0 shadow-none">
+		<CardHeader class="flex flex-wrap items-center justify-between gap-3 px-5 pt-5 pb-0">
+			<div class="min-w-0">
+				<CardTitle class="flex items-center gap-2.5 text-[14px] font-semibold">
+					<span class="text-[15px] leading-none" aria-hidden="true">{pageEmojis['/books']}</span>
+					Books
+				</CardTitle>
+				<p class="mt-1 pl-6 text-[11.5px] font-medium text-muted-foreground">
+					Les {moduleOrder.length} modules du book de formation
+				</p>
+			</div>
+
+			<div class="flex items-center gap-1.5">
+				<button
+					type="button"
+					disabled={activeModule === moduleOrder[0]}
+					onclick={() => (activeModule = activeModule - 1)}
+					class="flex h-9 items-center gap-1 rounded-full bg-card2 px-3.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-glass-3 hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+				>
+					<ChevronLeft class="size-3.5" strokeWidth={2.2} />
+					Précédent
+				</button>
+				<button
+					type="button"
+					disabled={activeModule === moduleOrder[moduleOrder.length - 1]}
+					onclick={() => (activeModule = activeModule + 1)}
+					class="flex h-9 items-center gap-1 rounded-full bg-primary px-3.5 text-[12px] font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:pointer-events-none disabled:opacity-40"
+				>
+					Suivant
+					<ChevronRight class="size-3.5" strokeWidth={2.2} />
+				</button>
+			</div>
+		</CardHeader>
+
+		<CardContent class="px-5 pt-4 pb-5">
+			<div class="flex flex-col gap-5 lg:flex-row">
+				<!-- Sommaire des 16 modules, en colonne sur grand écran -->
+				<aside class="hidden shrink-0 lg:block lg:w-64">
+					<div class="sticky top-2 rounded-2xl bg-card2 p-3.5">
+						<p class="px-1 text-[12px] font-semibold text-foreground">Sommaire</p>
+						<p class="px-1 text-[11px] font-medium text-muted-foreground">
+							Les {moduleOrder.length} modules du book
+						</p>
+						<nav class="mt-3 space-y-0.5">
+							{#each moduleOrder as m (m)}
+								<button
+									type="button"
+									onclick={() => (activeModule = m)}
+									class={[
+										'flex w-full items-center gap-1.5 rounded-full py-2 pr-2 pl-2.5 text-left transition-colors',
+										activeModule === m
+											? 'bg-card font-semibold text-foreground shadow-sm'
+											: 'font-medium text-muted-foreground hover:bg-card/60 hover:text-foreground'
+									].join(' ')}
+								>
+									<span
+										class="w-3.5 shrink-0 text-[11px] font-bold text-muted-foreground tabular-nums"
+									>
+										{m}
+									</span>
+									<span class="shrink-0 text-[13px] leading-none">{modules[m].icon}</span>
+									<span class="min-w-0 flex-1 truncate text-[12.5px]">{modules[m].title}</span>
+								</button>
+							{/each}
+						</nav>
+					</div>
+				</aside>
+
+				<!-- Sommaire horizontal, pour les écrans étroits -->
+				<div class="flex gap-1.5 overflow-x-auto pb-1 lg:hidden">
 					{#each moduleOrder as m (m)}
 						<button
 							type="button"
 							onclick={() => (activeModule = m)}
 							class={[
-								'relative flex w-full items-center gap-1.5 rounded-xl py-2 pr-2 pl-2.5 text-left transition-colors',
+								'flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] whitespace-nowrap transition-colors',
 								activeModule === m
-									? 'bg-glass-2 font-semibold text-foreground'
-									: 'font-medium text-ink-soft hover:bg-glass-1 hover:text-foreground'
+									? 'bg-primary font-semibold text-primary-foreground shadow-sm'
+									: 'bg-card2 font-medium text-muted-foreground'
 							].join(' ')}
 						>
-							{#if activeModule === m}
-								<span
-									class="absolute top-1/2 left-0 h-4 w-[3px] -translate-y-1/2 rounded-full bg-brand"
-								></span>
-							{/if}
-							<span class="w-3.5 shrink-0 text-[11px] font-bold text-ink-mute tabular-nums">
-								{m}
-							</span>
-							<span class="shrink-0 text-[13px] leading-none">{modules[m].icon}</span>
-							<span class="min-w-0 flex-1 truncate text-[12.5px]">{modules[m].title}</span>
+							<span class="font-bold tabular-nums">{m}</span>
+							{modules[m].icon}
+							{modules[m].title}
 						</button>
 					{/each}
-				</nav>
-			</div>
-		</aside>
-
-		<!-- Sommaire horizontal, pour les écrans étroits -->
-		<div class="flex gap-1.5 overflow-x-auto pb-1 lg:hidden">
-			{#each moduleOrder as m (m)}
-				<button
-					type="button"
-					onclick={() => (activeModule = m)}
-					class={[
-						'flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] whitespace-nowrap transition-colors',
-						activeModule === m
-							? 'bg-foreground font-semibold text-background'
-							: 'border border-line font-medium text-ink-soft'
-					].join(' ')}
-				>
-					<span class="font-bold tabular-nums">{m}</span>
-					{modules[m].icon}
-					{modules[m].title}
-				</button>
-			{/each}
-		</div>
-
-		<div class="min-w-0 flex-1 space-y-4">
-			<!-- En-tête du module -->
-			<div class="flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-card p-4">
-				<span
-					class="grid size-12 shrink-0 place-items-center rounded-2xl border border-brand/20 bg-brand/10 text-[22px] leading-none"
-				>
-					{modules[activeModule].icon}
-				</span>
-				<div class="min-w-0 flex-1">
-					<p class="text-[10.5px] font-bold tracking-[0.14em] text-brand uppercase">
-						Module {activeModule} / {moduleOrder.length}
-					</p>
-					<h1
-						class="font-display text-[22px] leading-tight font-semibold tracking-[-0.02em] text-foreground"
-					>
-						{modules[activeModule].title}
-					</h1>
-					<p class="mt-0.5 text-[12.5px] text-ink-soft">
-						{modules[activeModule].subtitle}
-					</p>
 				</div>
-				<div class="flex items-center gap-1.5">
-					<button
-						type="button"
-						disabled={activeModule === moduleOrder[0]}
-						onclick={() => (activeModule = activeModule - 1)}
-						class="flex h-9 items-center gap-1 rounded-full border border-line px-3 text-[12px] font-semibold text-ink-soft transition-colors hover:border-brand/40 hover:text-brand disabled:pointer-events-none disabled:opacity-40"
-					>
-						<ChevronLeft class="size-3.5" strokeWidth={2.2} />
-						Précédent
-					</button>
-					<button
-						type="button"
-						disabled={activeModule === moduleOrder[moduleOrder.length - 1]}
-						onclick={() => (activeModule = activeModule + 1)}
-						class="flex h-9 items-center gap-1 rounded-full bg-foreground px-3 text-[12px] font-semibold text-background transition-opacity hover:opacity-90 disabled:pointer-events-none disabled:opacity-40"
-					>
-						Suivant
-						<ChevronRight class="size-3.5" strokeWidth={2.2} />
-					</button>
-				</div>
-			</div>
 
-			{#each modules[activeModule].blocks as block}
-				{#if block.kind === 'p'}
-					<div class="rounded-2xl border border-line bg-card p-4">
-						<p class="text-[13px] leading-relaxed text-ink-soft">{block.text}</p>
-					</div>
-				{:else if block.kind === 'callout'}
-					<div
-						class={[
-							'rounded-2xl border p-3.5 text-[13px] leading-relaxed font-medium',
-							toneCls[block.tone ?? 'line']
-						].join(' ')}
-					>
-						{block.text}
-					</div>
-				{:else if block.kind === 'list'}
-					<div class="rounded-2xl border border-line bg-card p-4">
-						{#if block.title}
-							<p class="mb-3 font-display text-[13.5px] font-semibold text-foreground">
-								{block.title}
+				<div class="min-w-0 flex-1 space-y-4">
+					<!-- En-tête du module -->
+					<div class="flex flex-wrap items-center gap-3 rounded-2xl bg-card2 p-4">
+						<span
+							class="grid size-12 shrink-0 place-items-center rounded-2xl bg-card text-[22px] leading-none"
+						>
+							{modules[activeModule].icon}
+						</span>
+						<div class="min-w-0 flex-1">
+							<p class="text-[10.5px] font-bold tracking-[0.14em] text-brand uppercase">
+								Module {activeModule} / {moduleOrder.length}
 							</p>
-						{/if}
-						<div class="space-y-2.5">
-							{#each block.items as item}
-								{@const text = typeof item === 'string' ? item : item.q}
-								{@const detail = typeof item === 'string' ? undefined : item.detail}
-								{@const i = block.items.indexOf(item)}
-								<div class="flex items-start gap-3">
-									{#if block.numbered}
-										<span
-											class="mt-0.5 grid size-6 shrink-0 place-items-center rounded-lg bg-brand/10 text-[12px] font-bold text-brand"
-										>
-											{i + 1}
-										</span>
-									{:else if block.check}
-										<span
-											class="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-brand/10 text-[11px] text-brand"
-										>
-											✓
-										</span>
-									{:else}
-										<span class="mt-[7px] size-1.5 shrink-0 rounded-full bg-line-strong"></span>
-									{/if}
-									<div class="min-w-0">
-										<p class="text-[13px] font-semibold text-foreground">{text}</p>
-										{#if detail}
-											<p class="mt-0.5 text-[13px] leading-relaxed text-ink-soft">{detail}</p>
-										{/if}
-									</div>
-								</div>
-							{/each}
+							<h1
+								class="text-[20px] leading-tight font-semibold tracking-[-0.02em] text-foreground"
+							>
+								{modules[activeModule].title}
+							</h1>
+							<p class="mt-0.5 text-[12px] font-medium text-muted-foreground">
+								{modules[activeModule].subtitle}
+							</p>
 						</div>
 					</div>
-				{:else if block.kind === 'table'}
-					<div class="rounded-2xl border border-line bg-card p-4">
-						{#if block.title}
-							<p class="mb-3 font-display text-[13.5px] font-semibold text-foreground">
-								{block.title}
-							</p>
-						{/if}
-						<div class="overflow-x-auto">
-							<table class="w-full border-collapse text-left">
-								<thead>
-									<tr>
-										{#each block.headers as h}
-											<th
-												class="border-b border-line px-2.5 py-2 text-[10.5px] font-bold tracking-[0.1em] text-ink-mute uppercase"
+
+					{#each modules[activeModule].blocks as block}
+						{#if block.kind === 'p'}
+							<div class="rounded-2xl bg-card2 p-4">
+								<p class="text-[13px] leading-relaxed text-muted-foreground">{block.text}</p>
+							</div>
+						{:else if block.kind === 'callout'}
+							<div
+								class={[
+									'rounded-2xl p-3.5 text-[13px] leading-relaxed font-medium',
+									toneCls[block.tone ?? 'line']
+								].join(' ')}
+							>
+								{block.text}
+							</div>
+						{:else if block.kind === 'list'}
+							<div class="rounded-2xl bg-card2 p-4">
+								{#if block.title}
+									<p class="mb-3 text-[13.5px] font-semibold text-foreground">
+										{block.title}
+									</p>
+								{/if}
+								<div class="space-y-2.5">
+									{#each block.items as item}
+										{@const text = typeof item === 'string' ? item : item.q}
+										{@const detail = typeof item === 'string' ? undefined : item.detail}
+										{@const i = block.items.indexOf(item)}
+										<div class="flex items-start gap-3">
+											{#if block.numbered}
+												<span
+													class="mt-0.5 grid size-6 shrink-0 place-items-center rounded-lg bg-brand/10 text-[12px] font-bold text-brand"
+												>
+													{i + 1}
+												</span>
+											{:else if block.check}
+												<span
+													class="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-brand/10 text-[11px] text-brand"
+												>
+													✓
+												</span>
+											{:else}
+												<span class="mt-[7px] size-1.5 shrink-0 rounded-full bg-line-strong"></span>
+											{/if}
+											<div class="min-w-0">
+												<p class="text-[13px] font-semibold text-foreground">{text}</p>
+												{#if detail}
+													<p class="mt-0.5 text-[13px] leading-relaxed text-muted-foreground">
+														{detail}
+													</p>
+												{/if}
+											</div>
+										</div>
+									{/each}
+								</div>
+							</div>
+						{:else if block.kind === 'table'}
+							<div class="rounded-2xl bg-card2 p-4">
+								{#if block.title}
+									<p class="mb-3 text-[13.5px] font-semibold text-foreground">
+										{block.title}
+									</p>
+								{/if}
+								<div class="overflow-x-auto">
+									<table class="w-full border-collapse text-left">
+										<thead>
+											<tr>
+												{#each block.headers as h}
+													<th
+														class="border-b border-line px-2.5 py-2 text-[10.5px] font-bold tracking-[0.1em] text-muted-foreground uppercase"
+													>
+														{h}
+													</th>
+												{/each}
+											</tr>
+										</thead>
+										<tbody>
+											{#each block.rows as row}
+												<tr class="border-b border-line/60 last:border-0">
+													{#each row as cell, ci}
+														<td
+															class={[
+																'px-2.5 py-2 align-top text-[12.5px] leading-relaxed',
+																ci === 0 ? 'font-semibold text-foreground' : 'text-muted-foreground'
+															].join(' ')}
+														>
+															{cell}
+														</td>
+													{/each}
+												</tr>
+											{/each}
+										</tbody>
+									</table>
+								</div>
+							</div>
+						{:else if block.kind === 'script'}
+							<div class="rounded-2xl bg-card2 p-4">
+								{#if block.lines.length > 1}
+									<p class="mb-3 text-[13.5px] font-semibold text-foreground">Le script</p>
+								{/if}
+								<div class="space-y-2">
+									{#each block.lines as line}
+										<div class="flex items-start gap-2.5">
+											<span
+												class={[
+													'mt-0.5 w-16 shrink-0 rounded-full px-1.5 py-0.5 text-center text-[9.5px] font-bold tracking-[0.06em] uppercase',
+													lineChip[line.type].cls
+												].join(' ')}
 											>
-												{h}
-											</th>
-										{/each}
-									</tr>
-								</thead>
-								<tbody>
-									{#each block.rows as row}
-										<tr class="border-b border-line/60 last:border-0">
-											{#each row as cell, ci}
-												<td
+												{lineChip[line.type].label}
+											</span>
+											<p
+												class={[
+													'text-[13px] leading-relaxed',
+													line.type === 'V' || line.type === 'C'
+														? 'text-foreground'
+														: 'text-muted-foreground'
+												].join(' ')}
+											>
+												{#if line.type === 'V' || line.type === 'C'}
+													« {line.text} »
+												{:else}
+													{line.text}
+												{/if}
+											</p>
+										</div>
+									{/each}
+								</div>
+							</div>
+						{:else if block.kind === 'steps'}
+							<div class="rounded-2xl bg-card2 p-4">
+								{#if block.title}
+									<p class="mb-3 text-[13.5px] font-semibold text-foreground">
+										{block.title}
+									</p>
+								{/if}
+								<div class="space-y-2.5">
+									{#each block.items as s}
+										<div class="flex items-start gap-3">
+											<span
+												class="grid size-8 shrink-0 place-items-center rounded-xl bg-brand/10 text-[15px] font-bold text-brand"
+											>
+												{s.n}
+											</span>
+											<div class="min-w-0 pt-0.5">
+												<p class="text-[13px] font-semibold text-foreground">{s.label}</p>
+												{#if s.detail}
+													<p class="mt-0.5 text-[13px] leading-relaxed text-muted-foreground">
+														{s.detail}
+													</p>
+												{/if}
+											</div>
+										</div>
+									{/each}
+								</div>
+							</div>
+						{:else if block.kind === 'phases'}
+							<!-- Les 8 phases de la trame TAP -->
+							{#each block.phases as p}
+								<div class="rounded-2xl bg-card2 p-4">
+									<div class="flex items-start gap-3">
+										<span
+											class="grid size-10 shrink-0 place-items-center rounded-2xl bg-brand/10 text-[18px] font-bold text-brand"
+										>
+											{p.n}
+										</span>
+										<div class="min-w-0 flex-1">
+											<div class="flex flex-wrap items-center gap-2">
+												<h2 class="text-[15px] font-semibold tracking-[-0.01em] text-foreground">
+													{p.name}
+												</h2>
+												{#if p.duration !== '—'}
+													<span
+														class="rounded-full bg-card px-2 py-0.5 text-[10px] font-bold tracking-[0.06em] text-muted-foreground uppercase"
+													>
+														{p.duration}
+													</span>
+												{/if}
+											</div>
+											<p class="mt-0.5 text-[12px] text-muted-foreground italic">{p.objectif}</p>
+										</div>
+									</div>
+
+									<div class="mt-3 space-y-2">
+										{#each p.lines as line}
+											<div class="flex items-start gap-2.5">
+												<span
 													class={[
-														'px-2.5 py-2 align-top text-[12.5px] leading-relaxed',
-														ci === 0 ? 'font-semibold text-foreground' : 'text-ink-soft'
+														'mt-0.5 w-16 shrink-0 rounded-full px-1.5 py-0.5 text-center text-[9.5px] font-bold tracking-[0.06em] uppercase',
+														lineChip[line.type].cls
 													].join(' ')}
 												>
-													{cell}
-												</td>
-											{/each}
-										</tr>
-									{/each}
-								</tbody>
-							</table>
-						</div>
-					</div>
-				{:else if block.kind === 'script'}
-					<div class="rounded-2xl border border-line bg-card p-4">
-						{#if block.lines.length > 1}
-							<p class="mb-3 font-display text-[13.5px] font-semibold text-foreground">Le script</p>
-						{/if}
-						<div class="space-y-2">
-							{#each block.lines as line}
-								<div class="flex items-start gap-2.5">
-									<span
-										class={[
-											'mt-0.5 w-16 shrink-0 rounded-full px-1.5 py-0.5 text-center text-[9.5px] font-bold tracking-[0.06em] uppercase',
-											lineChip[line.type].cls
-										].join(' ')}
-									>
-										{lineChip[line.type].label}
-									</span>
-									<p
-										class={[
-											'text-[13px] leading-relaxed',
-											line.type === 'V' || line.type === 'C' ? 'text-foreground' : 'text-ink-soft'
-										].join(' ')}
-									>
-										{#if line.type === 'V' || line.type === 'C'}
-											« {line.text} »
-										{:else}
-											{line.text}
-										{/if}
-									</p>
-								</div>
-							{/each}
-						</div>
-					</div>
-				{:else if block.kind === 'steps'}
-					<div class="rounded-2xl border border-line bg-card p-4">
-						{#if block.title}
-							<p class="mb-3 font-display text-[13.5px] font-semibold text-foreground">
-								{block.title}
-							</p>
-						{/if}
-						<div class="space-y-2.5">
-							{#each block.items as s}
-								<div class="flex items-start gap-3">
-									<span
-										class="grid size-8 shrink-0 place-items-center rounded-xl bg-brand/10 text-[15px] font-bold text-brand"
-									>
-										{s.n}
-									</span>
-									<div class="min-w-0 pt-0.5">
-										<p class="text-[13px] font-semibold text-foreground">{s.label}</p>
-										{#if s.detail}
-											<p class="mt-0.5 text-[13px] leading-relaxed text-ink-soft">{s.detail}</p>
-										{/if}
+													{lineChip[line.type].label}
+												</span>
+												<p
+													class={[
+														'text-[13px] leading-relaxed',
+														line.type === 'V' || line.type === 'C'
+															? 'text-foreground'
+															: 'text-muted-foreground'
+													].join(' ')}
+												>
+													{#if line.type === 'V' || line.type === 'C'}
+														« {line.text} »
+													{:else}
+														{line.text}
+													{/if}
+												</p>
+											</div>
+										{/each}
 									</div>
 								</div>
 							{/each}
-						</div>
-					</div>
-				{:else if block.kind === 'phases'}
-					<!-- Les 8 phases de la trame TAP -->
-					{#each block.phases as p}
-						<div class="rounded-2xl border border-line bg-card p-4">
-							<div class="flex items-start gap-3">
-								<span
-									class="grid size-10 shrink-0 place-items-center rounded-2xl bg-brand/10 text-[18px] font-bold text-brand"
-								>
-									{p.n}
-								</span>
-								<div class="min-w-0 flex-1">
-									<div class="flex flex-wrap items-center gap-2">
-										<h2
-											class="font-display text-[15px] font-semibold tracking-[-0.01em] text-foreground"
-										>
-											{p.name}
-										</h2>
-										{#if p.duration !== '—'}
-											<span
-												class="rounded-full border border-line bg-glass-3 px-2 py-0.5 text-[10px] font-bold tracking-[0.06em] text-ink-soft uppercase"
-											>
-												{p.duration}
-											</span>
-										{/if}
-									</div>
-									<p class="mt-0.5 text-[12px] text-ink-soft italic">{p.objectif}</p>
-								</div>
-							</div>
-
-							<div class="mt-3 space-y-2">
-								{#each p.lines as line}
-									<div class="flex items-start gap-2.5">
-										<span
-											class={[
-												'mt-0.5 w-16 shrink-0 rounded-full px-1.5 py-0.5 text-center text-[9.5px] font-bold tracking-[0.06em] uppercase',
-												lineChip[line.type].cls
-											].join(' ')}
-										>
-											{lineChip[line.type].label}
-										</span>
-										<p
-											class={[
-												'text-[13px] leading-relaxed',
-												line.type === 'V' || line.type === 'C' ? 'text-foreground' : 'text-ink-soft'
-											].join(' ')}
-										>
-											{#if line.type === 'V' || line.type === 'C'}
-												« {line.text} »
-											{:else}
-												{line.text}
-											{/if}
-										</p>
-									</div>
-								{/each}
-							</div>
-						</div>
+						{/if}
 					{/each}
-				{/if}
-			{/each}
-		</div>
-	</div>
+				</div>
+			</div>
+		</CardContent>
+	</Card>
 </div>

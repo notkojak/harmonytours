@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { ChevronDown, Sparkles } from '@lucide/svelte';
 	import { Input } from '$lib/components/ui/input/index.js';
-	import { FAMILLES } from '$lib/data/catalogue';
 	import {
 		achatOptions,
 		ageOptions,
@@ -10,7 +9,6 @@
 		foyerOptions,
 		habiteOptions,
 		initialQualification,
-		pourQuandOptions,
 		qualifAnswered,
 		soncasOptions,
 		type QualifAnswers
@@ -156,13 +154,13 @@
 					<Input
 						bind:value={answers.achatDetail}
 						placeholder="Quel type de rénovation ?"
-						class="mt-1.5 h-8 w-64 border-input bg-base text-[12px]"
+						class="mt-1.5 h-8 w-64 border-input bg-base text-[13px]"
 					/>
 				{:else if answers.achat === 'Autre…'}
 					<Input
 						bind:value={answers.achatDetail}
 						placeholder="Précisez…"
-						class="mt-1.5 h-8 w-56 border-input bg-base text-[12px]"
+						class="mt-1.5 h-8 w-56 border-input bg-base text-[13px]"
 					/>
 				{/if}
 			</div>
@@ -173,12 +171,12 @@
 					<Input
 						bind:value={answers.metierMme}
 						placeholder="Métier madame"
-						class="h-8 border-input bg-base text-[12px]"
+						class="h-8 border-input bg-base text-[13px]"
 					/>
 					<Input
 						bind:value={answers.metierM}
 						placeholder="Métier monsieur"
-						class="h-8 border-input bg-base text-[12px]"
+						class="h-8 border-input bg-base text-[13px]"
 					/>
 				</div>
 			</div>
@@ -201,7 +199,7 @@
 							bind:value={answers.chauffageCout}
 							inputmode="numeric"
 							placeholder="Coût mensuel"
-							class="h-8 w-40 border-input bg-base text-[12px]"
+							class="h-8 w-40 border-input bg-base text-[13px]"
 						/>
 						<span class="text-[11.5px] text-muted-foreground">€ / mois</span>
 					</div>
@@ -233,27 +231,8 @@
 				)}
 			</div>
 
-			<div>
-				{@render qHeader(11, 'Que veulent-ils changer ?')}
-				{@render chipGroup(
-					FAMILLES,
-					answers.changer,
-					(v) => (answers.changer = answers.changer === v ? '' : v)
-				)}
-				{#if answers.changer}
-					<div class="mt-1.5">
-						<p class="mb-1 text-[11.5px] font-medium text-muted-foreground">Pour quand ?</p>
-						{@render chipGroup(
-							pourQuandOptions,
-							answers.pourQuand,
-							(v) => (answers.pourQuand = answers.pourQuand === v ? '' : v)
-						)}
-					</div>
-				{/if}
-			</div>
-
 			<div class="rounded-lg border border-line bg-card2/60 px-2.5 py-2">
-				{@render qHeader(12, "SONCAS — leviers d'achat ?")}
+				{@render qHeader(11, "SONCAS — leviers d'achat ?")}
 				{@render chipGroupMulti(
 					soncasOptions,
 					answers.soncas,

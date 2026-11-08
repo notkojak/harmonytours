@@ -389,7 +389,34 @@ export const agenda = httpAction(async (ctx, request) => {
 	const evenements = await ctx.runQuery(api.evenements.list, {});
 	const membres = await ctx.runQuery(api.evenements.listMembres, {});
 	const profile = await ctx.runQuery(api.users.getProfile, {});
-	return json({ ok: true, rdvs, evenements, membres, profile });
+	// Dates de pose et de métrage : elles vivent sur la vente et s'affichent
+	// dans l'agenda mobile comme sur le web, sans compter comme des RDV.
+	const ventes = await ctx.runQuery(api.ventes.listVentes, {});
+	const poses = (ventes ?? []).flatMap((v: any) => [
+		...(v.datesPoses ?? []).map((p: any) => ({
+			id: p.id,
+			venteId: v._id,
+			date: p.date,
+			time: p.time ?? null,
+			note: p.note ?? null,
+			contactName: v.contactName,
+			vendeur: v.vendeurDisplay ?? v.vendeurName ?? null
+		})),
+		...(v.dateMetrage
+			? [
+					{
+						id: `metrage-${v._id}`,
+						venteId: v._id,
+						date: v.dateMetrage,
+						time: null,
+						note: null,
+						contactName: v.contactName,
+						vendeur: v.vendeurDisplay ?? v.vendeurName ?? null
+					}
+				]
+			: [])
+	]);
+	return json({ ok: true, rdvs, evenements, membres, profile, poses });
 });
 
 // POST /api/mobile/evenements — crée un événement d'agenda (mêmes champs et

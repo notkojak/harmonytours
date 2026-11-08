@@ -73,12 +73,10 @@
 </script>
 
 <Dialog bind:open>
-	<DialogContent class="max-w-md rounded-xl border-line bg-card">
+	<DialogContent class="max-w-md rounded-2xl border-0 bg-card shadow-none">
 		<DialogHeader>
 			<DialogTitle class="flex items-center gap-2 text-[14px] font-semibold">
-				<span
-					class="grid size-8 place-items-center rounded-lg border border-line bg-card2 text-muted-foreground"
-				>
+				<span class="grid size-8 place-items-center rounded-xl bg-card2 text-muted-foreground">
 					<CalendarPlus class="size-4" strokeWidth={1.7} />
 				</span>
 				Rendez-vous de confortation
@@ -87,8 +85,8 @@
 
 		<div class="space-y-3">
 			<p class="text-[12px] leading-snug text-muted-foreground">
-				Rendez-vous de suivi après la vente : il apparaît dans l'agenda mais ne compte
-				pas comme un RDV dans les statistiques.
+				Rendez-vous de suivi après la vente : il apparaît dans l'agenda mais ne compte pas comme un
+				RDV dans les statistiques.
 			</p>
 
 			<div class="flex gap-3">
@@ -98,7 +96,7 @@
 						id="confortationDate"
 						type="date"
 						bind:value={date}
-						class="border-input bg-base"
+						class="border-0 bg-card2 shadow-none"
 					/>
 				</div>
 				<div class="w-28 space-y-1.5">
@@ -107,7 +105,7 @@
 						id="confortationTime"
 						type="time"
 						bind:value={time}
-						class="border-input bg-base"
+						class="border-0 bg-card2 shadow-none"
 					/>
 				</div>
 			</div>
@@ -118,7 +116,7 @@
 					id="confortationCommercial"
 					placeholder="Nom du commercial"
 					bind:value={commercialName}
-					class="border-input bg-base"
+					class="border-0 bg-card2 shadow-none"
 				/>
 			</div>
 

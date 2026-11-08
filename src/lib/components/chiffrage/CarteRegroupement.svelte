@@ -345,13 +345,13 @@
 
 <div
 	bind:this={conteneur}
-	class="h-64 w-full overflow-hidden rounded-3xl border border-line bg-card2 sm:h-[22rem]"
+	class="h-64 w-full overflow-hidden rounded-2xl bg-card2 sm:h-[22rem]"
 	class:invisible={sansToken || indisponible}
 ></div>
 
 {#if sansToken || indisponible}
 	<div
-		class="flex h-52 w-full flex-col items-center justify-center gap-2 rounded-3xl border border-dashed border-line bg-card2/60 px-6 text-center"
+		class="flex h-52 w-full flex-col items-center justify-center gap-2 rounded-2xl bg-card2 px-6 text-center"
 	>
 		<span class="text-2xl">🗺️</span>
 		<p class="text-[12px] leading-snug text-ink-soft">

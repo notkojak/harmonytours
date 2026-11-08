@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { Building2, LoaderCircle, Pencil, ShieldOff, UserPlus } from '@lucide/svelte';
+	import { LoaderCircle, Pencil, ShieldOff } from '@lucide/svelte';
 	import { useAction, useMutation, useQuery } from 'convex-svelte';
 	import { api } from '../../convex/_generated/api.js';
 	import type { Id } from '../../convex/_generated/dataModel.js';
 	import { authState } from '$lib/auth-state.svelte';
+	import { pageEmojis } from '$lib/data/dashboard';
 	import { canAccessAdministration, capitalizeRole, roles } from '$lib/data/roles';
 	import Avatar from '$lib/components/Avatar.svelte';
 	import { Badge } from '$lib/components/ui/badge/index.js';
@@ -292,20 +293,40 @@
 
 {#if isAuthorized}
 	<div class="mx-auto max-w-7xl space-y-5">
+		<Card class="gap-0 rounded-2xl border-0 py-0 shadow-none">
+			<CardHeader class="flex flex-wrap items-center justify-between gap-3 px-5 py-5">
+				<div class="min-w-0">
+					<CardTitle class="flex items-center gap-2.5 text-[14px] font-semibold">
+						<span class="text-[15px] leading-none" aria-hidden="true"
+							>{pageEmojis['/administration']}</span
+						>
+						Administration
+					</CardTitle>
+					<p class="mt-1 pl-6 text-[11.5px] font-medium text-muted-foreground">
+						Agences, employés et gestion des accès
+					</p>
+				</div>
+				<Badge variant="secondary" class="rounded-full bg-card2 px-2.5">
+					{actifs.length} actif{actifs.length > 1 ? 's' : ''}
+				</Badge>
+			</CardHeader>
+		</Card>
+
 		<!-- Créer une agence -->
 		{#if ['administrateur', 'directeur de zone'].includes(profile.data?.role ?? '')}
-			<Card class="gap-0 rounded-2xl border-line py-0 shadow-none">
-				<CardHeader class="flex items-center gap-2.5 px-5 pt-5 pb-0">
-					<CardTitle class="flex items-center gap-2.5 text-[14px] font-semibold">
-						<span
-							class="grid size-8 place-items-center rounded-lg border border-line bg-card2 text-muted-foreground"
-						>
-							<Building2 class="size-4" strokeWidth={1.7} />
-						</span>
-						Créer une agence
-					</CardTitle>
+			<Card class="gap-0 rounded-2xl border-0 py-0 shadow-none">
+				<CardHeader class="px-5 pt-5 pb-0">
+					<div class="min-w-0">
+						<CardTitle class="flex items-center gap-2.5 text-[14px] font-semibold">
+							<span class="text-[15px] leading-none" aria-hidden="true">🏢</span>
+							Créer une agence
+						</CardTitle>
+						<p class="mt-1 pl-6 text-[11.5px] font-medium text-muted-foreground">
+							Ajouter une ville au réseau
+						</p>
+					</div>
 				</CardHeader>
-				<CardContent class="px-5 pt-2 pb-5">
+				<CardContent class="px-5 pt-3 pb-5">
 					<form onsubmit={handleCreateAgency} class="flex flex-wrap items-end gap-3">
 						<div class="min-w-56 flex-1 space-y-1.5">
 							<Label for="agencyName">Ville</Label>
@@ -314,13 +335,13 @@
 								required
 								placeholder="Tours"
 								bind:value={agencyName}
-								class="border-input bg-base"
+								class="border-0 bg-card2 shadow-none"
 							/>
 						</div>
 						<div class="min-w-40 space-y-1.5">
 							<Label for="agencyZone">Zone</Label>
 							<Select type="single" bind:value={agencyZone}>
-								<SelectTrigger id="agencyZone" class="w-full border-input bg-base">
+								<SelectTrigger id="agencyZone" class="w-full border-0 bg-card2 shadow-none">
 									<span data-slot="select-value">
 										{agencyZone ? agencyZone : 'Choisir une zone'}
 									</span>
@@ -346,18 +367,19 @@
 		{/if}
 
 		<!-- Créer un employé -->
-		<Card class="gap-0 rounded-2xl border-line py-0 shadow-none">
-			<CardHeader class="flex items-center gap-2.5 px-5 pt-5 pb-0">
-				<CardTitle class="flex items-center gap-2.5 text-[14px] font-semibold">
-					<span
-						class="grid size-8 place-items-center rounded-lg border border-line bg-card2 text-muted-foreground"
-					>
-						<UserPlus class="size-4" strokeWidth={1.7} />
-					</span>
-					Créer un employé
-				</CardTitle>
+		<Card class="gap-0 rounded-2xl border-0 py-0 shadow-none">
+			<CardHeader class="px-5 pt-5 pb-0">
+				<div class="min-w-0">
+					<CardTitle class="flex items-center gap-2.5 text-[14px] font-semibold">
+						<span class="text-[15px] leading-none" aria-hidden="true">👤</span>
+						Créer un employé
+					</CardTitle>
+					<p class="mt-1 pl-6 text-[11.5px] font-medium text-muted-foreground">
+						Créer un compte et l'affecter à une agence
+					</p>
+				</div>
 			</CardHeader>
-			<CardContent class="px-5 pt-2 pb-5">
+			<CardContent class="px-5 pt-3 pb-5">
 				{#if (agences.data?.length ?? 0) === 0}
 					<p class="text-[13px] text-muted-foreground">
 						{['administrateur', 'directeur de zone'].includes(profile.data?.role ?? '')
@@ -374,7 +396,7 @@
 									required
 									placeholder="Marie"
 									bind:value={empFirstName}
-									class="border-input bg-base"
+									class="border-0 bg-card2 shadow-none"
 								/>
 							</div>
 							<div class="space-y-1.5">
@@ -384,7 +406,7 @@
 									required
 									placeholder="Dupont"
 									bind:value={empLastName}
-									class="border-input bg-base"
+									class="border-0 bg-card2 shadow-none"
 								/>
 							</div>
 							<div class="space-y-1.5">
@@ -395,7 +417,7 @@
 									required
 									placeholder="marie.dupont@exemple.fr"
 									bind:value={empEmail}
-									class="border-input bg-base"
+									class="border-0 bg-card2 shadow-none"
 								/>
 							</div>
 							<div class="space-y-1.5">
@@ -404,7 +426,7 @@
 									id="empBirthDate"
 									type="date"
 									bind:value={empBirthDate}
-									class="border-input bg-base"
+									class="border-0 bg-card2 shadow-none"
 								/>
 							</div>
 							<div class="space-y-1.5">
@@ -414,13 +436,13 @@
 									type="date"
 									required
 									bind:value={empDateEntree}
-									class="border-input bg-base"
+									class="border-0 bg-card2 shadow-none"
 								/>
 							</div>
 							<div class="space-y-1.5">
 								<Label for="empRole">Rôle</Label>
 								<Select type="single" bind:value={empRole}>
-									<SelectTrigger id="empRole" class="w-full border-input bg-base">
+									<SelectTrigger id="empRole" class="w-full border-0 bg-card2 shadow-none">
 										<span data-slot="select-value">
 											{empRole ? capitalizeRole(empRole) : 'Choisir un rôle'}
 										</span>
@@ -435,7 +457,7 @@
 							<div class="space-y-1.5">
 								<Label for="empAgency">Agence</Label>
 								<Select type="single" bind:value={empAgencyId}>
-									<SelectTrigger id="empAgency" class="w-full border-input bg-base">
+									<SelectTrigger id="empAgency" class="w-full border-0 bg-card2 shadow-none">
 										<span data-slot="select-value">
 											{agences.data?.find((a) => a._id === empAgencyId)?.name ??
 												'Choisir une agence'}
@@ -457,7 +479,7 @@
 									minlength={8}
 									placeholder="8 caractères minimum"
 									bind:value={empPassword}
-									class="border-input bg-base"
+									class="border-0 bg-card2 shadow-none"
 								/>
 							</div>
 						</div>
@@ -479,21 +501,22 @@
 		</Card>
 
 		<!-- Employés -->
-		<Card class="gap-0 rounded-2xl border-line py-0 shadow-none">
-			<CardHeader class="flex items-center justify-between gap-3 px-5 pt-5 pb-0">
-				<CardTitle class="flex items-center gap-2.5 text-[14px] font-semibold">
-					<span
-						class="grid size-8 place-items-center rounded-lg border border-line bg-card2 text-muted-foreground"
-					>
-						<Building2 class="size-4" strokeWidth={1.7} />
-					</span>
-					Employés
-				</CardTitle>
-				<Badge variant="secondary" class="rounded-full px-2">
+		<Card class="gap-0 rounded-2xl border-0 py-0 shadow-none">
+			<CardHeader class="flex flex-wrap items-center justify-between gap-3 px-5 pt-5 pb-0">
+				<div class="min-w-0">
+					<CardTitle class="flex items-center gap-2.5 text-[14px] font-semibold">
+						<span class="text-[15px] leading-none" aria-hidden="true">👥</span>
+						Employés
+					</CardTitle>
+					<p class="mt-1 pl-6 text-[11.5px] font-medium text-muted-foreground">
+						Effectif, rôles et statuts
+					</p>
+				</div>
+				<Badge variant="secondary" class="rounded-full bg-card2 px-2">
 					{rows.length}
 				</Badge>
 			</CardHeader>
-			<CardContent class="px-5 pt-2 pb-5">
+			<CardContent class="px-5 pt-3 pb-5">
 				{#if rowError}
 					<p class="mb-3 text-[12px] text-destructive">{rowError}</p>
 				{/if}
@@ -503,16 +526,16 @@
 					onValueChange={(value) => (employesTab = value as 'actifs' | 'vires')}
 					class="mb-4 w-fit"
 				>
-					<TabsList>
-						<TabsTrigger value="actifs">Actifs ({actifs.length})</TabsTrigger>
-						<TabsTrigger value="vires">Virés ({vires.length})</TabsTrigger>
+					<TabsList class="rounded-full border-0 bg-card2">
+						<TabsTrigger value="actifs" class="rounded-full">Actifs ({actifs.length})</TabsTrigger>
+						<TabsTrigger value="vires" class="rounded-full">Virés ({vires.length})</TabsTrigger>
 					</TabsList>
 				</Tabs>
 
-				<div class="overflow-x-auto rounded-xl border border-line">
-					<Table class="min-w-[780px]">
+				<div class="overflow-x-auto rounded-2xl">
+					<Table class="min-w-[780px] border-separate border-spacing-y-1.5">
 						<TableHeader>
-							<TableRow class="border-line bg-transparent hover:bg-transparent">
+							<TableRow class="border-transparent bg-transparent hover:bg-transparent">
 								<TableHead
 									class="px-4 py-3 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase"
 								>
@@ -548,7 +571,7 @@
 						<TableBody>
 							{#each rows as employe}
 								<TableRow
-									class="cursor-pointer border-line/60 transition-colors hover:bg-glass-1"
+									class="cursor-pointer border-0 transition-colors [&:hover>td]:bg-glass-3 [&>td]:bg-card2 [&>td:first-child]:rounded-l-xl [&>td:last-child]:rounded-r-xl"
 									onclick={() => openEdit(employe)}
 								>
 									<TableCell class="px-4 py-3">
@@ -603,10 +626,10 @@
 								</TableRow>
 							{/each}
 							{#if rows.length === 0}
-								<TableRow class="border-line/60 hover:bg-transparent">
+								<TableRow class="border-0 hover:bg-transparent">
 									<TableCell
 										colspan={6}
-										class="px-4 py-8 text-center text-[13px] text-muted-foreground"
+										class="rounded-xl bg-card2/50 px-4 py-8 text-center text-[13px] text-muted-foreground"
 									>
 										Aucun employé dans cet onglet.
 									</TableCell>
@@ -625,9 +648,7 @@
 				if (!open) editing = null;
 			}}
 		>
-			<DialogContent
-				class="max-h-[90vh] overflow-y-auto rounded-2xl border-line bg-card sm:max-w-lg"
-			>
+			<DialogContent class="max-h-[90vh] overflow-y-auto rounded-2xl border-0 bg-card sm:max-w-lg">
 				<DialogHeader>
 					<DialogTitle class="text-[15px] font-semibold">
 						Modifier {editing?.firstName}
@@ -637,7 +658,7 @@
 
 				{#if editing}
 					<div class="space-y-4">
-						<div class="flex items-center gap-3 rounded-xl border border-line bg-base p-3">
+						<div class="flex items-center gap-3 rounded-2xl bg-card2 p-3">
 							<Avatar
 								photo={editPhoto || null}
 								label={`${editFirstName?.[0] ?? ''}${editLastName?.[0] ?? ''}`}
@@ -690,11 +711,19 @@
 						<div class="grid grid-cols-2 gap-3">
 							<div class="space-y-1.5">
 								<Label for="editFirstName">Prénom</Label>
-								<Input id="editFirstName" bind:value={editFirstName} class="border-input bg-base" />
+								<Input
+									id="editFirstName"
+									bind:value={editFirstName}
+									class="border-0 bg-card2 shadow-none"
+								/>
 							</div>
 							<div class="space-y-1.5">
 								<Label for="editLastName">Nom</Label>
-								<Input id="editLastName" bind:value={editLastName} class="border-input bg-base" />
+								<Input
+									id="editLastName"
+									bind:value={editLastName}
+									class="border-0 bg-card2 shadow-none"
+								/>
 							</div>
 						</div>
 
@@ -705,7 +734,7 @@
 									id="editBirthDate"
 									type="date"
 									bind:value={editBirthDate}
-									class="border-input bg-base"
+									class="border-0 bg-card2 shadow-none"
 								/>
 							</div>
 							<div class="space-y-1.5">
@@ -714,7 +743,7 @@
 									id="editDateEntree"
 									type="date"
 									bind:value={editDateEntree}
-									class="border-input bg-base"
+									class="border-0 bg-card2 shadow-none"
 								/>
 							</div>
 						</div>
@@ -723,7 +752,7 @@
 							<div class="space-y-1.5">
 								<Label for="editRole">Rôle</Label>
 								<Select type="single" bind:value={editRole}>
-									<SelectTrigger id="editRole" class="w-full border-input bg-base">
+									<SelectTrigger id="editRole" class="w-full border-0 bg-card2 shadow-none">
 										<span data-slot="select-value">
 											{editRole ? capitalizeRole(editRole) : 'Choisir un rôle'}
 										</span>
@@ -738,7 +767,7 @@
 							<div class="space-y-1.5">
 								<Label for="editAgency">Agence</Label>
 								<Select type="single" bind:value={editAgencyId}>
-									<SelectTrigger id="editAgency" class="w-full border-input bg-base">
+									<SelectTrigger id="editAgency" class="w-full border-0 bg-card2 shadow-none">
 										<span data-slot="select-value">
 											{agences.data?.find((a) => a._id === editAgencyId)?.name ??
 												'Choisir une agence'}
@@ -757,7 +786,7 @@
 							<p class="text-[12px] text-destructive">{editError}</p>
 						{/if}
 
-						<div class="rounded-xl border border-line bg-base p-3">
+						<div class="rounded-2xl bg-card2 p-3">
 							<p
 								class="mb-2 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase"
 							>
@@ -765,7 +794,7 @@
 							</p>
 							<div class="space-y-1">
 								{#each (editing.roleHistory ?? []).slice().reverse() as entry}
-									<div class="flex items-center justify-between rounded-lg bg-card2 px-2.5 py-1.5">
+									<div class="flex items-center justify-between rounded-xl bg-base px-2.5 py-1.5">
 										<span class="text-[12.5px] font-medium text-foreground">
 											{capitalizeRole(entry.role)}
 										</span>

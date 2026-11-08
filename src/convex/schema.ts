@@ -238,11 +238,32 @@ const ventes = defineTable({
 		)
 	),
 	// Vente confortée : le client a confirmé après réflexion. Sert au suivi
-	// commercial, sans changer le calcul du CA.
+	// commercial, sans changer le calcul du CA. Remplacé par `suivi` ci-dessous.
 	confortee: v.optional(v.boolean()),
-	// Paiement comptant ou financement ; pour un financement, `fiAccepte`
-	// indique si le dossier de financement (FI) a été accepté.
+	// Avancement du dossier après la vente, déduit des dates : date de pose ⇒
+	// « posée », sinon date de métrage ⇒ « métrée ». Les cinq autres valeurs ne
+	// sont plus écrites, elles restent déclarées pour les documents existants.
+	suivi: v.optional(
+		v.union(
+			v.literal('à conforter'),
+			v.literal('à rattraper'),
+			v.literal('confortée'),
+			v.literal('métré programmé'),
+			v.literal('métrée'),
+			v.literal('pose programmée'),
+			v.literal('posée')
+		)
+	),
+	// Dates du dossier, saisies depuis la fiche client/vente (jamais au moment de
+	// la vente) : métrage technique et pose. `datePose` est recopiée dans
+	// `datesPoses` pour rester visible dans l'agenda.
+	dateMetrage: v.optional(v.string()),
+	datePose: v.optional(v.string()),
+	// Paiement comptant ou financement ; pour un financement, `fiStatut` porte
+	// l'état du dossier (en attente / accepté / refusé). `fiAccepte` reste écrit
+	// pour les documents créés avant l'arrivée des trois états.
 	paiement: v.optional(v.union(v.literal('comptant'), v.literal('financement'))),
+	fiStatut: v.optional(v.union(v.literal('en attente'), v.literal('accepté'), v.literal('refusé'))),
 	fiAccepte: v.optional(v.boolean()),
 	// Date du dernier changement de statut : sert à mesurer l'ancienneté d'une
 	// vente « en attente » (relance du manager).

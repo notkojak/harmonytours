@@ -45,6 +45,25 @@ export function canReassignContact(role: string | null | undefined): boolean {
 }
 
 /**
+ * Rôles qui peuvent ÉCRIRE dans le CRM (créer/modifier/supprimer contacts,
+ * clients et ventes, changer un statut). Le commercial est en consultation
+ * seule : il voit ses fiches et ses ventes, il ne les modifie pas.
+ * Même liste que CRM_WRITE_ROLES côté serveur (convex/permissions.ts).
+ */
+export const CRM_WRITE_ROLES = [
+	'administrateur',
+	'directeur de zone',
+	'animateur de zone',
+	"directeur d'agence",
+	"animateur d'équipe",
+	'animateur'
+] as const;
+
+export function canWriteCrm(role: string | null | undefined): boolean {
+	return !!role && (CRM_WRITE_ROLES as readonly string[]).includes(role);
+}
+
+/**
  * L'administrateur seul ouvre le regroupement de chantier depuis le chiffrage
  * (et donc le déblocage d'une place par le responsable des poses).
  */

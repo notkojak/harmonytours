@@ -157,7 +157,7 @@
 		bind:value={local}
 		oninput={() => search(local)}
 		onkeydown={(e) => e.key === 'Enter' && onEnter?.()}
-		class="border-input bg-base"
+		class="border-0 bg-card2 shadow-none"
 	/>
 
 	{#if open || loading}

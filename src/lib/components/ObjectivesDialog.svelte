@@ -104,8 +104,8 @@
 </script>
 
 <Dialog bind:open>
-	<DialogContent class="max-w-lg border-line bg-card p-0">
-		<DialogHeader class="border-b border-line px-5 pt-5 pb-4">
+	<DialogContent class="max-w-lg rounded-2xl border-0 bg-card p-0 shadow-none">
+		<DialogHeader class="px-5 pt-5 pb-4">
 			<DialogTitle class="text-[15px] font-semibold">Objectifs mensuels</DialogTitle>
 			<DialogDescription class="text-[12px] text-muted-foreground">
 				Fixer les objectifs de RDV et de CA (HT) par employé pour le mois choisi.
@@ -117,12 +117,12 @@
 			<div class="flex items-center gap-2">
 				<Popover>
 					<PopoverTrigger
-						class="flex h-8 items-center gap-2 rounded-full border border-line bg-card px-3 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-card2 hover:text-foreground"
+						class="flex h-8 items-center gap-2 rounded-full bg-card2 px-3 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-glass-3 hover:text-foreground"
 					>
 						<CalendarDays class="size-3.5" strokeWidth={1.7} />
 						{monthLabel}
 					</PopoverTrigger>
-					<PopoverContent class="w-auto rounded-xl border-line bg-card p-0" align="start">
+					<PopoverContent class="w-auto rounded-2xl border-0 bg-card p-0 shadow-none" align="start">
 						<Calendar
 							locale="fr-FR"
 							type="single"
@@ -148,9 +148,9 @@
 					Aucun employé dans votre agence.
 				</p>
 			{:else}
-				<div class="divide-y divide-line/60">
+				<div class="space-y-1.5">
 					{#each rows as row (row._id)}
-						<div class="flex items-center gap-3 py-2.5">
+						<div class="flex items-center gap-3 rounded-xl bg-card2 px-3 py-2">
 							<div class="min-w-0 flex-1">
 								<p class="truncate text-[13px] font-medium text-foreground">{row.name}</p>
 							</div>
@@ -160,7 +160,7 @@
 									type="number"
 									min="0"
 									bind:value={row.rdv}
-									class="h-8 w-20 border-input bg-base text-right"
+									class="h-8 w-20 border-0 bg-card text-right shadow-none"
 								/>
 							</label>
 							<label class="flex items-center gap-1.5 text-[12px] text-muted-foreground">
@@ -170,7 +170,7 @@
 									min="0"
 									step="100"
 									bind:value={row.ca}
-									class="h-8 w-24 border-input bg-base text-right"
+									class="h-8 w-24 border-0 bg-card text-right shadow-none"
 								/>
 								<span class="text-[12px] text-muted-foreground">€</span>
 							</label>

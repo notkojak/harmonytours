@@ -15,14 +15,14 @@ export const CATALOGUE: FamilleCatalogue[] = [
 	},
 	{ name: 'Borne de recharge', produits: ['WallBox 7 kW monophasée', 'WallBox 11 kW triphasée'] },
 	{
-		name: 'PAC air / eau',
+		name: 'PAC A/E',
 		produits: [
 			'Air H2O S 8,5 / 10 / 12 / 14 kW — mono ou tri',
 			'Air H2O S 8,5 / 10 / 12 / 14 kW Combi 220 L — mono ou tri'
 		]
 	},
 	{
-		name: 'Climatisation air / air',
+		name: 'PAC A/A',
 		produits: [
 			'Monosplit 1,8 / 2,5 / 3,5 / 5 / 6 / 7 kW',
 			'Multisplit groupe ext. 2 sorties : 3,6 / 4,3 / 5,5 / 6,8 kW',
@@ -38,7 +38,7 @@ export const CATALOGUE: FamilleCatalogue[] = [
 		produits: ['Chauffe-eau Linéo Connecté vertical mural 150 L — blanc']
 	},
 	{
-		name: 'Sanitaire / ventilation / électricité',
+		name: 'Électricité',
 		produits: [
 			"Adoucisseur d'eau",
 			'VMC simple flux',
@@ -99,7 +99,7 @@ export const CATALOGUE: FamilleCatalogue[] = [
 		]
 	},
 	{
-		name: 'Menuiseries & fermetures',
+		name: 'Menuiseries',
 		produits: [
 			'Fenêtres & coulissants PVC rénovation',
 			'Fenêtres & coulissants ALU',

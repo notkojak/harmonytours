@@ -75,7 +75,9 @@
 </script>
 
 <div class="rounded-lg border border-line bg-card2/60 px-3 py-2.5">
-	<p class="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
+	<p
+		class="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase"
+	>
 		Recontact
 		{#if appels.length > 0}
 			<span class="rounded-full bg-glass-3 px-1.5 py-0.5 text-[9.5px] tabular-nums">
@@ -131,7 +133,7 @@
 		<input
 			bind:value={draft}
 			placeholder="Ajouter un recontact…"
-			class="h-7 min-w-0 flex-1 rounded-md border border-line bg-base px-2 text-[12px] text-foreground outline-none placeholder:text-muted-foreground focus:border-brand/50"
+			class="h-7 min-w-0 flex-1 rounded-md border border-line bg-base px-2 text-[13px] text-foreground outline-none placeholder:text-muted-foreground focus:border-brand/50"
 		/>
 		<button
 			type="submit"

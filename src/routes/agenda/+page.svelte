@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { pageEmojis } from '$lib/data/dashboard';
 	import {
 		CalendarDays,
 		Check,
@@ -39,9 +40,9 @@
 	} from '$lib/components/ui/dialog/index.js';
 	import ContactDialog, { type ContactRow } from '$lib/components/ContactDialog.svelte';
 	import AgendaEventDialog, { type MembreRow } from '$lib/components/AgendaEventDialog.svelte';
-	import PoseDateDialog, { type VentePoseOption } from '$lib/components/PoseDateDialog.svelte';
 	import Avatar from '$lib/components/Avatar.svelte';
 	import { formatPhone } from '$lib/data/phone';
+	import { canWriteCrm } from '$lib/data/roles';
 
 	// Agenda partagé : RDV de toute l'agence (includeClients : les RDV des
 	// contacts devenus clients restent visibles).
@@ -49,6 +50,8 @@
 		authState.isAuthenticated ? { includeClients: true } : 'skip'
 	);
 	const profile = useQuery(api.users.getProfile, () => (authState.isAuthenticated ? {} : 'skip'));
+	// Écriture CRM : le commercial est en consultation seule (même règle côté serveur).
+	const canWrite = $derived(canWriteCrm(profile.data?.role));
 	const updateContact = useMutation(api.contacts.update);
 
 	// Dates de pose rattachées aux ventes : elles vivent sur la vente et
@@ -338,26 +341,11 @@
 	let previewOpen = $state(false);
 	let previewEvent = $state<EventRow | null>(null);
 
-	// Dates de pose : ajout (vente + date) et aperçu/suppression.
-	let poseOpen = $state(false);
-	let poseDate = $state('');
+	// Dates de pose : aperçu et suppression depuis l'agenda. L'ajout se fait
+	// désormais dans la fiche client/vente, avec la date de métrage.
 	let posePreviewOpen = $state(false);
 	let posePreview = $state<PoseRow | null>(null);
 	let poseBusy = $state(false);
-
-	const ventesPose = $derived<VentePoseOption[]>(
-		(ventes.data ?? []).map((v) => ({
-			_id: v._id,
-			contactName: v.contactName,
-			date: v.date,
-			statut: v.statut ?? null
-		}))
-	);
-
-	function openPoseDialog(date: string) {
-		poseDate = date;
-		poseOpen = true;
-	}
 
 	function openPosePreview(pose: PoseRow) {
 		posePreview = pose;
@@ -401,12 +389,15 @@
 		openEditEvent(ev);
 	}
 
-	function openCreateDialog(date: string, startTime?: string) {
+	// `endTime` est fourni quand le créneau vient d'un tracé sur la grille.
+	function openCreateDialog(date: string, startTime?: string, endTime?: string) {
 		createDate = date;
 		createStart = startTime ?? '09:00';
 		const [h, m] = createStart.split(':').map(Number);
 		const d = new Date(2000, 0, 1, (h || 9) + 1, m || 0);
-		createEnd = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+		createEnd =
+			endTime ??
+			`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 		createOpen = true;
 	}
 
@@ -455,7 +446,7 @@
 	const today = new Date();
 	today.setHours(0, 0, 0, 0);
 	let anchor = $state(new Date(today));
-	let view = $state<'jour' | 'mois'>('mois');
+	let view = $state<'jour' | 'semaine' | 'mois'>('mois');
 
 	const monday = $derived.by(() => {
 		const d = new Date(anchor);
@@ -581,16 +572,33 @@
 	// Indexé par Date.getDay() (0 = dimanche) pour les en-têtes de colonne.
 	const DAY_LABELS = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
 
-	const label = $derived(
-		view === 'jour'
-			? anchor.toLocaleDateString('fr-FR', {
-					weekday: 'long',
-					day: 'numeric',
-					month: 'long',
-					year: 'numeric'
-				})
-			: anchor.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
-	);
+	// Libellé de période : jour complet, plage lundi → samedi, ou mois.
+	const label = $derived.by(() => {
+		if (view === 'jour') {
+			return anchor.toLocaleDateString('fr-FR', {
+				weekday: 'long',
+				day: 'numeric',
+				month: 'long',
+				year: 'numeric'
+			});
+		}
+		if (view === 'semaine') {
+			const start = weekDays[0];
+			const end = weekDays[weekDays.length - 1];
+			const sameMonth = start.getMonth() === end.getMonth();
+			const startLabel = start.toLocaleDateString(
+				'fr-FR',
+				sameMonth ? { day: 'numeric' } : { day: 'numeric', month: 'long' }
+			);
+			const endLabel = end.toLocaleDateString('fr-FR', {
+				day: 'numeric',
+				month: 'long',
+				year: 'numeric'
+			});
+			return `${startLabel} – ${endLabel}`;
+		}
+		return anchor.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+	});
 
 	function toISO(date: Date): string {
 		return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(
@@ -606,19 +614,27 @@
 		);
 	}
 
+	// Pas de dimanche : une semaine de travail va du lundi au samedi.
+	function shiftDays(days: number) {
+		anchor = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate() + days);
+	}
+
 	function prev() {
-		if (view === 'jour') anchor = new Date(anchor.getTime() - 86400000);
+		if (view === 'jour') shiftDays(-1);
+		else if (view === 'semaine') shiftDays(-7);
 		else anchor = new Date(anchor.getFullYear(), anchor.getMonth() - 1, 1);
 	}
 
 	function next() {
-		if (view === 'jour') anchor = new Date(anchor.getTime() + 86400000);
+		if (view === 'jour') shiftDays(1);
+		else if (view === 'semaine') shiftDays(7);
 		else anchor = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 1);
 	}
 
-	// Retour à la période courante (le jour du jour, ou le mois courant).
+	// Retour à la période courante (le jour, la semaine ou le mois courant).
 	function goToToday() {
-		anchor = view === 'jour' ? new Date(today) : new Date(today.getFullYear(), today.getMonth(), 1);
+		if (view === 'mois') anchor = new Date(today.getFullYear(), today.getMonth(), 1);
+		else anchor = new Date(today);
 	}
 
 	// --- Glisser-déposer (pointer events) : déplace la date (et l'heure en vue
@@ -707,11 +723,7 @@
 				motif: contact.followUp?.motif ?? undefined,
 				status:
 					(contact.followUp?.status as
-						| 'annulé'
-						| 'déballé'
-						| 'vendu'
-						| 'à reprogrammer'
-						| undefined) ?? undefined
+						'annulé' | 'déballé' | 'vendu' | 'à reprogrammer' | undefined) ?? undefined
 			}
 		});
 	}
@@ -748,6 +760,168 @@
 		// NB : `didDrag` n'est PAS remis à zéro ici — le click déclenché après le
 		// pointerup doit encore savoir qu'un glissement a eu lieu pour l'ignorer.
 	}
+
+	// --- Étirement et création par tracé (pointer events) --------------------
+	// Même logique que le calendrier ReUI : le geste suit le pointeur au créneau
+	// de 30 min près, l'aperçu suit en direct et l'enregistrement part au
+	// relâchement. Échap annule le geste en cours.
+	type ResizeState = { evenement: EventRow; date: string; endSlot: number; moved: boolean };
+	let resizeDrag = $state<ResizeState | null>(null);
+
+	type CreateState = { date: string; anchor: number; from: number; to: number; moved: boolean };
+	let createDrag = $state<CreateState | null>(null);
+
+	const clampSlot = (slot: number) => Math.max(0, Math.min(timeSlots.length - 1, slot));
+
+	function slotToTime(slot: number): string {
+		return timeSlots[clampSlot(slot)];
+	}
+
+	// Créneau survolé, calculé depuis la position verticale dans la colonne jour.
+	function slotFromClientY(col: HTMLElement, y: number): number {
+		const rect = col.getBoundingClientRect();
+		return clampSlot(Math.round((y - rect.top) / ROW_H));
+	}
+
+	// Étirement d'un événement par son bord bas : la durée change, la date et le
+	// début restent en place.
+	function startResize(e: PointerEvent, ev: EventRow) {
+		if (e.button !== 0 || !canCreateEvents) return;
+		e.stopPropagation();
+		e.preventDefault();
+		didDrag = false;
+		const start = timeToSlot(ev.start);
+		resizeDrag = {
+			evenement: ev,
+			date: ev.date,
+			endSlot: Math.max(start + 1, timeToSlot(ev.end)),
+			moved: false
+		};
+		(e.currentTarget as HTMLElement | null)?.setPointerCapture?.(e.pointerId);
+	}
+
+	function updateResize(e: PointerEvent) {
+		const r = resizeDrag;
+		const col = (e.currentTarget as HTMLElement | null)?.closest(
+			'[data-date]'
+		) as HTMLElement | null;
+		if (!r || !col) return;
+		const start = timeToSlot(r.evenement.start);
+		const slot = Math.max(start + 1, slotFromClientY(col, e.clientY));
+		if (slot === r.endSlot) return;
+		resizeDrag = { ...r, endSlot: slot, moved: true };
+		didDrag = true;
+	}
+
+	async function endResize() {
+		const r = resizeDrag;
+		resizeDrag = null;
+		if (!r?.moved) return;
+		const end = slotToTime(r.endSlot);
+		if (end === r.evenement.end) return;
+		try {
+			await updateEvenement({
+				eventId: r.evenement._id as Id<'evenements'>,
+				start: r.evenement.start,
+				end
+			});
+		} catch (err) {
+			console.error('Redimensionnement événement', err);
+		}
+	}
+
+	// Même geste au clavier : les flèches haut/bas ajustent la fin de 30 min.
+	async function resizeByKeyboard(e: KeyboardEvent, ev: EventRow) {
+		if (!canCreateEvents) return;
+		const step = e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : 0;
+		if (step === 0) return;
+		e.preventDefault();
+		e.stopPropagation();
+		const start = timeToSlot(ev.start);
+		const current = timeToSlot(ev.end);
+		const next = Math.max(start + 1, Math.min(timeSlots.length - 1, current + step));
+		if (next === current) return;
+		try {
+			await updateEvenement({
+				eventId: ev._id as Id<'evenements'>,
+				start: ev.start,
+				end: slotToTime(next)
+			});
+		} catch (err) {
+			console.error('Redimensionnement événement', err);
+		}
+	}
+
+	// Création par tracé : on enfonce le pointeur sur une plage libre, on étire
+	// jusqu'à l'heure de fin, le dialogue de création s'ouvre au relâchement.
+	function startCreate(e: PointerEvent, date: string) {
+		if (!canCreateEvents || e.button !== 0) return;
+		// Un bloc posé sur la colonne garde son propre geste (déplacement).
+		const target = e.target as HTMLElement | null;
+		if (target?.closest('button, [role="button"], [role="separator"], [data-static-chip]')) return;
+		const cell = e.currentTarget as HTMLElement;
+		const col = cell.closest('[data-date]') as HTMLElement | null;
+		if (!col) return;
+		const anchor = slotFromClientY(col, e.clientY);
+		didDrag = false;
+		createDrag = { date, anchor, from: anchor, to: anchor + 1, moved: false };
+
+		const onMove = (ev: PointerEvent) => {
+			const c = createDrag;
+			if (!c) return;
+			const slot = slotFromClientY(col, ev.clientY);
+			if (!c.moved && slot === c.anchor) return;
+			createDrag = {
+				...c,
+				from: Math.min(c.anchor, slot),
+				to: Math.max(c.anchor, slot) + 1,
+				moved: true
+			};
+			didDrag = true;
+		};
+		const stop = () => {
+			window.removeEventListener('pointermove', onMove);
+			window.removeEventListener('pointerup', stop);
+			window.removeEventListener('pointercancel', stop);
+			const c = createDrag;
+			createDrag = null;
+			// Un simple clic reste géré par la cellule (créneau d'une heure).
+			if (c?.moved) openCreateDialog(c.date, slotToTime(c.from), slotToTime(c.to));
+		};
+		window.addEventListener('pointermove', onMove);
+		window.addEventListener('pointerup', stop);
+		window.addEventListener('pointercancel', stop);
+	}
+
+	// Repère « maintenant » : ligne rouge sur la colonne du jour courant.
+	let now = $state(new Date());
+	$effect(() => {
+		const id = setInterval(() => (now = new Date()), 60_000);
+		return () => clearInterval(id);
+	});
+
+	function nowTop(date: string): number | null {
+		if (date !== toISO(now)) return null;
+		const offset = ((now.getHours() * 60 + now.getMinutes() - 8 * 60) / 30) * ROW_H;
+		return offset < 0 || offset > GRID_H ? null : offset;
+	}
+
+	// Échap annule le geste en cours (déplacement, étirement ou tracé).
+	$effect(() => {
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key !== 'Escape') return;
+			dragBlock = null;
+			dragTarget = null;
+			resizeDrag = null;
+			createDrag = null;
+		};
+		window.addEventListener('keydown', onKey);
+		return () => window.removeEventListener('keydown', onKey);
+	});
+
+	// Vue mois : toutes les puces sont affichées d'emblée. La hauteur des lignes
+	// s'adapte au jour le plus chargé, et toutes les cases gardent la même taille
+	// grâce à `grid-auto-rows: 1fr` sur la grille.
 
 	// --- Fiche contact ---
 	let selected = $state<ContactRow | null>(null);
@@ -885,29 +1059,35 @@
 </script>
 
 <div class="space-y-5">
-	<Card class="gap-0 rounded-2xl border-line py-0 shadow-none">
+	<Card class="gap-0 rounded-2xl border-0 py-0 shadow-none">
 		<CardHeader
 			class="flex flex-wrap items-center justify-between gap-3 px-3 pt-4 pb-0 sm:px-5 sm:pt-5"
 		>
-			<CardTitle class="flex items-center gap-2.5 text-[15px] font-semibold">
-				<span
-					class="grid size-8 place-items-center rounded-lg border border-brand/25 bg-brand/10 text-brand"
-				>
-					<CalendarDays class="size-4" strokeWidth={1.7} />
-				</span>
-				Agenda
-			</CardTitle>
-			<Tabs value={view} onValueChange={(v) => (view = v as 'jour' | 'mois')} class="w-fit">
-				<TabsList>
-					<TabsTrigger value="jour">Jour</TabsTrigger>
-					<TabsTrigger value="mois">Mois</TabsTrigger>
+			<div class="min-w-0">
+				<CardTitle class="flex items-center gap-2.5 text-[14px] font-semibold">
+					<span class="text-[15px] leading-none" aria-hidden="true">{pageEmojis['/agenda']}</span>
+					Agenda
+				</CardTitle>
+				<p class="mt-1 pl-6 text-[11.5px] font-medium text-muted-foreground">
+					Rendez-vous, poses et événements de l'équipe
+				</p>
+			</div>
+			<Tabs
+				value={view}
+				onValueChange={(v) => (view = v as 'jour' | 'semaine' | 'mois')}
+				class="w-fit"
+			>
+				<TabsList class="rounded-full border-0 bg-card2">
+					<TabsTrigger value="jour" class="rounded-full">Jour</TabsTrigger>
+					<TabsTrigger value="semaine" class="rounded-full">Semaine</TabsTrigger>
+					<TabsTrigger value="mois" class="rounded-full">Mois</TabsTrigger>
 				</TabsList>
 			</Tabs>
 		</CardHeader>
 
 		<CardContent class="px-2 pt-3 pb-4 sm:px-5 sm:pb-5">
 			<div class="mb-3 flex flex-wrap items-center gap-2 sm:mb-4">
-				<div class="inline-flex items-center rounded-full border border-line bg-card p-0.5">
+				<div class="inline-flex items-center rounded-full bg-card2 p-0.5">
 					<Button
 						variant="ghost"
 						size="icon-sm"
@@ -927,23 +1107,18 @@
 						<ChevronRight class="size-4" />
 					</Button>
 				</div>
-				<Button variant="outline" size="sm" class="rounded-full border-line" onclick={goToToday}>
+				<Button
+					variant="outline"
+					size="sm"
+					class="rounded-full border-0 bg-card2 shadow-none"
+					onclick={goToToday}
+				>
 					Aujourd'hui
 				</Button>
 				<span class="font-display text-[15px] font-semibold text-foreground capitalize">
 					{label}
 				</span>
 				<div class="ml-auto flex items-center gap-2">
-					<Button
-						variant="outline"
-						size="sm"
-						class="rounded-full px-3.5"
-						onclick={() => openPoseDialog(toISO(today))}
-						title="Ajouter une date de pose liée à une vente"
-					>
-						<Wrench class="size-3.5" />
-						Date de pose
-					</Button>
 					{#if canCreateEvents}
 						<Button
 							variant="default"
@@ -959,7 +1134,9 @@
 			</div>
 
 			<!-- Légende : une teinte par famille de bloc. -->
-			<div class="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[10.5px] text-muted-foreground">
+			<div
+				class="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[10.5px] text-muted-foreground"
+			>
 				{#each legendItems as item}
 					<span class="inline-flex items-center gap-1.5">
 						<span class={['size-2.5 rounded-[3px]', item.dot].join(' ')}></span>
@@ -967,11 +1144,17 @@
 					</span>
 				{/each}
 			</div>
+			{#if canCreateEvents}
+				<p class="mb-3 text-[11px] text-muted-foreground">
+					Glissez une plage vide pour créer un événement, un bloc pour le déplacer, son bord bas
+					pour l'étirer — <kbd class="font-mono text-[10px]">Échap</kbd> annule le geste.
+				</p>
+			{/if}
 
-			{#if view === 'jour'}
+			{#if view !== 'mois'}
 				<!-- Vue jour (1 colonne) ou semaine (lundi → samedi) : créneaux horaires -->
-				<div class="overflow-x-auto rounded-lg border border-line">
-					<div class={['grid border-b border-line bg-card2/50', gridMinW, gridColsClass].join(' ')}>
+				<div class="overflow-x-auto rounded-2xl bg-card2/50">
+					<div class={['grid border-b border-line/50 bg-card', gridMinW, gridColsClass].join(' ')}>
 						<div></div>
 						{#each gridDays as day}
 							<div class="border-l border-line/50 px-2 py-2 text-center">
@@ -1008,6 +1191,7 @@
 									<div
 										role="gridcell"
 										tabindex="-1"
+										onpointerdown={(e) => startCreate(e, dateISO)}
 										onclick={() => {
 											if (!canCreateEvents || didDrag) return;
 											openCreateDialog(dateISO, slot);
@@ -1025,6 +1209,46 @@
 										].join(' ')}
 									></div>
 								{/each}
+
+								{#if nowTop(dateISO) !== null}
+									<div
+										class="pointer-events-none absolute inset-x-0 z-20 flex items-center"
+										style={`top:${nowTop(dateISO)}px`}
+									>
+										<span class="size-2 shrink-0 rounded-full bg-red-500"></span>
+										<span class="h-px flex-1 bg-red-500/80"></span>
+									</div>
+								{/if}
+
+								{#if createDrag?.date === dateISO && createDrag.moved}
+									<div
+										class="pointer-events-none absolute right-1 left-1 z-30 flex flex-col gap-0.5 overflow-hidden rounded-md border border-dashed border-brand bg-brand/10 px-2 py-1 text-[10px] font-semibold text-brand"
+										style={`top:${createDrag.from * ROW_H}px;height:${Math.max(
+											ROW_H,
+											(createDrag.to - createDrag.from) * ROW_H
+										)}px`}
+									>
+										<span class="font-mono leading-none">
+											{slotToTime(createDrag.from)}–{slotToTime(createDrag.to)}
+										</span>
+									</div>
+								{/if}
+
+								{#if resizeDrag?.date === dateISO}
+									<div
+										class="pointer-events-none absolute right-1 left-1 z-30 rounded-md border border-dashed border-brand bg-brand/10"
+										style={`top:${timeToSlot(resizeDrag.evenement.start) * ROW_H}px;height:${Math.max(
+											ROW_H,
+											(resizeDrag.endSlot - timeToSlot(resizeDrag.evenement.start)) * ROW_H
+										)}px`}
+									>
+										<span
+											class="absolute inset-x-0 bottom-0 px-1.5 py-0.5 font-mono text-[9.5px] font-semibold text-brand"
+										>
+											{resizeDrag.evenement.start}–{slotToTime(resizeDrag.endSlot)}
+										</span>
+									</div>
+								{/if}
 
 								{#if dragTarget?.date === dateISO && dragTarget.slot !== undefined && dragBlock}
 									<div
@@ -1132,8 +1356,7 @@
 														{rdvCommercialLabel(rdv)}
 													</span>
 												{/if}
-												{#if rdv.followUp?.status ||
-													(rdv.followUp?.motif && rdv.followUp.motif !== 'confortation')}
+												{#if rdv.followUp?.status || (rdv.followUp?.motif && rdv.followUp.motif !== 'confortation')}
 													<span
 														class="hidden w-full truncate text-[10px] font-normal opacity-80 sm:block"
 													>
@@ -1239,6 +1462,23 @@
 													<Trash2 class="size-3" />
 												</button>
 											{/if}
+											{#if canCreateEvents}
+												<button
+													type="button"
+													aria-label="Redimensionner la fin de l'événement"
+													class="absolute inset-x-0 bottom-0 z-20 flex h-2 cursor-ns-resize items-end justify-center"
+													onpointerdown={(e) => startResize(e, ev)}
+													onpointermove={updateResize}
+													onpointerup={endResize}
+													onpointercancel={endResize}
+													onclick={(e) => e.stopPropagation()}
+													onkeydown={(e) => resizeByKeyboard(e, ev)}
+												>
+													<span
+														class="h-[3px] w-8 rounded-full bg-current opacity-0 transition-opacity group-hover:opacity-70"
+													></span>
+												</button>
+											{/if}
 										</div>
 									{:else if block.kind === 'pose' && block.pose}
 										{@const pose = block.pose}
@@ -1286,9 +1526,9 @@
 				</div>
 			{:else}
 				<!-- Vue mois -->
-				<div class="overflow-x-auto rounded-lg border border-line">
+				<div class="overflow-x-auto rounded-2xl bg-card2/50">
 					<div
-						class="grid min-w-[660px] grid-cols-6 border-b border-line bg-card2/50 max-md:min-w-0"
+						class="grid min-w-[660px] grid-cols-6 border-b border-line/50 bg-card max-md:min-w-0"
 					>
 						{#each WEEKDAYS as wd}
 							<div
@@ -1298,7 +1538,10 @@
 							</div>
 						{/each}
 					</div>
-					<div bind:this={monthCellsEl} class="grid min-w-[660px] grid-cols-6 max-md:min-w-0">
+					<div
+						bind:this={monthCellsEl}
+						class="grid min-w-[660px] [grid-auto-rows:1fr] grid-cols-6 max-md:min-w-0"
+					>
 						{#each monthCells as cell, i}
 							{@const inMonth = cell.getMonth() === anchor.getMonth()}
 							{@const dateISO = toISO(cell)}
@@ -1486,7 +1729,7 @@
 												type="button"
 												onclick={(e) => {
 													e.stopPropagation();
-												openPosePreview(item.pose);
+													openPosePreview(item.pose);
 												}}
 												class={[chipMonth, DATE_POSE_STYLE].join(' ')}
 												title={`Pose — ${item.pose.contactName}${item.pose.note ? ` · ${item.pose.note}` : ''}`}
@@ -1494,7 +1737,9 @@
 												<span class="hidden font-mono text-[10px] opacity-70 sm:block">
 													{item.pose.time ?? ''}
 												</span>
-												<span class="min-w-0 flex-1 truncate">🔧 Pose · {item.pose.contactName}</span>
+												<span class="min-w-0 flex-1 truncate"
+													>🔧 Pose · {item.pose.contactName}</span
+												>
 											</button>
 										{:else if item.kind === 'reunion'}
 											<div
@@ -1521,7 +1766,7 @@
 </div>
 
 <Dialog bind:open={deleteOpen}>
-	<DialogContent class="max-w-md rounded-xl border-line bg-card">
+	<DialogContent class="max-w-md rounded-2xl border-0 bg-card">
 		<DialogHeader>
 			<DialogTitle>Supprimer l'événement</DialogTitle>
 		</DialogHeader>
@@ -1544,12 +1789,10 @@
 
 {#if previewEvent}
 	<Dialog bind:open={previewOpen}>
-		<DialogContent class="max-w-md rounded-xl border-line bg-card">
+		<DialogContent class="max-w-md rounded-2xl border-0 bg-card">
 			<DialogHeader>
 				<DialogTitle class="flex items-center gap-2 text-[15px] font-semibold">
-					<span
-						class="grid size-8 shrink-0 place-items-center rounded-lg border border-line bg-card2 text-[15px]"
-					>
+					<span class="grid size-8 shrink-0 place-items-center rounded-xl bg-card2 text-[15px]">
 						{EVENT_EMOJI[previewEvent.type] ?? ''}
 					</span>
 					{previewEvent.titre}
@@ -1580,7 +1823,7 @@
 							Sections / équipes
 						</p>
 						{#each sectionsOf(previewEvent) as sec}
-							<div class="rounded-lg border border-line bg-base p-2.5">
+							<div class="rounded-2xl bg-card2 p-2.5">
 								<div class="flex flex-wrap items-center gap-x-2 gap-y-1">
 									{#if sec.nom}
 										<span class="text-[13px] font-bold">{sec.nom}</span>
@@ -1627,21 +1870,17 @@
 						<Trash2 class="size-4" />
 						Supprimer
 					</Button>
-					<Button onclick={startEditFromPreview} class="bg-white text-black hover:bg-white/90">
-						Modifier
-					</Button>
+					<Button onclick={startEditFromPreview}>Modifier</Button>
 				{/if}
 			</DialogFooter>
 		</DialogContent>
 	</Dialog>
 {/if}
 <Dialog bind:open={posePreviewOpen}>
-	<DialogContent class="max-w-md rounded-xl border-line bg-card">
+	<DialogContent class="max-w-md rounded-2xl border-0 bg-card">
 		<DialogHeader>
 			<DialogTitle class="flex items-center gap-2 text-[14px] font-semibold">
-				<span
-					class="grid size-8 place-items-center rounded-lg border border-line bg-card2 text-muted-foreground"
-				>
+				<span class="grid size-8 place-items-center rounded-xl bg-card2 text-muted-foreground">
 					<Wrench class="size-4" strokeWidth={1.7} />
 				</span>
 				Date de pose
@@ -1675,19 +1914,19 @@
 		{/if}
 		<DialogFooter class="gap-2">
 			<Button variant="outline" onclick={() => (posePreviewOpen = false)}>Fermer</Button>
-			<Button variant="destructive" onclick={supprimerPose} disabled={poseBusy}>
-				{#if poseBusy}
-					<LoaderCircle class="size-4 animate-spin" />
-				{:else}
-					<Trash2 class="size-4" />
-				{/if}
-				Supprimer
-			</Button>
+			{#if canWrite}
+				<Button variant="destructive" onclick={supprimerPose} disabled={poseBusy}>
+					{#if poseBusy}
+						<LoaderCircle class="size-4 animate-spin" />
+					{:else}
+						<Trash2 class="size-4" />
+					{/if}
+					Supprimer
+				</Button>
+			{/if}
 		</DialogFooter>
 	</DialogContent>
 </Dialog>
-
-<PoseDateDialog bind:open={poseOpen} initialDate={poseDate} ventes={ventesPose} />
 
 <AgendaEventDialog
 	bind:open={createOpen}
