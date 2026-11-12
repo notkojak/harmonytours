@@ -1,4 +1,10 @@
-import { type MutationCtx, type QueryCtx, mutation, query } from './_generated/server';
+import {
+	internalMutation,
+	type MutationCtx,
+	type QueryCtx,
+	mutation,
+	query
+} from './_generated/server';
 import { v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { assertCanWriteCrm, canManageEmployes, canReassignContact, canWriteCrm, getCurrentUser } from './permissions';
@@ -963,5 +969,56 @@ export const update = mutation({
 		}
 
 		await ctx.db.patch(args.contactId, patch);
+	}
+});
+
+// Migration : complète le lien fiable (`followUp.commercialId`) des contacts
+// existants à partir du nom historique (`followUp.commercial`). Sans cette clé,
+// le binôme d'une vente dépendait d'une comparaison de noms, fragile en cas de
+// renommage. Le nom affiché reste inchangé tant que l'id est valide.
+export const migrateCommercialIds = internalMutation({
+	args: { dryRun: v.optional(v.boolean()) },
+	handler: async (ctx, { dryRun }) => {
+		const users = await ctx.db.query('users').collect();
+		const byName = new Map<string, Id<'users'>>();
+		for (const u of users) {
+			byName.set(displayName(u).toLowerCase(), u._id);
+			if (u.email) byName.set(u.email.toLowerCase(), u._id);
+		}
+
+		const contacts = await ctx.db.query('contacts').collect();
+		let updated = 0;
+		let sansCorrespondance = 0;
+		const details: Array<{
+			contactId: Id<'contacts'>;
+			commercial: string;
+			commercialId: Id<'users'>;
+		}> = [];
+
+		for (const contact of contacts) {
+			const fu = contact.followUp;
+			const nom = fu?.commercial?.trim();
+			if (!fu || !nom || fu.commercialId) continue;
+			const target = byName.get(nom.toLowerCase());
+			if (!target) {
+				sansCorrespondance++;
+				continue;
+			}
+			updated++;
+			if (details.length < 100) {
+				details.push({ contactId: contact._id, commercial: nom, commercialId: target });
+			}
+			if (!dryRun) {
+				await ctx.db.patch(contact._id, { followUp: { ...fu, commercialId: target } });
+			}
+		}
+
+		return {
+			total: contacts.length,
+			updated,
+			sansCorrespondance,
+			dryRun: !!dryRun,
+			details
+		};
 	}
 });

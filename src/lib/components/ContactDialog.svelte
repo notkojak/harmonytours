@@ -123,7 +123,7 @@
 	import { Textarea } from '$lib/components/ui/textarea/index.js';
 	import { contactSources, sourceClass, type ContactSource } from '$lib/data/sources';
 	import { FAMILLES } from '$lib/data/catalogue';
-	import { commerciauxLies as listeCommerciauxLies } from '$lib/data/commercial';
+	import { binomeClient } from '$lib/data/commercial';
 	import { formatPhone, onPhoneInput } from '$lib/data/phone';
 	import AddressInput from './AddressInput.svelte';
 	import ErreurVenteDialog from './ErreurVenteDialog.svelte';
@@ -197,15 +197,12 @@
 	const ventes = useQuery(api.ventes.getVentes, () =>
 		contact?._id && open ? { contactId: contact._id as Id<'contacts'> } : 'skip'
 	);
-	// Commerciaux liés au client : le binôme, c'est-à-dire le créateur du contact
-	// et le commercial rattaché au RDV (à qui la vente est partagée, y compris
-	// quand le RDV est repassé en rappel), plus les vendeurs des ventes.
+	// Commerciaux liés au client : le binôme de sa vente la plus récente (deux
+	// personnes maximum). À défaut de vente, le créateur du contact et le
+	// commercial rattaché au RDV. On n'agrège plus les vendeurs de toutes les
+	// ventes, qui faisaient apparaître trois noms sur une fiche.
 	const commerciauxLies = $derived(
-		listeCommerciauxLies(
-			contact?.createdByName,
-			contact,
-			(ventes.data ?? []).map((v) => v.vendeurName)
-		)
+		binomeClient(contact?.createdByName, contact, ventes.data ?? [])
 	);
 
 	let saleOpen = $state(false);
@@ -220,6 +217,8 @@
 		confortee?: boolean | null;
 		paiement?: 'comptant' | 'financement' | null;
 		fiAccepte?: boolean | null;
+		binomeIds?: string[] | null;
+		binomeNames?: string[] | null;
 	} | null>(null);
 	let erreurOpen = $state(false);
 	// Échec du dernier changement de statut : affiché dans la carte de la vente
@@ -367,6 +366,8 @@
 		confortee?: boolean | null;
 		paiement?: 'comptant' | 'financement' | null;
 		fiAccepte?: boolean | null;
+		binomeIds?: string[] | null;
+		binomeNames?: string[] | null;
 	}) {
 		editingVente = vente;
 		saleEditOpen = true;
@@ -2461,6 +2462,8 @@
 		bind:open={saleOpen}
 		contactId={contact?._id}
 		commercialName={contact?.followUp?.commercial ?? undefined}
+		contactCreatedById={contact?.createdBy ?? undefined}
+		contactCreatedByName={contact?.createdByName ?? undefined}
 	/>
 
 	<SaleDialog

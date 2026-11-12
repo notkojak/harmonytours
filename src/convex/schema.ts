@@ -187,6 +187,12 @@ const ventes = defineTable({
 	contactId: v.id('contacts'),
 	vendeurId: v.id('users'),
 	vendeurName: v.string(),
+	// Binôme crédité de la vente (1 ou 2 personnes), figé au moment de la vente.
+	// Avant, le binôme était recalculé depuis le contact (créateur + commercial
+	// du RDV + vendeurs de toutes ses ventes) : la même vente pouvait finir avec
+	// trois « associés ». La vente porte désormais son propre binôme ; modifier
+	// le contact ou une autre vente ne change plus son attribution.
+	binomeIds: v.optional(v.array(v.id('users'))),
 	statut: v.optional(
 		v.union(v.literal('en attente'), v.literal('valide'), v.literal('erreur'), v.literal('annulée'))
 	),

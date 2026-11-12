@@ -203,7 +203,8 @@ export const direction = query({
 			...statsFor(a._id)
 		}));
 
-		// Par commercial (CA au vendeur, RDV au preneur de contact).
+		// Par commercial (CA et ventes partagés entre le binôme de la vente, RDV au
+		// preneur de contact).
 		const parPersonne = users
 			.filter((u) => (scopeIds === null ? true : !!u.agencyId && scopeIds.has(u.agencyId)))
 			.map((u) => {
@@ -219,10 +220,12 @@ export const direction = query({
 				let ca = 0;
 				let nbVentes = 0;
 				for (const v of ventes) {
-					if (v.vendeurId !== u._id || v.statut !== 'valide') continue;
+					const binome = v.binomeIds && v.binomeIds.length > 0 ? v.binomeIds : [v.vendeurId];
+					if (!binome.includes(u._id) || v.statut !== 'valide') continue;
 					if (v.date < start || v.date >= end) continue;
-					ca += v.totalHT;
-					nbVentes++;
+					const part = 1 / binome.length;
+					ca += v.totalHT * part;
+					nbVentes += part;
 				}
 				const obj = objectifs.find((o) => o.userId === u._id && o.mois === mois);
 				return {
@@ -231,7 +234,7 @@ export const direction = query({
 					role: u.role ?? null,
 					agencyId: u.agencyId ?? null,
 					caValide: Math.round(ca * 100) / 100,
-					ventes: nbVentes,
+					ventes: Math.round(nbVentes * 100) / 100,
 					contactsCrees,
 					rdvPris,
 					objectifCa: obj?.ca ?? 0,

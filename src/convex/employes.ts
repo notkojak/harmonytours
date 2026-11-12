@@ -395,7 +395,8 @@ export const listTeamMembers = query({
 		date: v.string()
 	},
 	handler: async (ctx, args) => {
-		const user = await getCurrentUser(ctx);
+		// Vérifie la session (la query reste accessible à tout employé connecté).
+		await getCurrentUser(ctx);
 
 		// Bornes de la période : [startISO, endISO[ pour les RDV (date string),
 		// [startTs, endTs[ pour les ventes (timestamp).
@@ -471,20 +472,6 @@ export const listTeamMembers = query({
 		// Contact par id : sert au partage des ventes (vendeur + créateur du contact).
 		const contactById = new Map(contacts.map((c) => [c._id, c]));
 
-		// Vendeurs de chaque contact, toutes ventes confondues : le binôme d'un
-		// contact est le même pour toutes ses ventes, il ne dépend pas de la vente
-		// en cours de calcul (sinon la seconde vente d'un client partagé entre
-		// deux commerciaux retombait sur un seul d'entre eux).
-		const vendeursParContact = new Map<string, Set<Id<'users'>>>();
-		for (const v of ventes) {
-			let set = vendeursParContact.get(v.contactId);
-			if (!set) {
-				set = new Set();
-				vendeursParContact.set(v.contactId, set);
-			}
-			set.add(v.vendeurId);
-		}
-
 		type Stats = {
 			rdvTap: number;
 			rdvGms: number;
@@ -550,18 +537,17 @@ export const listTeamMembers = query({
 			return undefined;
 		};
 
-		// Binôme d'une vente : le binôme, c'est toujours la personne qui a créé le
-		// contact (elle le reste même si la fiche est modifiée par quelqu'un
-		// d'autre) et le commercial rattaché au RDV. Sans commercial rattaché, la
-		// seconde place revient aux vendeurs du contact : celui de la vente
-		// calculée, mais aussi ceux de ses autres ventes. Un client vendu par deux
-		// commerciaux doit être partagé de la même façon sur chacune de ses ventes,
-		// sinon la seconde vente retombait entièrement sur le créateur du contact.
-		const binome = (vendeurId: Id<'users'> | undefined, contact: Doc<'contacts'> | undefined) => {
+		// Binôme d'une vente : celui figé sur la vente (`binomeIds`). Pour les
+		// documents antérieurs au champ, on retombe sur l'ancienne règle : créateur
+		// du contact + commercial rattaché au RDV, à défaut vendeur de la vente.
+		// On ne mélange jamais les vendeurs des autres ventes du client : une même
+		// vente ne peut pas être partagée entre trois personnes.
+		const binome = (vente: Doc<'ventes'> | undefined, contact: Doc<'contacts'> | undefined) => {
+			const figes = (vente?.binomeIds ?? []).filter((id): id is Id<'users'> => !!id);
+			if (figes.length > 0) return partners(...figes);
 			const rattache = commercialRattache(contact);
 			if (rattache) return partners(contact?.createdBy, rattache);
-			const vendeursDuContact = contact ? vendeursParContact.get(contact._id) : undefined;
-			return partners(contact?.createdBy, ...(vendeursDuContact ?? [vendeurId]));
+			return partners(contact?.createdBy, vente?.vendeurId);
 		};
 
 		// RDV : suivi courant de type RDV, contacts traités compris. Un dossier marqué
@@ -603,13 +589,12 @@ export const listTeamMembers = query({
 			// vendeur de la vente (un RDV « vendu » peut n'avoir aucun commercial
 			// renseigné, le binôme se voit alors via la vente).
 			if (treated && plannedInPeriod) {
-				// Le vendeur de la vente sert de binôme ; on préfère une vente valide,
+				// La vente du contact porte le binôme ; on préfère une vente valide,
 				// mais une vente annulée compte quand même (elle a été conclue).
-				const saleVendeur = (
+				const sale =
 					ventes.find((v) => v.contactId === c._id && v.statut !== 'annulée') ??
-					ventes.find((v) => v.contactId === c._id)
-				)?.vendeurId;
-				const { ids, share } = binome(saleVendeur, c);
+					ventes.find((v) => v.contactId === c._id);
+				const { ids, share } = binome(sale, c);
 				for (const id of ids) {
 					get(id).rdvTraites += share;
 				}
@@ -642,7 +627,7 @@ export const listTeamMembers = query({
 			const rdvConfortation =
 				fu?.type === 'rdv' && fu.motif === 'confortation' && fu.date >= startISO && fu.date < endISO;
 			if (rdvConfortation) continue;
-			const { ids, share } = binome(v.vendeurId, contact);
+			const { ids, share } = binome(v, contact);
 			for (const id of ids) get(id).rdvTraites += share;
 		}
 
@@ -657,7 +642,7 @@ export const listTeamMembers = query({
 		for (const v of ventes) {
 			if (v.statut !== 'valide' && v.statut !== 'en attente') continue;
 			if (v.date < startTs || v.date >= endTs) continue;
-			const { ids, share } = binome(v.vendeurId, contactById.get(v.contactId));
+			const { ids, share } = binome(v, contactById.get(v.contactId));
 			for (const id of ids) get(id).caTotal += v.totalHT * share;
 		}
 
@@ -667,7 +652,7 @@ export const listTeamMembers = query({
 		// attente (non validées) sont suivies à part dans caAttente.
 		for (const v of ventes) {
 			if (v.date < startTs || v.date >= endTs) continue;
-			const { ids, share } = binome(v.vendeurId, contactById.get(v.contactId));
+			const { ids, share } = binome(v, contactById.get(v.contactId));
 			for (const id of ids) {
 				const s = get(id);
 				s.ventes += share;
@@ -680,7 +665,7 @@ export const listTeamMembers = query({
 		// Annulations de la période : CA (HT) des ventes annulées, partagé comme le CA.
 		for (const v of ventes) {
 			if (v.statut !== 'annulée' || v.date < startTs || v.date >= endTs) continue;
-			const { ids, share } = binome(v.vendeurId, contactById.get(v.contactId));
+			const { ids, share } = binome(v, contactById.get(v.contactId));
 			for (const id of ids) get(id).caAnnulations += v.totalHT * share;
 		}
 

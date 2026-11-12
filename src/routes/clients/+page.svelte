@@ -20,7 +20,7 @@
 		TableRow
 	} from '$lib/components/ui/table/index.js';
 	import { formatPhone } from '$lib/data/phone';
-	import { commerciauxLies } from '$lib/data/commercial';
+	import { binomeClient } from '$lib/data/commercial';
 	import ContactDialog, { type ContactRow } from '$lib/components/ContactDialog.svelte';
 	import PersonTabs from '$lib/components/PersonTabs.svelte';
 	import Avatar from '$lib/components/Avatar.svelte';
@@ -60,17 +60,19 @@
 		return [...set].join(', ');
 	}
 
-	// Commerciaux liés au client (sans doublons) : le binôme, c'est-à-dire le
-	// créateur du contact et le commercial rattaché au RDV à qui la vente est
-	// partagée (à défaut le vendeur de la vente).
-	function vendeurNamesOf(client: { contact: ContactRow; ventes: { vendeurName: string }[] }) {
-		return commerciauxLies(
-			client.contact.createdByName,
-			client.contact,
-			client.ventes.map((v) => v.vendeurName)
-		);
+	// Commerciaux liés au client (sans doublons) : le binôme de sa vente la plus
+	// récente (deux personnes maximum), à défaut le créateur du contact et le
+	// commercial rattaché au RDV.
+	function vendeurNamesOf(client: {
+		contact: ContactRow;
+		ventes: { date?: number | null; binomeNames?: (string | null)[] | null }[];
+	}) {
+		return binomeClient(client.contact.createdByName, client.contact, client.ventes);
 	}
-	function vendeursOf(client: { contact: ContactRow; ventes: { vendeurName: string }[] }) {
+	function vendeursOf(client: {
+		contact: ContactRow;
+		ventes: { date?: number | null; binomeNames?: (string | null)[] | null }[];
+	}) {
 		return vendeurNamesOf(client).join(', ');
 	}
 

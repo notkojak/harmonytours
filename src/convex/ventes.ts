@@ -1,4 +1,10 @@
-import { mutation, query, type QueryCtx } from './_generated/server';
+import {
+	internalMutation,
+	mutation,
+	query,
+	type MutationCtx,
+	type QueryCtx
+} from './_generated/server';
 import { v } from 'convex/values';
 import { assertCanWriteCrm, canManageEmployes, getCurrentUser } from './permissions';
 import { canViewAllCrm, isUserInScope, visibleAgencyIds } from './access';
@@ -35,73 +41,89 @@ function userName(u: { firstName?: string; lastName?: string; email?: string }):
 	return `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || u.email || 'Commercial';
 }
 
-// Noms affichés des personnes liées aux contacts (commercial qui a pris le
-// contact) et aux ventes (vendeurs), pour l'affichage « Vendu par X et Y » et
-// la fiche client.
-async function peopleNames(
-	ctx: QueryCtx,
-	contacts: Doc<'contacts'>[],
-	ventes: Doc<'ventes'>[]
-): Promise<Map<Id<'users'>, string>> {
-	const ids = new Set<Id<'users'>>();
-	for (const c of contacts) if (c.createdBy) ids.add(c.createdBy);
-	for (const v of ventes) if (v.vendeurId) ids.add(v.vendeurId);
+// Index des utilisateurs, pour afficher « Vendu par X et Y » et retrouver un
+// commercial rattaché à partir du nom historique stocké dans le contact.
+type People = {
+	names: Map<Id<'users'>, string>;
+	byName: Map<string, Id<'users'>>;
+};
+
+async function loadPeople(ctx: QueryCtx): Promise<People> {
+	const users = await ctx.db.query('users').collect();
 	const names = new Map<Id<'users'>, string>();
-	for (const id of ids) {
-		const u = await ctx.db.get(id);
-		if (u) names.set(id, userName(u));
+	const byName = new Map<string, Id<'users'>>();
+	for (const u of users) {
+		const nom = userName(u);
+		names.set(u._id, nom);
+		byName.set(nom.trim().toLowerCase(), u._id);
+		if (u.email) byName.set(u.email.trim().toLowerCase(), u._id);
 	}
-	return names;
+	return { names, byName };
 }
 
-// Vendeurs de chaque contact, toutes ventes confondues : le binôme d'un contact
-// est le même pour toutes ses ventes, il ne dépend pas de la vente affichée.
-function vendeursParContact(ventes: Doc<'ventes'>[]): Map<string, Set<Id<'users'>>> {
-	const parContact = new Map<string, Set<Id<'users'>>>();
-	for (const v of ventes) {
-		let set = parContact.get(v.contactId);
-		if (!set) {
-			set = new Set();
-			parContact.set(v.contactId, set);
-		}
-		set.add(v.vendeurId);
-	}
-	return parContact;
-}
-
-// Nom affiché du vendeur d'une vente : « X » seul, ou « X et Y » quand la vente
-// est conclue en binôme. Le binôme est celui des chiffres : le commercial
-// rattaché au RDV, à défaut le créateur du contact avec les vendeurs du contact
-// (pas seulement celui de la vente affichée, sinon la seconde vente d'un client
-// vendu par deux commerciaux n'en affichait qu'un).
-function vendeurLabel(
+// Binôme d'une vente : les personnes figées sur la vente (`binomeIds`). Pour les
+// ventes antérieures à ce champ, on retombe sur l'ancien binôme (commercial
+// rattaché au RDV, à défaut vendeur + créateur du contact), mais toujours limité
+// à deux personnes. On n'agrège jamais les vendeurs des autres ventes du même
+// client : c'est ce qui affichait un troisième « associé ».
+function binomeIdsOf(
 	vente: Doc<'ventes'>,
 	contact: Doc<'contacts'> | undefined,
-	names: Map<Id<'users'>, string>,
-	vendeursDuContact?: Set<Id<'users'>>
-): string {
-	const rattache = contact?.followUp?.commercial?.trim();
-	const createurId = contact?.createdBy;
-	const createur = createurId ? names.get(createurId) : undefined;
-	// Commercial rattaché au RDV : c'est lui qui porte la vente, avec le créateur.
-	if (rattache) {
-		if (createur && createur !== rattache) return `${rattache} et ${createur}`;
-		return rattache;
+	byName?: Map<string, Id<'users'>>
+): Id<'users'>[] {
+	const stored = (vente.binomeIds ?? []).filter((id): id is Id<'users'> => !!id);
+	if (stored.length > 0) return [...new Set(stored)].slice(0, 2);
+
+	const nomRattache = contact?.followUp?.commercial?.trim().toLowerCase();
+	const rattache =
+		contact?.followUp?.commercialId ?? (nomRattache ? byName?.get(nomRattache) : undefined);
+	const principal = rattache ?? vente.vendeurId;
+	const ids = [principal, contact?.createdBy].filter((id): id is Id<'users'> => !!id);
+	return [...new Set(ids)].slice(0, 2);
+}
+
+function binomeNamesOf(
+	vente: Doc<'ventes'>,
+	contact: Doc<'contacts'> | undefined,
+	people: People
+): string[] {
+	const noms = binomeIdsOf(vente, contact, people.byName)
+		.map((id) => people.names.get(id))
+		.filter((nom): nom is string => !!nom);
+	return noms.length > 0 ? noms : [vente.vendeurName];
+}
+
+// Binôme à enregistrer sur une vente. Le binôme choisi dans le formulaire fait
+// foi ; sinon on fige le binôme courant du dossier : le commercial rattaché au
+// RDV, à défaut le vendeur, avec le créateur du contact. Deux personnes maximum.
+async function binomePourVente(
+	ctx: MutationCtx,
+	contact: Doc<'contacts'>,
+	vendeurId: Id<'users'>,
+	demande?: Id<'users'>[]
+): Promise<Id<'users'>[]> {
+	if (demande && demande.length > 0) {
+		const choisis = [...new Set(demande)].slice(0, 2);
+		for (const id of choisis) {
+			if (!(await ctx.db.get(id))) throw new Error('Membre du binôme introuvable.');
+		}
+		const ids = choisis.includes(vendeurId) ? choisis : [vendeurId, ...choisis];
+		return [...new Set(ids)].slice(0, 2);
 	}
-	// Sans commercial rattaché, le binôme est le créateur du contact et les
-	// vendeurs du contact. Le vendeur de la vente affichée reste en tête, pour ne
-	// pas réordonner les ventes déjà correctes.
-	const noms: string[] = [];
-	const ajoute = (nom: string | undefined) => {
-		if (nom && !noms.includes(nom)) noms.push(nom);
-	};
-	ajoute(names.get(vente.vendeurId) ?? vente.vendeurName);
-	ajoute(createur);
-	if (vendeursDuContact) {
-		for (const id of vendeursDuContact) ajoute(names.get(id));
+
+	const users = await ctx.db.query('users').collect();
+	const byName = new Map<string, Id<'users'>>();
+	for (const u of users) {
+		const nom = `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim();
+		if (nom) byName.set(nom.toLowerCase(), u._id);
+		if (u.email) byName.set(u.email.toLowerCase(), u._id);
 	}
-	if (noms.length === 0) return vente.vendeurName;
-	return noms.join(' et ');
+	const nomRattache = contact.followUp?.commercial?.trim().toLowerCase();
+	const rattache =
+		contact.followUp?.commercialId ?? (nomRattache ? byName.get(nomRattache) : undefined);
+	const principal = rattache ?? vendeurId;
+	const ids = [principal, contact.createdBy].filter((id): id is Id<'users'> => !!id);
+	return [...new Set(ids)].slice(0, 2);
 }
 
 // Ajoute une vente à un contact : le contact devient un client.
@@ -119,6 +141,9 @@ export const addVente = mutation({
 		produits: v.array(produitValidator),
 		tvaDetail: tvaDetailValidator,
 		vendeurId: v.optional(v.id('users')),
+		// Binôme crédité de la vente (1 ou 2 personnes). Absent, le serveur fige
+		// le binôme courant du dossier.
+		binomeIds: v.optional(v.array(v.id('users'))),
 		// Date de la vente (ms) : par défaut maintenant, modifiable pour saisir
 		// une vente plus ancienne.
 		date: v.optional(v.number()),
@@ -164,11 +189,14 @@ export const addVente = mutation({
 				? (args.fiStatut ?? (args.fiAccepte ? 'accepté' : 'en attente'))
 				: undefined;
 
-		const venteId = await ctx.db.insert('ventes', {
+		const binomeIds = await binomePourVente(ctx, contact, vendeurId, args.binomeIds);
+
+		await ctx.db.insert('ventes', {
 			statutChangedAt: Date.now(),
 			contactId: args.contactId,
 			vendeurId,
 			vendeurName,
+			binomeIds,
 			// Une vente est validée dès sa saisie : plus de statut « en attente ».
 			statut: 'valide',
 			// Le suivi métrage / pose se remplit ensuite, depuis les dates du dossier.
@@ -222,6 +250,7 @@ export const updateStatut = mutation({
 		const contact = await ctx.db.get(vente.contactId);
 		const allowed =
 			vente.vendeurId === user._id ||
+			(vente.binomeIds ?? []).includes(user._id) ||
 			(contact && contact.createdBy === user._id) ||
 			canManageEmployes(user);
 		if (!allowed) {
@@ -258,21 +287,22 @@ export const listVentes = query({
 		const allVentes = (await ctx.db.query('ventes').collect()).filter(
 			(v) => !v.deletedAt && !contactMap.get(v.contactId)?.deletedAt
 		);
-		const userNames = await peopleNames(ctx, allContacts, allVentes);
-		const vendeurs = vendeursParContact(allVentes);
+		const people = await loadPeople(ctx);
 
 		const build = (ventes: Doc<'ventes'>[]) =>
 			ventes
 				.map((v) => {
 					const contact = contactMap.get(v.contactId);
+					const binomeNames = binomeNamesOf(v, contact, people);
 					return {
 						...v,
-						vendeurDisplay: vendeurLabel(v, contact, userNames, vendeurs.get(v.contactId)),
+						vendeurDisplay: binomeNames.join(' et '),
+						binomeNames,
 						contactName: contact?.name ?? '—',
 						contact: contact
 							? {
 									...contact,
-									createdByName: contact.createdBy ? userNames.get(contact.createdBy) : undefined
+									createdByName: contact.createdBy ? people.names.get(contact.createdBy) : undefined
 								}
 							: null
 					};
@@ -300,6 +330,7 @@ export const listVentes = query({
 				if (target) {
 					const linked =
 						v.vendeurId === target._id ||
+						(v.binomeIds ?? []).includes(target._id) ||
 						(contact != null && contact.createdBy === target._id) ||
 						(!!targetName &&
 							!!contact?.followUp?.commercial &&
@@ -321,7 +352,10 @@ export const listVentes = query({
 			if (myName && c.followUp?.commercial === myName) visibleContactIds.add(c._id);
 		}
 		const ventes = allVentes.filter(
-			(v) => v.vendeurId === user._id || visibleContactIds.has(v.contactId)
+			(v) =>
+				v.vendeurId === user._id ||
+				(v.binomeIds ?? []).includes(user._id) ||
+				visibleContactIds.has(v.contactId)
 		);
 		return build(ventes);
 	}
@@ -416,6 +450,10 @@ export const updateVente = mutation({
 		produits: v.array(produitValidator),
 		tvaDetail: tvaDetailValidator,
 		vendeurId: v.optional(v.id('users')),
+		// Binôme de la vente : le formulaire l'envoie tel quel. Absent, il n'est
+		// pas modifié (sauf changement de vendeur, où le nouveau vendeur prend la
+		// place de l'ancien dans le binôme).
+		binomeIds: v.optional(v.array(v.id('users'))),
 		// Date de la vente (ms) : corrigeable (la vente se déplace alors dans les
 		// statistiques du mois correspondant).
 		date: v.optional(v.number()),
@@ -434,6 +472,7 @@ export const updateVente = mutation({
 		const contact = await ctx.db.get(vente.contactId);
 		const allowed =
 			vente.vendeurId === user._id ||
+			(vente.binomeIds ?? []).includes(user._id) ||
 			(contact && contact.createdBy === user._id) ||
 			canManageEmployes(user);
 		if (!allowed) {
@@ -447,7 +486,7 @@ export const updateVente = mutation({
 		const totalTVA = args.produits.reduce((sum, p) => sum + (p.montantHT * p.tva) / 100, 0);
 		const totalTTC = totalHT + totalTVA;
 
-		let patch: {
+		const patch: {
 			produits: typeof args.produits;
 			tvaDetail?: { taux: number; montant: number }[];
 			totalHT: number;
@@ -455,6 +494,7 @@ export const updateVente = mutation({
 			totalTTC: number;
 			vendeurId?: Id<'users'>;
 			vendeurName?: string;
+			binomeIds?: Id<'users'>[];
 			date?: number;
 			confortee?: boolean;
 			paiement?: 'comptant' | 'financement';
@@ -482,16 +522,33 @@ export const updateVente = mutation({
 			patch.fiAccepte = fiStatut ? fiStatut === 'accepté' : undefined;
 		}
 
+		let vendeurId = vente.vendeurId;
 		if (args.vendeurId && args.vendeurId !== vente.vendeurId) {
 			const vendeur = await ctx.db.get(args.vendeurId);
 			if (!vendeur) {
 				throw new Error('Vendeur introuvable.');
 			}
+			vendeurId = vendeur._id;
 			patch.vendeurId = vendeur._id;
 			patch.vendeurName =
 				`${vendeur.firstName ?? ''} ${vendeur.lastName ?? ''}`.trim() ||
 				vendeur.email ||
 				'Commercial';
+		}
+
+		if (contact) {
+			if (args.binomeIds !== undefined) {
+				// Le formulaire envoie le binôme complet : il fait foi.
+				patch.binomeIds = await binomePourVente(ctx, contact, vendeurId, args.binomeIds);
+			} else if (vendeurId !== vente.vendeurId) {
+				// Changement de vendeur sans choix explicite : le nouveau vendeur
+				// remplace l'ancien, le partenaire reste le même.
+				const partenaire = binomeIdsOf(vente, contact).find((id) => id !== vente.vendeurId);
+				patch.binomeIds = [...new Set([vendeurId, ...(partenaire ? [partenaire] : [])])].slice(
+					0,
+					2
+				);
+			}
 		}
 
 		await ctx.db.patch(args.venteId, patch);
@@ -510,6 +567,7 @@ export const updateSuivi = mutation({
 		const contact = await ctx.db.get(vente.contactId);
 		const allowed =
 			vente.vendeurId === user._id ||
+			(vente.binomeIds ?? []).includes(user._id) ||
 			(contact && contact.createdBy === user._id) ||
 			canManageEmployes(user);
 		if (!allowed) throw new Error('Non autorisé.');
@@ -529,6 +587,7 @@ export const setConfortation = mutation({
 		const contact = await ctx.db.get(vente.contactId);
 		const allowed =
 			vente.vendeurId === user._id ||
+			(vente.binomeIds ?? []).includes(user._id) ||
 			(contact && contact.createdBy === user._id) ||
 			canManageEmployes(user);
 		if (!allowed) throw new Error('Non autorisé.');
@@ -554,6 +613,7 @@ export const setDatesVente = mutation({
 		const contact = await ctx.db.get(vente.contactId);
 		const allowed =
 			vente.vendeurId === user._id ||
+			(vente.binomeIds ?? []).includes(user._id) ||
 			(contact && contact.createdBy === user._id) ||
 			canManageEmployes(user);
 		if (!allowed) throw new Error('Non autorisé.');
@@ -620,6 +680,7 @@ export const addDatePose = mutation({
 		const contact = await ctx.db.get(vente.contactId);
 		const allowed =
 			vente.vendeurId === user._id ||
+			(vente.binomeIds ?? []).includes(user._id) ||
 			(contact && contact.createdBy === user._id) ||
 			canManageEmployes(user);
 		if (!allowed) {
@@ -656,6 +717,7 @@ export const removeDatePose = mutation({
 		const contact = await ctx.db.get(vente.contactId);
 		const allowed =
 			vente.vendeurId === user._id ||
+			(vente.binomeIds ?? []).includes(user._id) ||
 			(contact && contact.createdBy === user._id) ||
 			canManageEmployes(user);
 		if (!allowed) {
@@ -694,19 +756,21 @@ export const listVentesEnErreur = query({
 			}
 			return (
 				v.vendeurId === user._id ||
+				(v.binomeIds ?? []).includes(user._id) ||
 				(contact !== undefined && contact.createdBy === user._id) ||
 				(!!myName && contact?.followUp?.commercial === myName)
 			);
 		});
-		const userNames = await peopleNames(ctx, allContacts, ventesErreur);
-		const vendeurs = vendeursParContact(ventesErreur);
+		const people = await loadPeople(ctx);
 
 		return visible
 			.map((v) => {
 				const contact = contactMap.get(v.contactId);
+				const binomeNames = binomeNamesOf(v, contact, people);
 				return {
 					...v,
-					vendeurDisplay: vendeurLabel(v, contact, userNames, vendeurs.get(v.contactId)),
+					vendeurDisplay: binomeNames.join(' et '),
+					binomeNames,
 					contactName: contact?.name ?? '—',
 					contactPhone: contact?.phone ?? null,
 					contactProjet: contact?.projet ?? null
@@ -742,20 +806,22 @@ export const getVentes = query({
 		}
 		const isMine =
 			canSee ||
-			ventes.some((v) => v.vendeurId === user._id) ||
+			ventes.some((v) => v.vendeurId === user._id || (v.binomeIds ?? []).includes(user._id)) ||
 			(!!myName && contact.followUp?.commercial === myName) ||
 			contact.createdBy === user._id;
 		if (!isMine) return [];
 
-		// Toutes les ventes du contact servent au libellé : le binôme est le même
-		// sur chaque vente, il ne dépend pas de celle qui est affichée.
-		const userNames = await peopleNames(ctx, [contact], ventes);
-		const vendeurs = vendeursParContact(ventes);
+		// Chaque vente porte son propre binôme : le libellé ne dépend que d'elle.
+		const people = await loadPeople(ctx);
 		return ventes
-			.map((v) => ({
-				...v,
-				vendeurDisplay: vendeurLabel(v, contact, userNames, vendeurs.get(v.contactId))
-			}))
+			.map((v) => {
+				const binomeNames = binomeNamesOf(v, contact, people);
+				return {
+					...v,
+					vendeurDisplay: binomeNames.join(' et '),
+					binomeNames
+				};
+			})
 			.sort((a, b) => b.date - a.date);
 	}
 });
@@ -786,13 +852,12 @@ export const listClients = query({
 
 		const allContacts = await ctx.db.query('contacts').collect();
 		const contactMap = new Map(allContacts.map((c) => [c._id, c]));
-		const userNames = await peopleNames(ctx, allContacts, allVentes);
-		const vendeurs = vendeursParContact(allVentes);
+		const people = await loadPeople(ctx);
 
 		const buildClients = (contactIds: Set<string>) => {
 			const clients: Array<{
 				contact: Doc<'contacts'> & { createdByName?: string };
-				ventes: Array<Doc<'ventes'> & { vendeurDisplay: string }>;
+				ventes: Array<Doc<'ventes'> & { vendeurDisplay: string; binomeNames: string[] }>;
 				totalTTC: number;
 			}> = [];
 			for (const id of contactIds) {
@@ -804,17 +869,16 @@ export const listClients = query({
 				clients.push({
 					contact: {
 						...contact,
-						createdByName: contact.createdBy ? userNames.get(contact.createdBy) : undefined
+						createdByName: contact.createdBy ? people.names.get(contact.createdBy) : undefined
 					},
-					ventes: ventesList.map((v) => ({
-						...v,
-						vendeurDisplay: vendeurLabel(
-							v,
-							contactMap.get(v.contactId),
-							userNames,
-							vendeurs.get(v.contactId)
-						)
-					})),
+					ventes: ventesList.map((v) => {
+						const binomeNames = binomeNamesOf(v, contact, people);
+						return {
+							...v,
+							vendeurDisplay: binomeNames.join(' et '),
+							binomeNames
+						};
+					}),
 					totalTTC
 				});
 			}
@@ -844,7 +908,12 @@ export const listClients = query({
 				if (target) {
 					const linked =
 						contact.createdBy === target._id ||
-						(ventesByContact.get(contact._id)?.some((v) => v.vendeurId === target._id) ?? false) ||
+						(ventesByContact
+							.get(contact._id)
+							?.some(
+								(v) => v.vendeurId === target._id || (v.binomeIds ?? []).includes(target._id)
+							) ??
+							false) ||
 						(!!targetName &&
 							!!contact.followUp?.commercial &&
 							contact.followUp.commercial.trim().toLowerCase() === targetName.toLowerCase());
@@ -859,12 +928,12 @@ export const listClients = query({
 		const myName = `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim();
 		const contactIds = new Set<string>();
 
-		// 1) Contacts ayant une vente signée par moi.
-		const myVentes = await ctx.db
-			.query('ventes')
-			.withIndex('by_vendeur', (q) => q.eq('vendeurId', user._id))
-			.collect();
-		for (const v of myVentes) contactIds.add(v.contactId);
+		// 1) Contacts ayant une vente signée par moi, seul ou en binôme.
+		for (const v of allVentes) {
+			if (v.vendeurId === user._id || (v.binomeIds ?? []).includes(user._id)) {
+				contactIds.add(v.contactId);
+			}
+		}
 
 		// 2) Contacts dont le RDV est lié à moi (commercial partagé).
 		if (myName) {
@@ -886,5 +955,53 @@ export const listClients = query({
 		}
 
 		return buildClients(contactIds);
+	}
+});
+
+// Migration : fige le binôme sur chaque vente existante.
+//
+// Le binôme était jusqu'ici recalculé depuis le contact et l'ensemble des
+// ventes du client : deux ventes signées par deux commerciaux différents
+// finissaient avec trois noms sur chaque ligne. On enregistre désormais, pour
+// chaque vente, le couple « commercial rattaché au RDV (à défaut le vendeur) +
+// créateur du contact » — deux personnes maximum. Le `vendeurId` reste intact.
+export const migrateBinomeVentes = internalMutation({
+	args: { dryRun: v.optional(v.boolean()) },
+	handler: async (ctx, { dryRun }) => {
+		const users = await ctx.db.query('users').collect();
+		const byName = new Map<string, Id<'users'>>();
+		for (const u of users) {
+			const nom = `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim();
+			if (nom) byName.set(nom.toLowerCase(), u._id);
+			if (u.email) byName.set(u.email.toLowerCase(), u._id);
+		}
+
+		const ventes = await ctx.db.query('ventes').collect();
+		let updated = 0;
+		const details: Array<{
+			venteId: Id<'ventes'>;
+			avant: Id<'users'>[];
+			apres: Id<'users'>[];
+		}> = [];
+
+		for (const vente of ventes) {
+			const contact = await ctx.db.get(vente.contactId);
+			const nomRattache = (contact?.followUp?.commercial ?? '').trim().toLowerCase();
+			const rattache =
+				contact?.followUp?.commercialId ?? (nomRattache ? byName.get(nomRattache) : undefined);
+			const principal = rattache ?? vente.vendeurId;
+			const ids = [
+				...new Set([principal, contact?.createdBy].filter((id): id is Id<'users'> => !!id))
+			].slice(0, 2);
+
+			const avant = vente.binomeIds ?? [];
+			if (avant.length === ids.length && avant.every((id, i) => id === ids[i])) continue;
+
+			updated++;
+			if (details.length < 100) details.push({ venteId: vente._id, avant, apres: ids });
+			if (!dryRun) await ctx.db.patch(vente._id, { binomeIds: ids });
+		}
+
+		return { total: ventes.length, updated, dryRun: !!dryRun, details };
 	}
 });

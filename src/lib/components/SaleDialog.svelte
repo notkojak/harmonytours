@@ -28,18 +28,25 @@
 		open = $bindable(false),
 		contactId,
 		commercialName,
+		contactCreatedById,
+		contactCreatedByName,
 		venteId,
 		initialVente
 	}: {
 		open?: boolean;
 		contactId?: Id<'contacts'> | string;
 		commercialName?: string;
+		// Créateur du contact : second membre du binôme proposé par défaut.
+		contactCreatedById?: string;
+		contactCreatedByName?: string;
 		venteId?: string;
 		initialVente?: {
 			produits: { produit: string; tva: number; montantHT: number }[];
 			// Montants de TVA par taux, tels qu'ils ont été saisis.
 			tvaDetail?: { taux: number; montant: number }[] | null;
 			vendeurId?: string | null;
+			binomeIds?: string[] | null;
+			binomeNames?: string[] | null;
 			// Date de la vente (ms) affichée dans le champ date.
 			date?: number | null;
 			paiement?: 'comptant' | 'financement' | null;
@@ -50,11 +57,42 @@
 
 	const addVente = useMutation(api.ventes.addVente);
 	const updateVente = useMutation(api.ventes.updateVente);
-	// Le commercial et la date ne sont plus demandés : on reprend le commercial
-	// du RDV (sinon l'utilisateur connecté) et la date du jour.
+	// Le binôme est choisi à la vente (deux personnes maximum) : la première est
+	// le vendeur. Par défaut, on propose le commercial du RDV et le créateur du
+	// contact.
 	const vendeurs = useQuery(api.employes.listVendeurs, () => (open ? {} : 'skip'));
-	let vendeurId = $state<string | undefined>();
+	let binomeIds = $state<string[]>([]);
+	const vendeurId = $derived(binomeIds[0]);
 	let venteDate = $state(msToDateInput(Date.now()));
+
+	// Options du binôme : les vendeurs disponibles, plus les membres déjà
+	// enregistrés sur la vente (même s'ils ne sont plus proposés par la liste).
+	const binomeOptions = $derived.by(() => {
+		const list = (vendeurs.data ?? []).map((v) => ({
+			_id: v._id as string,
+			name: v.name,
+			isMe: v.isMe
+		}));
+		const ajoute = (id: string, name: string) => {
+			if (!list.some((o) => o._id === id)) list.push({ _id: id, name, isMe: false });
+		};
+		if (contactCreatedById) {
+			ajoute(contactCreatedById, contactCreatedByName ?? 'Commercial');
+		}
+		const initialIds = initialVente?.binomeIds ?? [];
+		initialIds.forEach((id, i) => {
+			ajoute(id, initialVente?.binomeNames?.[i] ?? 'Commercial');
+		});
+		return list;
+	});
+
+	function toggleBinome(id: string) {
+		if (binomeIds.includes(id)) {
+			binomeIds = binomeIds.filter((x) => x !== id);
+		} else if (binomeIds.length < 2) {
+			binomeIds = [...binomeIds, id];
+		}
+	}
 	// Paiement comptant / financement, et acceptation du dossier de financement
 	// (FI) le cas échéant. Le suivi du dossier (confortation, métrage, pose) se
 	// règle après coup, depuis la fiche client/vente.
@@ -117,7 +155,14 @@
 					'10': parTaux['10'] ? String(Math.round(parTaux['10'] * 100) / 100) : '',
 					'20': parTaux['20'] ? String(Math.round(parTaux['20'] * 100) / 100) : ''
 				};
-				vendeurId = initialVente.vendeurId ?? undefined;
+				const binomeEnregistre = (initialVente.binomeIds ?? []).filter(Boolean);
+				binomeIds = (
+					binomeEnregistre.length > 0
+						? binomeEnregistre
+						: initialVente.vendeurId
+							? [initialVente.vendeurId]
+							: []
+				).slice(0, 2);
 				venteDate = msToDateInput(initialVente.date ?? Date.now());
 				paiement = initialVente.paiement ?? 'comptant';
 				fiStatut = fiStatutOf(initialVente.fiStatut, initialVente.fiAccepte);
@@ -125,7 +170,7 @@
 				famille = '';
 				prixHT = '';
 				tvaMontants = vide();
-				vendeurId = undefined;
+				binomeIds = [];
 				venteDate = msToDateInput(Date.now());
 				paiement = 'comptant';
 				fiStatut = 'en attente';
@@ -133,16 +178,23 @@
 		});
 	});
 
-	// Auto-sélection du vendeur : le commercial lié au RDV du contact si présent,
-	// sinon l'utilisateur connecté (premier de la liste).
+	// Binôme proposé à la création : le commercial du RDV (sinon l'utilisateur
+	// connecté), accompagné du créateur du contact s'il est différent.
 	$effect(() => {
-		const list = vendeurs.data;
-		if (open && list && list.length > 0 && !vendeurId) {
+		if (!open || isEdit) return;
+		const list = binomeOptions;
+		if (list.length === 0 || binomeIds.length > 0) return;
+		untrack(() => {
 			const match = commercialName
 				? list.find((v) => v.name.toLowerCase() === commercialName.toLowerCase())
 				: undefined;
-			vendeurId = match?._id ?? list.find((v) => v.isMe)?._id ?? list[0]?._id;
-		}
+			const principal = match ?? list.find((v) => v.isMe) ?? list[0];
+			const partenaire =
+				contactCreatedById && contactCreatedById !== principal._id
+					? list.find((v) => v._id === contactCreatedById)
+					: undefined;
+			binomeIds = [principal._id, ...(partenaire ? [partenaire._id] : [])];
+		});
 	});
 
 	function close() {
@@ -153,6 +205,10 @@
 		if (!contactId) return;
 		if (!famille) {
 			error = 'Choisis une famille de produit.';
+			return;
+		}
+		if (binomeIds.length === 0) {
+			error = 'Choisis au moins un commercial.';
 			return;
 		}
 		if (totalHT <= 0) {
@@ -180,6 +236,7 @@
 					paiement,
 					...(paiement === 'financement' ? { fiStatut, fiAccepte: fiStatut === 'accepté' } : {}),
 					...(vendeurId ? { vendeurId: vendeurId as Id<'users'> } : {}),
+					binomeIds: binomeIds as Id<'users'>[],
 					...(date ? { date } : {})
 				});
 			} else {
@@ -190,6 +247,7 @@
 					paiement,
 					...(paiement === 'financement' ? { fiStatut, fiAccepte: fiStatut === 'accepté' } : {}),
 					...(vendeurId ? { vendeurId: vendeurId as Id<'users'> } : {}),
+					binomeIds: binomeIds as Id<'users'>[],
 					...(date ? { date } : {})
 				});
 			}
@@ -226,11 +284,39 @@
 						<span data-slot="select-value">{famille || 'Choisir une famille'}</span>
 					</SelectTrigger>
 					<SelectContent class="max-h-64 overflow-y-auto">
-						{#each FAMILLES as f}
+						{#each FAMILLES as f (f)}
 							<SelectItem value={f}>{f}</SelectItem>
 						{/each}
 					</SelectContent>
 				</Select>
+			</div>
+
+			<!-- Binôme de la vente : deux personnes maximum, la première est le vendeur. -->
+			<div class="space-y-1">
+				<Label class="text-[11px] text-muted-foreground">
+					Binôme
+					<span class="ml-1 font-normal text-muted-foreground/70">2 personnes max.</span>
+				</Label>
+				<div class="flex flex-wrap gap-1">
+					{#each binomeOptions as option (option._id)}
+						{@const actif = binomeIds.includes(option._id)}
+						{@const principal = binomeIds[0] === option._id}
+						<button
+							type="button"
+							onclick={() => toggleBinome(option._id)}
+							aria-pressed={actif}
+							disabled={!actif && binomeIds.length >= 2}
+							class={[
+								'rounded-full border px-2.5 py-1 text-[11.5px] font-medium transition-all disabled:opacity-40',
+								actif
+									? 'border-primary bg-primary text-primary-foreground shadow-sm shadow-primary/25'
+									: 'border-0 bg-card2 text-muted-foreground hover:border-primary/40 hover:text-foreground'
+							].join(' ')}
+						>
+							{option.name}{principal ? ' · vendeur' : ''}
+						</button>
+					{/each}
+				</div>
 			</div>
 
 			<div class="space-y-1">
@@ -251,7 +337,7 @@
 			<div class="space-y-1">
 				<Label class="text-[11px] text-muted-foreground">Montants de TVA (€)</Label>
 				<div class="grid grid-cols-3 gap-2">
-					{#each TAUX as taux}
+					{#each TAUX as taux (taux)}
 						<div class="space-y-1">
 							<p class="text-center text-[10.5px] font-medium text-muted-foreground">
 								{TAUX_LABEL[taux]}
@@ -302,7 +388,7 @@
 				<div class="space-y-1">
 					<Label class="text-[11px] text-muted-foreground">Dossier de financement</Label>
 					<div class="grid grid-cols-3 gap-1 rounded-full bg-card2 p-1">
-						{#each FI_STATUTS as etat}
+						{#each FI_STATUTS as etat (etat)}
 							<button
 								type="button"
 								onclick={() => (fiStatut = etat)}
