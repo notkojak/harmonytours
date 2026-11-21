@@ -20,17 +20,16 @@
 	} from '$lib/components/ui/table/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import ContactDialog, { type ContactRow } from '$lib/components/ContactDialog.svelte';
+	import VenteParcours from '$lib/components/VenteParcours.svelte';
 	import PersonTabs from '$lib/components/PersonTabs.svelte';
 	import { datedName, downloadCsv } from '$lib/csv';
 	import { msToDateInput } from '$lib/data/dates';
 	import {
 		confortationClass,
 		confortationLabel,
-		dateCourt,
-		PUCE,
+		fiStatutOf,
 		paiementClass,
-		paiementLabel,
-		suiviClass,
+		PUCE_FINE,
 		suiviDeVente,
 		suiviLabel,
 		prenoms
@@ -56,11 +55,53 @@
 		}
 	});
 
+	// Filtre rapide sur les dossiers qui demandent une relance.
+	type Filtre = 'toutes' | 'aConforter' | 'fiAttente' | 'fiRefuse';
+	let filtre = $state<Filtre>('toutes');
+
 	const lignes = $derived(
 		(clients.data ?? []).flatMap((client) =>
 			client.ventes.map((vente) => ({ ...vente, contact: client.contact }))
 		)
 	);
+
+	// Un dossier annulé ne demande plus de relance : il sort des filtres.
+	const estActive = (vente: { statut?: string | null }) => vente.statut !== 'annulée';
+	const estFiAttente = (vente: {
+		paiement?: string | null;
+		fiStatut?: string | null;
+		fiAccepte?: boolean | null;
+		statut?: string | null;
+	}) =>
+		estActive(vente) &&
+		vente.paiement === 'financement' &&
+		fiStatutOf(vente.fiStatut, vente.fiAccepte) === 'en attente';
+	const estFiRefuse = (vente: {
+		paiement?: string | null;
+		fiStatut?: string | null;
+		fiAccepte?: boolean | null;
+		statut?: string | null;
+	}) =>
+		estActive(vente) &&
+		vente.paiement === 'financement' &&
+		fiStatutOf(vente.fiStatut, vente.fiAccepte) === 'refusé';
+	const estAConforter = (vente: { confortee?: boolean | null; statut?: string | null }) =>
+		vente.statut === 'valide' && vente.confortee !== true;
+
+	const filtres = $derived([
+		{ key: 'toutes' as const, label: 'Toutes', count: lignes.length },
+		{
+			key: 'aConforter' as const,
+			label: 'À conforter',
+			count: lignes.filter(estAConforter).length
+		},
+		{
+			key: 'fiAttente' as const,
+			label: 'FI en attente',
+			count: lignes.filter(estFiAttente).length
+		},
+		{ key: 'fiRefuse' as const, label: 'FI refusé', count: lignes.filter(estFiRefuse).length }
+	]);
 
 	const fmt = (n: number) =>
 		n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -71,6 +112,14 @@
 		prenoms(commercialFull(vente));
 	const produitsOf = (vente: { produits: { produit: string }[] }) =>
 		[...new Set(vente.produits.map((p) => p.produit))].join(', ');
+
+	// Pas horizontal serré et puces compactes : le tableau (9 colonnes) tient
+	// dans la carte sans défilement latéral.
+	const CELL = 'px-2.5 py-3';
+	const HEAD =
+		'px-2.5 py-2.5 text-[10.5px] font-semibold tracking-wide whitespace-nowrap text-muted-foreground uppercase';
+	const paiementCourt = (paiement: string | null | undefined): string =>
+		paiement === 'financement' ? 'Financement' : paiement === 'comptant' ? 'Comptant' : '—';
 	const statutLabel = (statut?: string | null) =>
 		statut === 'annulée'
 			? 'Annulée'
@@ -91,12 +140,16 @@
 	// d'abord.
 	const ventesFiltrees = $derived.by(() => {
 		const q = search.trim().toLowerCase();
-		const list = lignes.filter(
-			(ligne) =>
+		const list = lignes.filter((ligne) => {
+			if (filtre === 'aConforter' && !estAConforter(ligne)) return false;
+			if (filtre === 'fiAttente' && !estFiAttente(ligne)) return false;
+			if (filtre === 'fiRefuse' && !estFiRefuse(ligne)) return false;
+			return (
 				!q ||
 				ligne.contact.name.toLowerCase().includes(q) ||
 				commercialFull(ligne).toLowerCase().includes(q)
-		);
+			);
+		});
 		return [...list].sort(
 			(a, b) => b.date - a.date || a.contact.name.localeCompare(b.contact.name)
 		);
@@ -160,9 +213,6 @@
 					<span class="text-[15px] leading-none" aria-hidden="true">{pageEmojis['/ventes']}</span>
 					Ventes
 				</CardTitle>
-				<p class="mt-1 pl-6 text-[11.5px] font-medium text-muted-foreground">
-					Dossiers vendus, paiements et suivi de pose
-				</p>
 			</div>
 			<div class="flex items-center gap-2">
 				<Badge variant="secondary" class="rounded-full bg-card2 px-2.5">
@@ -174,6 +224,23 @@
 			</div>
 		</CardHeader>
 		<CardContent class="px-5 pt-4 pb-5">
+			<div class="mb-3 flex flex-wrap items-center gap-2">
+				{#each filtres as f (f.key)}
+					<button
+						type="button"
+						onclick={() => (filtre = f.key)}
+						class={[
+							'rounded-full px-3 py-1 text-[12px] font-semibold transition-colors',
+							filtre === f.key
+								? 'bg-ink text-background'
+								: 'bg-card2 text-muted-foreground hover:bg-glass-3'
+						].join(' ')}
+					>
+						{f.label}
+						<span class="ml-1 tabular-nums opacity-70">{f.count}</span>
+					</button>
+				{/each}
+			</div>
 			<div class="mb-4 flex flex-wrap items-center gap-2">
 				<PersonTabs bind:value={person} />
 				<div class="relative ml-auto">
@@ -201,70 +268,20 @@
 					<Table class="w-full border-separate border-spacing-y-1.5">
 						<TableHeader>
 							<TableRow class="border-transparent bg-transparent hover:bg-transparent">
-								<TableHead
-									class="px-4 py-3 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
-								>
-									Statut
-								</TableHead>
-								<TableHead
-									class="px-4 py-3 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
-								>
-									Confortation
-								</TableHead>
-								<TableHead
-									class="px-4 py-3 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
-								>
-									Paiement
-								</TableHead>
-								<TableHead
-									class="px-4 py-3 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
-								>
-									Suivi pose
-								</TableHead>
-								<TableHead
-									class="px-4 py-3 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
-								>
-									Date
-								</TableHead>
-								<TableHead
-									class="px-4 py-3 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
-								>
-									Client
-								</TableHead>
-								<TableHead
-									class="px-4 py-3 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
-								>
-									Commercial
-								</TableHead>
-								<TableHead
-									class="px-4 py-3 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
-								>
-									Produits
-								</TableHead>
-								<TableHead
-									class="px-4 py-3 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
-								>
-									Métrage
-								</TableHead>
-								<TableHead
-									class="px-4 py-3 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
-								>
-									Pose
-								</TableHead>
-								<TableHead
-									class="px-4 py-3 text-right text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
-								>
-									HT
-								</TableHead>
-								<TableHead
-									class="px-4 py-3 text-right text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
-								>
-									TTC
-								</TableHead>
+								<TableHead class={HEAD}>Statut</TableHead>
+								<TableHead class={HEAD}>Confortation</TableHead>
+								<TableHead class={HEAD}>Paiement</TableHead>
+								<TableHead class={[HEAD, 'hidden lg:table-cell']}>Date</TableHead>
+								<TableHead class={HEAD}>Commercial</TableHead>
+								<TableHead class={HEAD}>Client</TableHead>
+								<TableHead class={[HEAD, 'hidden 2xl:table-cell']}>Produits</TableHead>
+								<TableHead class={HEAD}>Parcours</TableHead>
+								<TableHead class={[HEAD, 'text-right']}>Total</TableHead>
 							</TableRow>
 						</TableHeader>
 						<TableBody>
 							{#each ventesFiltrees as vente (vente._id)}
+								{@const suivi = suiviDeVente(vente)}
 								<TableRow
 									class={[
 										'cursor-pointer border-0 transition-colors [&>td:first-child]:rounded-l-xl [&>td:last-child]:rounded-r-xl',
@@ -272,16 +289,16 @@
 											? '[&:hover>td]:bg-red-500/16 [&>td]:bg-red-500/10'
 											: vente.statut === 'erreur'
 												? '[&:hover>td]:bg-orange-500/16 [&>td]:bg-orange-500/10'
-												: suiviDeVente(vente) === 'posée'
+												: suivi === 'posée'
 													? '[&:hover>td]:bg-emerald-500/16 [&>td]:bg-emerald-500/10'
 													: '[&:hover>td]:bg-glass-3 [&>td]:bg-card2'
 									].join(' ')}
 									onclick={() => openFiche(vente.contact)}
 								>
-									<TableCell class="px-4 py-3 align-top">
+									<TableCell class={CELL}>
 										<span
 											class={[
-												PUCE,
+												PUCE_FINE,
 												vente.statut === 'annulée'
 													? 'bg-red-500/15 text-red-700 dark:text-red-300'
 													: vente.statut === 'erreur'
@@ -292,109 +309,96 @@
 											{statutLabel(vente.statut)}
 										</span>
 									</TableCell>
-									<TableCell class="px-4 py-3 align-top">
-										<span class={[PUCE, confortationClass(vente.confortee)].join(' ')}>
+									<TableCell class={CELL}>
+										<span class={[PUCE_FINE, confortationClass(vente.confortee)].join(' ')}>
 											{confortationLabel(vente.confortee)}
 										</span>
 									</TableCell>
-									<TableCell class="px-4 py-3">
+									<TableCell class={CELL}>
 										{#if vente.paiement}
-											<div class="flex flex-col items-start gap-1">
-												<span
-													class={[
-														PUCE,
-														paiementClass(vente.paiement, vente.fiStatut, vente.fiAccepte)
-													].join(' ')}
-												>
-													{paiementLabel(vente.paiement)}
-												</span>
-											</div>
+											<span
+												class={[
+													PUCE_FINE,
+													paiementClass(vente.paiement, vente.fiStatut, vente.fiAccepte)
+												].join(' ')}
+											>
+												{paiementCourt(vente.paiement)}
+											</span>
 										{:else}
-											<span class="text-[13px] text-muted-foreground">—</span>
+											<span class="text-[12.5px] text-muted-foreground">—</span>
 										{/if}
 									</TableCell>
-									<TableCell class="px-4 py-3">
-										<span class={[PUCE, suiviClass(suiviDeVente(vente))].join(' ')}>
-											{suiviLabel(suiviDeVente(vente))}
-										</span>
-									</TableCell>
-									<TableCell class="px-4 py-3 text-[13px] text-muted-foreground">
+									<TableCell
+										class={[
+											CELL,
+											'hidden text-[12.5px] whitespace-nowrap text-muted-foreground lg:table-cell'
+										]}
+									>
 										{dateVente(vente.date)}
 									</TableCell>
-									<TableCell
-										class="w-[130px] max-w-[130px] px-4 py-3 text-[13px] font-medium text-foreground"
-									>
-										<span class="block truncate" title={vente.contact.name}
-											>{vente.contact.name}</span
+									<TableCell class={CELL}>
+										<span
+											class="block max-w-[5rem] truncate text-[12.5px] text-muted-foreground"
+											title={commercialFull(vente)}
 										>
-									</TableCell>
-									<TableCell
-										class="w-[120px] max-w-[120px] px-4 py-3 text-[13px] text-muted-foreground"
-									>
-										<span class="block truncate" title={commercialFull(vente)}>
 											{commercialOf(vente)}
 										</span>
 									</TableCell>
-									<TableCell
-										class="w-[150px] max-w-[150px] px-4 py-3 text-[13px] text-muted-foreground"
-									>
-										<span class="block truncate" title={produitsOf(vente)}
-											>{produitsOf(vente) || '—'}</span
+									<TableCell class={CELL}>
+										<span
+											class="block max-w-[7.5rem] truncate text-[12.5px] font-medium text-foreground"
+											title={vente.contact.name}
 										>
+											{vente.contact.name}
+										</span>
 									</TableCell>
-									<TableCell
-										class="px-4 py-3 text-[13px] whitespace-nowrap text-muted-foreground tabular-nums"
-									>
-										{dateCourt(vente.dateMetrage)}
+									<TableCell class={[CELL, 'hidden 2xl:table-cell']}>
+										<span
+											class="block max-w-[8rem] truncate text-[12.5px] text-muted-foreground"
+											title={produitsOf(vente)}
+										>
+											{produitsOf(vente) || '—'}
+										</span>
 									</TableCell>
-									<TableCell
-										class="px-4 py-3 text-[13px] whitespace-nowrap text-muted-foreground tabular-nums"
-									>
-										{dateCourt(vente.datePose)}
+									<TableCell class={CELL}>
+										<VenteParcours {vente} />
 									</TableCell>
-									<TableCell
-										class="px-4 py-3 text-right text-[13px] whitespace-nowrap text-muted-foreground tabular-nums"
-									>
-										{fmt(vente.totalHT)} €
-									</TableCell>
-									<TableCell
-										class="px-4 py-3 text-right text-[13px] font-semibold whitespace-nowrap text-foreground tabular-nums"
-									>
-										{fmt(vente.totalTTC)} €
+									<TableCell class={[CELL, 'text-right whitespace-nowrap']}>
+										<div class="flex flex-col items-end leading-tight">
+											<span class="text-[12.5px] font-semibold text-foreground tabular-nums">
+												{fmt(vente.totalTTC)} €
+											</span>
+											<span class="text-[10.5px] text-muted-foreground tabular-nums">
+												{fmt(vente.totalHT)} € HT
+											</span>
+										</div>
 									</TableCell>
 								</TableRow>
 							{/each}
 							{#if ventesFiltrees.length === 0}
 								<TableRow class="border-transparent hover:bg-transparent">
 									<TableCell
-										colspan={12}
+										colspan={9}
 										class="px-4 py-8 text-center text-[13px] text-muted-foreground"
 									>
 										Aucune vente ne correspond à la recherche.
 									</TableCell>
 								</TableRow>
-							{:else}
-								<TableRow class="border-transparent bg-card2/40 hover:bg-transparent">
-									<TableCell
-										colspan={10}
-										class="px-4 py-3 text-right text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
-									>
-										Total
-									</TableCell>
-									<TableCell
-										class="px-4 py-3 text-right text-[13px] font-semibold whitespace-nowrap text-foreground tabular-nums"
-									>
-										{fmt(totalHT)} €
-									</TableCell>
-									<TableCell
-										class="px-4 py-3 text-right text-[13px] font-bold whitespace-nowrap text-foreground tabular-nums"
-									>
-										{fmt(totalTTC)} €
-									</TableCell>
-								</TableRow>
 							{/if}
 						</TableBody>
 					</Table>
+				</div>
+
+				<div
+					class="mt-1 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-card2/40 px-3 py-2.5"
+				>
+					<span class="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
+						Total
+					</span>
+					<span class="flex items-baseline gap-3 text-[12.5px] tabular-nums">
+						<span class="text-muted-foreground">{fmt(totalHT)} € HT</span>
+						<span class="font-bold text-foreground">{fmt(totalTTC)} € TTC</span>
+					</span>
 				</div>
 			{/if}
 		</CardContent>

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { LoaderCircle, Pencil, ShieldOff } from '@lucide/svelte';
+	import { GitMerge, LoaderCircle, Pencil, ShieldOff, Wrench } from '@lucide/svelte';
 	import { useAction, useMutation, useQuery } from 'convex-svelte';
 	import { api } from '../../convex/_generated/api.js';
 	import type { Id } from '../../convex/_generated/dataModel.js';
@@ -287,6 +287,107 @@
 			rowError = errorMessage(e, 'Licenciement impossible.');
 		} finally {
 			busyRow = '';
+		}
+	}
+
+	// --- Maintenance des données : doublons, agences, confirmations ---
+	const doublons = useQuery(api.contacts.doublonsGroupes, () => (isAuthorized ? {} : 'skip'));
+	const fusionner = useMutation(api.contacts.fusionner);
+	const backfillAgency = useMutation(api.contacts.backfillAgency);
+	const backfillConfirmations = useMutation(api.ventes.backfillConfirmations);
+
+	let maintenanceBusy = $state('');
+	let maintenanceMessage = $state('');
+	let maintenanceError = $state('');
+
+	async function handleFusion(
+		principalId: string,
+		principalName: string,
+		doublonIds: string[]
+	) {
+		if (maintenanceBusy || doublonIds.length === 0) return;
+		if (
+			!confirm(
+				`Fusionner ${doublonIds.length} doublon(s) dans « ${principalName} » ? Les fiches absorbées seront archivées, leurs ventes et devis conservés.`
+			)
+		)
+			return;
+		maintenanceBusy = `fusion:${principalId}`;
+		maintenanceError = '';
+		maintenanceMessage = '';
+		try {
+			let ventes = 0;
+			let devis = 0;
+			let documents = 0;
+			for (const doublonId of doublonIds) {
+				const res = await fusionner({
+					principalId: principalId as Id<'contacts'>,
+					doublonId: doublonId as Id<'contacts'>
+				});
+				ventes += res.ventes;
+				devis += res.devis;
+				documents += res.documents;
+			}
+			maintenanceMessage = `Fusion effectuée : ${ventes} vente(s), ${devis} devis et ${documents} document(s) déplacés.`;
+		} catch (e) {
+			maintenanceError = errorMessage(e, 'Fusion impossible.');
+		} finally {
+			maintenanceBusy = '';
+		}
+	}
+
+	async function handleBackfillAgency() {
+		if (maintenanceBusy) return;
+		maintenanceBusy = 'agency';
+		maintenanceError = '';
+		maintenanceMessage = '';
+		try {
+			const res = await backfillAgency({ dryRun: true });
+			const total = res.contactsUpdated + res.ventesUpdated + res.devisUpdated;
+			if (total === 0) {
+				maintenanceMessage = 'Aucune fiche sans agence à réparer.';
+				return;
+			}
+			if (
+				!confirm(
+					`Rattacher ${res.contactsUpdated} fiche(s), ${res.ventesUpdated} vente(s) et ${res.devisUpdated} devis à leur agence ?`
+				)
+			) {
+				return;
+			}
+			const done = await backfillAgency({});
+			maintenanceMessage = `${done.contactsUpdated} fiche(s), ${done.ventesUpdated} vente(s) et ${done.devisUpdated} devis rattachés.`;
+		} catch (e) {
+			maintenanceError = errorMessage(e, 'Réparation impossible.');
+		} finally {
+			maintenanceBusy = '';
+		}
+	}
+
+	async function handleBackfillConfirmations() {
+		if (maintenanceBusy) return;
+		maintenanceBusy = 'confirmations';
+		maintenanceError = '';
+		maintenanceMessage = '';
+		try {
+			const res = await backfillConfirmations({ dryRun: true });
+			if (res.poses + res.metrages === 0) {
+				maintenanceMessage = 'Aucune étape passée à confirmer.';
+				return;
+			}
+			if (
+				!confirm(
+					`Marquer ${res.poses} pose(s) et ${res.metrages} métrage(s) passés comme confirmés ? Cette action évite de traiter l'historique comme « à confirmer ».`
+				)
+			) {
+				return;
+			}
+			const done = await backfillConfirmations({});
+			maintenanceMessage = `${done.poses} pose(s) et ${done.metrages} métrage(s) confirmés.`;
+		} catch (e) {
+			maintenanceError = errorMessage(e, 'Initialisation impossible.');
+		} finally {
+			maintenanceBusy = '';
 		}
 	}
 </script>
@@ -637,6 +738,116 @@
 							{/if}
 						</TableBody>
 					</Table>
+				</div>
+			</CardContent>
+		</Card>
+
+		<!-- Maintenance des données : doublons, fiches sans agence, confirmations -->
+		<Card class="gap-0 rounded-2xl border-0 py-0 shadow-none">
+			<CardHeader class="px-5 pt-5 pb-0">
+				<div class="min-w-0">
+					<CardTitle class="flex items-center gap-2.5 text-[14px] font-semibold">
+						<span class="text-[15px] leading-none" aria-hidden="true">🧰</span>
+						Maintenance des données
+					</CardTitle>
+					<p class="mt-1 pl-6 text-[11.5px] font-medium text-muted-foreground">
+						Doublons, fiches sans agence et étapes techniques à confirmer
+					</p>
+				</div>
+			</CardHeader>
+			<CardContent class="space-y-4 px-5 pt-3 pb-5">
+				{#if maintenanceMessage}
+					<p class="rounded-xl bg-emerald-500/10 px-3 py-2 text-[12px] text-emerald-700 dark:text-emerald-300">
+						{maintenanceMessage}
+					</p>
+				{/if}
+				{#if maintenanceError}
+					<p class="rounded-xl bg-destructive/10 px-3 py-2 text-[12px] text-destructive">
+						{maintenanceError}
+					</p>
+				{/if}
+
+				<div class="space-y-2">
+					<p class="flex items-center gap-1.5 text-[12px] font-semibold text-foreground">
+						<GitMerge class="size-3.5" strokeWidth={1.8} />
+						Doublons détectés
+					</p>
+					{#if (doublons.data?.length ?? 0) === 0}
+						<p class="text-[12px] text-muted-foreground">
+							Aucun doublon dans ton périmètre. La détection croise le téléphone et le nom.
+						</p>
+					{:else}
+						<div class="space-y-2">
+							{#each doublons.data ?? [] as groupe (groupe.key)}
+								<div class="rounded-xl bg-card2 p-3">
+									<div class="mb-2 flex flex-wrap gap-x-3 gap-y-1">
+										{#each groupe.contacts as c (c._id)}
+											<span class="text-[12px] text-muted-foreground">
+												<b class="text-foreground">{c.name}</b>
+												{#if c.phone}· {c.phone}{/if}
+												{#if c.isClient}· client{/if}
+											</span>
+										{/each}
+									</div>
+									<div class="flex flex-wrap gap-1.5">
+										{#each groupe.contacts as c (c._id)}
+											<Button
+												variant="outline"
+												size="sm"
+												class="h-7 gap-1.5 text-[11.5px]"
+												disabled={!!maintenanceBusy}
+												onclick={() =>
+													handleFusion(
+														c._id,
+														c.name,
+														groupe.contacts.filter((x) => x._id !== c._id).map((x) => x._id)
+													)}
+											>
+												{#if maintenanceBusy === `fusion:${c._id}`}
+													<LoaderCircle class="size-3 animate-spin" />
+												{/if}
+												Garder « {c.name} »
+											</Button>
+										{/each}
+									</div>
+								</div>
+							{/each}
+						</div>
+					{/if}
+				</div>
+
+				<div class="flex flex-wrap items-center gap-2 border-t border-line/60 pt-3">
+					<Button
+						variant="outline"
+						size="sm"
+						class="gap-1.5"
+						disabled={!!maintenanceBusy}
+						onclick={handleBackfillAgency}
+					>
+						{#if maintenanceBusy === 'agency'}
+							<LoaderCircle class="size-3.5 animate-spin" />
+						{:else}
+							<Wrench class="size-3.5" />
+						{/if}
+						Rattacher les fiches sans agence
+					</Button>
+					<Button
+						variant="outline"
+						size="sm"
+						class="gap-1.5"
+						disabled={!!maintenanceBusy}
+						onclick={handleBackfillConfirmations}
+					>
+						{#if maintenanceBusy === 'confirmations'}
+							<LoaderCircle class="size-3.5 animate-spin" />
+						{:else}
+							<Wrench class="size-3.5" />
+						{/if}
+						Confirmer l'historique des poses
+					</Button>
+					<p class="text-[11.5px] text-muted-foreground">
+						Une simulation est proposée avant chaque réparation.
+					</p>
 				</div>
 			</CardContent>
 		</Card>

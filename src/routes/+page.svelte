@@ -63,7 +63,7 @@
 					Tableau de bord
 				</CardTitle>
 				<p class="mt-1 pl-6 text-[11.5px] font-medium text-muted-foreground">
-					{statsTitle} · performance de l'équipe
+					{statsTitle}
 				</p>
 			</div>
 			{#if canEditObjectifs}

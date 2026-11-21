@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { pageEmojis } from '$lib/data/dashboard';
-	import { PUCE } from '$lib/data/vente-suivi';
+	import { PUCE_FINE } from '$lib/data/vente-suivi';
 	import { Check, ContactRound, Printer, Search, Undo2 } from '@lucide/svelte';
 	import { tick, untrack } from 'svelte';
 	import { useMutation, useQuery } from 'convex-svelte';
@@ -44,10 +44,22 @@
 		authState.isAuthenticated ? { personId: person } : 'skip'
 	);
 
-	// Écriture CRM : le commercial est en consultation seule (même règle que le
-	// serveur) — on ne lui montre pas les actions qu'il ne peut pas faire.
+	// Écriture CRM : les managers écrivent sur leur périmètre ; un commercial peut
+	// rouvrir une fiche qu'il a créée ou dont il suit le RDV (même règle serveur).
 	const profile = useQuery(api.users.getProfile, () => (authState.isAuthenticated ? {} : 'skip'));
-	const canWrite = $derived(canWriteCrm(profile.data?.role));
+	const canWriteAll = $derived(canWriteCrm(profile.data?.role));
+	const myId = $derived((profile.data?._id as string | undefined) ?? undefined);
+	const myName = $derived(
+		`${profile.data?.firstName ?? ''} ${profile.data?.lastName ?? ''}`.trim().toLowerCase()
+	);
+	function canWriteContact(contact: ContactRow): boolean {
+		if (canWriteAll) return true;
+		return (
+			(!!myId && contact.createdBy === myId) ||
+			(!!myId && contact.followUp?.commercialId === myId) ||
+			(!!myName && (contact.followUp?.commercial ?? '').trim().toLowerCase() === myName)
+		);
+	}
 
 	// Photos des commerciaux (nom complet → photo) pour les avatars.
 	const membresPhotos = useQuery(api.evenements.listMembres, () =>
@@ -196,6 +208,7 @@
 
 	type T = {
 		statut?: string | null;
+		isClient?: boolean;
 		followUp?: { type?: string; date?: string; status?: string | null } | null;
 	};
 	// Dossier clos : soit marqué « traité », soit vendu (le RDV a abouti).
@@ -293,9 +306,6 @@
 					<span class="text-[15px] leading-none" aria-hidden="true">{pageEmojis['/contacts']}</span>
 					Contacts
 				</CardTitle>
-				<p class="mt-1 pl-6 text-[11.5px] font-medium text-muted-foreground">
-					Prospects, rendez-vous et suivis
-				</p>
 			</div>
 			<Badge variant="secondary" class="rounded-full bg-card2 px-2.5">
 				{filtered.length}
@@ -348,7 +358,7 @@
 						type="search"
 						placeholder="Rechercher par nom…"
 						bind:value={search}
-						class="h-9 w-64 rounded-full border-0 bg-card2 pr-3 pl-8 text-[13px] shadow-none focus-visible:ring-2 focus-visible:ring-ink/10"
+						class="h-9 w-64 rounded-full border-0 bg-card2 pr-3 pl-8 text-[12.5px] shadow-none focus-visible:ring-2 focus-visible:ring-ink/10"
 					/>
 				</div>
 			</div>
@@ -358,37 +368,37 @@
 					<TableHeader>
 						<TableRow class="border-transparent bg-transparent hover:bg-transparent">
 							<TableHead
-								class="px-4 py-3 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
+								class="px-2.5 py-2.5 text-[10.5px] font-semibold tracking-wide whitespace-nowrap text-muted-foreground uppercase"
 							>
 								Statut
 							</TableHead>
 							<TableHead
-								class="px-4 py-3 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
+								class="px-2.5 py-2.5 text-[10.5px] font-semibold tracking-wide whitespace-nowrap text-muted-foreground uppercase"
 							>
 								Date
 							</TableHead>
 							<TableHead
-								class="px-4 py-3 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
+								class="px-2.5 py-2.5 text-[10.5px] font-semibold tracking-wide whitespace-nowrap text-muted-foreground uppercase"
 							>
 								Nom
 							</TableHead>
 							<TableHead
-								class="px-4 py-3 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
+								class="px-2.5 py-2.5 text-[10.5px] font-semibold tracking-wide whitespace-nowrap text-muted-foreground uppercase"
 							>
 								Commercial
 							</TableHead>
 							<TableHead
-								class="px-4 py-3 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
+								class="px-2.5 py-2.5 text-[10.5px] font-semibold tracking-wide whitespace-nowrap text-muted-foreground uppercase"
 							>
 								Projet
 							</TableHead>
 							<TableHead
-								class="px-4 py-3 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
+								class="px-2.5 py-2.5 text-[10.5px] font-semibold tracking-wide whitespace-nowrap text-muted-foreground uppercase"
 							>
 								Source
 							</TableHead>
 							<TableHead
-								class="px-4 py-3 text-right text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
+								class="px-2.5 py-2.5 text-right text-[10.5px] font-semibold tracking-wide whitespace-nowrap text-muted-foreground uppercase"
 							>
 								Fiche
 							</TableHead>
@@ -409,22 +419,24 @@
 								].join(' ')}
 								onclick={() => openContact(contact)}
 							>
-								<TableCell class="px-4 py-3">
-									<span class={[PUCE, statusClass(contact)].join(' ')}>{statusLabel(contact)}</span>
+								<TableCell class="px-2.5 py-3">
+									<span class={[PUCE_FINE, statusClass(contact)].join(' ')}
+										>{statusLabel(contact)}</span
+									>
 								</TableCell>
-								<TableCell class="px-4 py-3">
+								<TableCell class="px-2.5 py-3">
 									{#if contact.followUp}
 										<span class="inline-flex items-center gap-2 whitespace-nowrap">
 											<span
 												class={[
-													'inline-block min-w-[4.5rem] text-[13px]',
+													'inline-block min-w-[4.5rem] text-[12.5px]',
 													retard ? 'font-semibold text-destructive' : 'text-foreground'
 												].join(' ')}
 											>
 												{formatDate(contact.followUp.date)}
 											</span>
 											{#if contact.followUp.time}
-												<span class="text-[11.5px] text-muted-foreground tabular-nums">
+												<span class="text-[10.5px] text-muted-foreground tabular-nums">
 													{contact.followUp.time}
 												</span>
 											{/if}
@@ -438,13 +450,13 @@
 											{/if}
 										</span>
 									{:else}
-										<span class="text-[13px] text-muted-foreground">—</span>
+										<span class="text-[12.5px] text-muted-foreground">—</span>
 									{/if}
 								</TableCell>
-								<TableCell class="px-4 py-3 text-[13px] font-medium text-foreground">
+								<TableCell class="px-2.5 py-3 text-[12.5px] font-medium text-foreground">
 									{contact.name}
 								</TableCell>
-								<TableCell class="px-4 py-3 text-[13px] text-muted-foreground">
+								<TableCell class="px-2.5 py-3 text-[12.5px] text-muted-foreground">
 									{#if contact.createdByName}
 										<span class="flex items-center gap-2">
 											<Avatar
@@ -458,19 +470,19 @@
 										—
 									{/if}
 								</TableCell>
-								<TableCell class="px-4 py-3 text-[13px] text-muted-foreground">
+								<TableCell class="px-2.5 py-3 text-[12.5px] text-muted-foreground">
 									{contact.projet ?? '—'}
 								</TableCell>
-								<TableCell class="px-4 py-3">
+								<TableCell class="px-2.5 py-3">
 									{#if contact.source}
-										<span class={[PUCE, sourceClass(contact.source)].join(' ')}>
+										<span class={[PUCE_FINE, sourceClass(contact.source)].join(' ')}>
 											{contact.source}
 										</span>
 									{:else}
-										<span class="text-[13px] text-muted-foreground">—</span>
+										<span class="text-[12.5px] text-muted-foreground">—</span>
 									{/if}
 								</TableCell>
-								<TableCell class="px-4 py-3">
+								<TableCell class="px-2.5 py-3">
 									<div class="flex items-center justify-end gap-1.5">
 										<Popover>
 											<PopoverTrigger
@@ -517,7 +529,7 @@
 												</button>
 											</PopoverContent>
 										</Popover>
-										{#if contact.statut === 'traité' && canWrite}
+										{#if contact.statut === 'traité' && canWriteContact(contact)}
 											<button
 												type="button"
 												onclick={(event) => untreatContact(contact, event)}
@@ -536,7 +548,7 @@
 							<TableRow class="border-0 hover:bg-transparent">
 								<TableCell
 									colspan={7}
-									class="px-4 py-8 text-center text-[13px] text-muted-foreground"
+									class="px-2.5 py-8 text-center text-[12.5px] text-muted-foreground"
 								>
 									{search.trim()
 										? 'Aucun contact ne correspond à la recherche.'
@@ -584,7 +596,7 @@
 					class="flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-glass-2"
 					onclick={() => choosePair(candidate)}
 				>
-					<span class="text-[13px] font-medium text-foreground">{candidate.name}</span>
+					<span class="text-[12.5px] font-medium text-foreground">{candidate.name}</span>
 					<span class="truncate text-[11.5px] text-muted-foreground">{candidate.projet ?? ''}</span>
 				</button>
 			{:else}

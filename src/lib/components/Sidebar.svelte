@@ -29,7 +29,7 @@
 	import { page } from '$app/state';
 	import { authState } from '$lib/auth-state.svelte';
 	import { signOut } from '$lib/convex-auth';
-	import { canAccessAdministration, canViewPilotage, capitalizeRole } from '$lib/data/roles';
+	import { canAccessAdministration, capitalizeRole } from '$lib/data/roles';
 	import AgencySwitcher from './AgencySwitcher.svelte';
 	import NewContactDialog from './NewContactDialog.svelte';
 	import Avatar from './Avatar.svelte';
@@ -150,9 +150,7 @@
 					<nav class="space-y-0.5">
 						{#each section.items as item}
 							{@const ItemIcon = icons[item.icon]}
-							{#if (item as { managerOnly?: boolean }).managerOnly && !canViewPilotage(profile.data?.role)}
-								<!-- Direction : réservée aux managers de périmètre -->
-							{:else if item.href === '/administration' && !canAccessAdministration(profile.data?.role)}
+							{#if item.href === '/administration' && !canAccessAdministration(profile.data?.role)}
 								<!-- Administration : réservé aux managers -->
 							{:else}
 								<a

@@ -8,17 +8,13 @@
 	import {
 		confortationClass,
 		confortationLabel,
-		dateCourt,
-		PUCE,
 		paiementClass,
-		paiementLabel,
-		suiviClass,
-		suiviDeVente,
-		suiviLabel,
+		PUCE_FINE,
 		prenoms
 	} from '$lib/data/vente-suivi';
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card/index.js';
 	import ContactDialog, { type ContactRow } from '$lib/components/ContactDialog.svelte';
+	import VenteParcours from '$lib/components/VenteParcours.svelte';
 	import {
 		Table,
 		TableBody,
@@ -97,6 +93,14 @@
 	function formatDate(ts: number): string {
 		return new Date(ts).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
 	}
+
+	// En-têtes et cellules partagent le même pas horizontal serré : le tableau
+	// (9 colonnes) tient dans la carte sans défilement latéral.
+	const CELL = 'px-2.5 py-3';
+	const paiementCourt = (paiement: string | null | undefined): string =>
+		paiement === 'financement' ? 'Financement' : paiement === 'comptant' ? 'Comptant' : '—';
+	const HEAD =
+		'px-2.5 py-2.5 text-[10.5px] font-semibold tracking-wide whitespace-nowrap text-muted-foreground uppercase';
 </script>
 
 <Card class="gap-0 rounded-2xl border-0 py-0 shadow-none">
@@ -109,9 +113,7 @@
 					{affichees.length} ventes
 				</Badge>
 			</CardTitle>
-			<p class="mt-1 pl-6 text-[11.5px] font-medium text-muted-foreground">
-				Suivi des dossiers et confortations
-			</p>
+			<p class="mt-1 pl-6 text-[11.5px] font-medium text-muted-foreground">Suivi des dossiers</p>
 		</div>
 	</CardHeader>
 	<CardContent class="px-5 pt-3 pb-5">
@@ -119,66 +121,15 @@
 			<Table class="border-separate border-spacing-y-1.5">
 				<TableHeader>
 					<TableRow class="border-transparent bg-transparent hover:bg-transparent">
-						<TableHead
-							class="px-4 py-3 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
-						>
-							Statut
-						</TableHead>
-						<TableHead
-							class="px-4 py-3 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
-						>
-							Confortation
-						</TableHead>
-						<TableHead
-							class="px-4 py-3 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
-						>
-							Paiement
-						</TableHead>
-						<TableHead
-							class="px-4 py-3 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
-						>
-							Suivi pose
-						</TableHead>
-						<TableHead
-							class="px-4 py-3 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
-						>
-							Date
-						</TableHead>
-						<TableHead
-							class="px-4 py-3 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
-						>
-							Commercial
-						</TableHead>
-						<TableHead
-							class="px-4 py-3 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
-						>
-							Client
-						</TableHead>
-						<TableHead
-							class="px-4 py-3 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
-						>
-							Produits
-						</TableHead>
-						<TableHead
-							class="px-4 py-3 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
-						>
-							Métrage
-						</TableHead>
-						<TableHead
-							class="px-4 py-3 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
-						>
-							Pose
-						</TableHead>
-						<TableHead
-							class="px-4 py-3 text-right text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
-						>
-							HT
-						</TableHead>
-						<TableHead
-							class="px-4 py-3 text-right text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
-						>
-							TTC
-						</TableHead>
+						<TableHead class={HEAD}>Statut</TableHead>
+						<TableHead class={HEAD}>Confortation</TableHead>
+						<TableHead class={HEAD}>Paiement</TableHead>
+						<TableHead class={[HEAD, 'hidden lg:table-cell']}>Date</TableHead>
+						<TableHead class={HEAD}>Commercial</TableHead>
+						<TableHead class={HEAD}>Client</TableHead>
+						<TableHead class={[HEAD, 'hidden 2xl:table-cell']}>Produits</TableHead>
+						<TableHead class={HEAD}>Parcours</TableHead>
+						<TableHead class={[HEAD, 'text-right']}>Total</TableHead>
 					</TableRow>
 				</TableHeader>
 				<TableBody>
@@ -194,136 +145,130 @@
 							].join(' ')}
 							onclick={() => openFiche(vente)}
 						>
-							<TableCell class="px-4 py-3 align-top">
-								<div class="flex flex-col items-start gap-1">
-									<span class={[PUCE, statutClass(vente.statut)].join(' ')}>
-										{statutLabel(vente.statut)}
-									</span>
-								</div>
+							<TableCell class={CELL}>
+								<span class={[PUCE_FINE, statutClass(vente.statut)].join(' ')}>
+									{statutLabel(vente.statut)}
+								</span>
 							</TableCell>
-							<TableCell class="px-4 py-3 align-top">
-								<span class={[PUCE, confortationClass(vente.confortee)].join(' ')}>
+							<TableCell class={CELL}>
+								<span class={[PUCE_FINE, confortationClass(vente.confortee)].join(' ')}>
 									{confortationLabel(vente.confortee)}
 								</span>
 							</TableCell>
-							<TableCell class="px-4 py-3 align-top">
-								<div class="flex flex-col items-start gap-1">
-									{#if vente.paiement}
-										<span
-											class={[
-												PUCE,
-												paiementClass(vente.paiement, vente.fiStatut, vente.fiAccepte)
-											].join(' ')}
-										>
-											{paiementLabel(vente.paiement)}
-										</span>
-									{:else}
-										<span class="text-[13px] text-muted-foreground">—</span>
-									{/if}
-								</div>
-							</TableCell>
-							<TableCell class="px-4 py-3">
-								{#if vente.statut === 'annulée'}
-									<span class="text-[13px] text-muted-foreground">—</span>
-								{:else}
-									<span class={[PUCE, suiviClass(suiviDeVente(vente))].join(' ')}>
-										{suiviLabel(suiviDeVente(vente))}
+							<TableCell class={CELL}>
+								{#if vente.paiement}
+									<span
+										class={[
+											PUCE_FINE,
+											paiementClass(vente.paiement, vente.fiStatut, vente.fiAccepte)
+										].join(' ')}
+									>
+										{paiementCourt(vente.paiement)}
 									</span>
+								{:else}
+									<span class="text-[12.5px] text-muted-foreground">—</span>
 								{/if}
 							</TableCell>
-							<TableCell class="px-4 py-3 text-[13px] text-muted-foreground">
+							<TableCell
+								class={[
+									CELL,
+									'hidden text-[12.5px] whitespace-nowrap text-muted-foreground lg:table-cell'
+								]}
+							>
 								{formatDate(vente.date)}
 							</TableCell>
-							<TableCell class="px-4 py-3">
-								<div class="flex items-center gap-2">
+							<TableCell class={CELL}>
+								<div class="flex items-center gap-1.5">
 									<Avatar
 										photo={photoForName(vente.vendeurName)}
 										label={vente.vendeurName
 											.split(' ')
 											.map((part) => part[0])
 											.join('')}
-										class="size-7 bg-muted text-[10px] font-bold text-muted-foreground"
+										class="size-6 bg-muted text-[9px] font-bold text-muted-foreground"
 									/>
-									<span class="text-[13px] text-muted-foreground">
+									<span
+										class="block max-w-[5rem] truncate text-[12.5px] text-muted-foreground"
+										title={vente.vendeurDisplay ?? vente.vendeurName}
+									>
 										{prenoms(vente.vendeurDisplay ?? vente.vendeurName)}
 									</span>
 								</div>
 							</TableCell>
-							<TableCell class="px-4 py-3 text-[13px] font-medium text-foreground">
-								{vente.contactName}
+							<TableCell class={CELL}>
+								<span
+									class="block max-w-[7.5rem] truncate text-[12.5px] font-medium text-foreground"
+									title={vente.contactName}
+								>
+									{vente.contactName}
+								</span>
 							</TableCell>
-							<TableCell class="max-w-[240px] px-4 py-3 text-[13px] text-muted-foreground">
-								<span class="line-clamp-1">{produitsOf(vente)}</span>
+							<TableCell class={[CELL, 'hidden 2xl:table-cell']}>
+								<span
+									class="block max-w-[8rem] truncate text-[12.5px] text-muted-foreground"
+									title={produitsOf(vente)}
+								>
+									{produitsOf(vente) || '—'}
+								</span>
 							</TableCell>
-							<TableCell
-								class="px-4 py-3 text-[13px] whitespace-nowrap text-muted-foreground tabular-nums"
-							>
-								{dateCourt(vente.dateMetrage)}
+							<TableCell class={CELL}>
+								<VenteParcours {vente} />
 							</TableCell>
-							<TableCell
-								class="px-4 py-3 text-[13px] whitespace-nowrap text-muted-foreground tabular-nums"
-							>
-								{dateCourt(vente.datePose)}
-							</TableCell>
-							<TableCell class="px-4 py-3 text-right text-[13px] text-muted-foreground">
-								{fmt(vente.totalHT)} €
-							</TableCell>
-							<TableCell class="px-4 py-3 text-right text-[13px] font-semibold text-foreground">
-								{fmt(vente.totalTTC)} €
+							<TableCell class={[CELL, 'text-right whitespace-nowrap']}>
+								<div class="flex flex-col items-end leading-tight">
+									<span class="text-[12.5px] font-semibold text-foreground tabular-nums">
+										{fmt(vente.totalTTC)} €
+									</span>
+									<span class="text-[10.5px] text-muted-foreground tabular-nums">
+										{fmt(vente.totalHT)} € HT
+									</span>
+								</div>
 							</TableCell>
 						</TableRow>
 					{/each}
 					{#if affichees.length === 0 && !ventes.isLoading}
 						<TableRow class="border-0 hover:bg-transparent">
 							<TableCell
-								colspan={12}
+								colspan={9}
 								class="px-4 py-8 text-center text-[13px] text-muted-foreground"
 							>
 								Aucune vente pour le moment.
 							</TableCell>
 						</TableRow>
 					{/if}
-					<TableRow
-						class="border-0 hover:bg-transparent [&>td]:bg-card2 [&>td:first-child]:rounded-l-xl [&>td:last-child]:rounded-r-xl"
-					>
-						<TableCell
-							colspan={10}
-							class="px-4 py-3 text-[13px] font-semibold tracking-wider text-muted-foreground uppercase"
-						>
-							Total
-						</TableCell>
-						<TableCell class="px-4 py-3 text-right text-[13px] font-semibold text-foreground">
-							{fmt(totalHT)} € HT
-						</TableCell>
-						<TableCell class="px-4 py-3 text-right text-[13px] font-bold text-foreground">
-							{fmt(totalTTC)} € TTC
-						</TableCell>
-					</TableRow>
-					{#if annulations.length > 0}
-						<TableRow
-							class="border-0 hover:bg-transparent [&>td]:bg-red-500/[0.06] [&>td:first-child]:rounded-l-xl [&>td:last-child]:rounded-r-xl"
-						>
-							<TableCell
-								colspan={10}
-								class="px-4 py-3 text-[13px] font-semibold tracking-wider text-red-700 uppercase dark:text-red-300"
-							>
-								Total annulations ({annulations.length})
-							</TableCell>
-							<TableCell
-								class="px-4 py-3 text-right text-[13px] font-semibold text-red-700 dark:text-red-300"
-							>
-								{fmt(totalAnnulationsHT)} € HT
-							</TableCell>
-							<TableCell
-								class="px-4 py-3 text-right text-[13px] font-bold text-red-700 dark:text-red-300"
-							>
-								{fmt(totalAnnulationsTTC)} € TTC
-							</TableCell>
-						</TableRow>
-					{/if}
 				</TableBody>
 			</Table>
 		</div>
+
+		<div
+			class="mt-1 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-card2 px-3 py-2.5"
+		>
+			<span class="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
+				Total
+			</span>
+			<span class="flex items-baseline gap-3 text-[12.5px] tabular-nums">
+				<span class="text-muted-foreground">{fmt(totalHT)} € HT</span>
+				<span class="font-bold text-foreground">{fmt(totalTTC)} € TTC</span>
+			</span>
+		</div>
+
+		{#if annulations.length > 0}
+			<div
+				class="mt-1.5 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-red-500/[0.06] px-3 py-2.5"
+			>
+				<span
+					class="text-[11px] font-semibold tracking-wider text-red-700 uppercase dark:text-red-300"
+				>
+					Total annulations ({annulations.length})
+				</span>
+				<span class="flex items-baseline gap-3 text-[12.5px] tabular-nums">
+					<span class="text-red-700 dark:text-red-300">{fmt(totalAnnulationsHT)} € HT</span>
+					<span class="font-bold text-red-700 dark:text-red-300">
+						{fmt(totalAnnulationsTTC)} € TTC
+					</span>
+				</span>
+			</div>
+		{/if}
 	</CardContent>
 </Card>
 

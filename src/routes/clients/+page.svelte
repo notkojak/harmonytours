@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { pageEmojis } from '$lib/data/dashboard';
-	import { PUCE } from '$lib/data/vente-suivi';
+	import { PUCE_FINE } from '$lib/data/vente-suivi';
 	import { Download, Search, Users } from '@lucide/svelte';
 	import { useQuery } from 'convex-svelte';
 	import { api } from '../../convex/_generated/api.js';
@@ -149,9 +149,6 @@
 					<span class="text-[15px] leading-none" aria-hidden="true">{pageEmojis['/clients']}</span>
 					Clients
 				</CardTitle>
-				<p class="mt-1 pl-6 text-[11.5px] font-medium text-muted-foreground">
-					Ventes et coordonnées
-				</p>
 			</div>
 			<div class="flex items-center gap-2">
 				<Badge variant="secondary" class="rounded-full bg-card2 px-2.5">
@@ -174,14 +171,14 @@
 						type="search"
 						placeholder="Rechercher par nom…"
 						bind:value={search}
-						class="h-9 w-64 rounded-full border-0 bg-card2 pr-3 pl-8 text-[13px] shadow-none focus-visible:ring-2 focus-visible:ring-ink/10"
+						class="h-9 w-64 rounded-full border-0 bg-card2 pr-3 pl-8 text-[12.5px] shadow-none focus-visible:ring-2 focus-visible:ring-ink/10"
 					/>
 				</div>
 			</div>
 			{#if !clients.isLoading && (clients.data?.length ?? 0) === 0}
 				<div class="flex flex-col items-center justify-center gap-2 py-14 text-center">
-					<p class="text-[13px] font-medium text-foreground">Aucun client pour le moment.</p>
-					<p class="max-w-sm text-[13px] text-muted-foreground">
+					<p class="text-[12.5px] font-medium text-foreground">Aucun client pour le moment.</p>
+					<p class="max-w-sm text-[12.5px] text-muted-foreground">
 						Les clients apparaissent ici dès qu'une vente est ajoutée à un contact depuis sa fiche.
 					</p>
 				</div>
@@ -191,37 +188,37 @@
 						<TableHeader>
 							<TableRow class="border-transparent bg-transparent hover:bg-transparent">
 								<TableHead
-									class="px-4 py-3 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
+									class="px-2.5 py-2.5 text-[10.5px] font-semibold tracking-wide whitespace-nowrap text-muted-foreground uppercase"
 								>
 									Statut
 								</TableHead>
 								<TableHead
-									class="px-4 py-3 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
+									class="px-2.5 py-2.5 text-[10.5px] font-semibold tracking-wide whitespace-nowrap text-muted-foreground uppercase"
 								>
 									Date
 								</TableHead>
 								<TableHead
-									class="px-4 py-3 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
+									class="px-2.5 py-2.5 text-[10.5px] font-semibold tracking-wide whitespace-nowrap text-muted-foreground uppercase"
 								>
 									Nom
 								</TableHead>
 								<TableHead
-									class="px-4 py-3 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
+									class="px-2.5 py-2.5 text-[10.5px] font-semibold tracking-wide whitespace-nowrap text-muted-foreground uppercase"
 								>
 									Commercial
 								</TableHead>
 								<TableHead
-									class="px-4 py-3 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
+									class="px-2.5 py-2.5 text-[10.5px] font-semibold tracking-wide whitespace-nowrap text-muted-foreground uppercase"
 								>
 									Téléphone
 								</TableHead>
 								<TableHead
-									class="px-4 py-3 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
+									class="px-2.5 py-2.5 text-[10.5px] font-semibold tracking-wide whitespace-nowrap text-muted-foreground uppercase"
 								>
 									Produits
 								</TableHead>
 								<TableHead
-									class="px-4 py-3 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase"
+									class="px-2.5 py-2.5 text-[10.5px] font-semibold tracking-wide whitespace-nowrap text-muted-foreground uppercase"
 								>
 									Total TTC
 								</TableHead>
@@ -233,29 +230,29 @@
 									class="cursor-pointer border-0 transition-colors [&:hover>td]:bg-glass-3 [&>td]:bg-card2 [&>td:first-child]:rounded-l-xl [&>td:last-child]:rounded-r-xl"
 									onclick={() => openFiche(client)}
 								>
-									<TableCell class="px-4 py-3">
-										<span class={[PUCE, 'bg-brand/12 text-brand'].join(' ')}> Client </span>
+									<TableCell class="px-2.5 py-3">
+										<span class={[PUCE_FINE, 'bg-brand/12 text-brand'].join(' ')}>Client</span>
 									</TableCell>
-									<TableCell class="px-4 py-3">
+									<TableCell class="px-2.5 py-3">
 										{#if client.contact.followUp}
 											<span class="inline-flex items-center gap-2 whitespace-nowrap">
-												<span class="inline-block min-w-[4.5rem] text-[13px] text-foreground">
+												<span class="inline-block min-w-[4.5rem] text-[12.5px] text-foreground">
 													{formatDate(client.contact.followUp.date)}
 												</span>
 												{#if client.contact.followUp.time}
-													<span class="text-[11.5px] text-muted-foreground tabular-nums">
+													<span class="text-[10.5px] text-muted-foreground tabular-nums">
 														{client.contact.followUp.time}
 													</span>
 												{/if}
 											</span>
 										{:else}
-											<span class="text-[13px] text-muted-foreground">—</span>
+											<span class="text-[12.5px] text-muted-foreground">—</span>
 										{/if}
 									</TableCell>
-									<TableCell class="px-4 py-3 text-[13px] font-medium text-foreground">
+									<TableCell class="px-2.5 py-3 text-[12.5px] font-medium text-foreground">
 										{client.contact.name}
 									</TableCell>
-									<TableCell class="px-4 py-3 text-[13px] text-muted-foreground">
+									<TableCell class="px-2.5 py-3 text-[12.5px] text-muted-foreground">
 										{#if vendeurNamesOf(client).length > 0}
 											<span class="flex flex-wrap items-center gap-x-3 gap-y-1">
 												{#each vendeurNamesOf(client) as vendeur}
@@ -273,17 +270,17 @@
 											—
 										{/if}
 									</TableCell>
-									<TableCell class="px-4 py-3 font-mono text-[13px] text-muted-foreground">
+									<TableCell class="px-2.5 py-3 font-mono text-[12.5px] text-muted-foreground">
 										{formatPhone(client.contact.phone) || '—'}
 									</TableCell>
 									<TableCell
-										class="w-[200px] max-w-[200px] px-4 py-3 text-[13px] text-muted-foreground"
+										class="w-[200px] max-w-[200px] px-2.5 py-3 text-[12.5px] text-muted-foreground"
 									>
 										<span class="block truncate" title={produitsOf(client)}
 											>{produitsOf(client) || '—'}</span
 										>
 									</TableCell>
-									<TableCell class="px-4 py-3 text-[13px] font-semibold text-foreground">
+									<TableCell class="px-2.5 py-3 text-[12.5px] font-semibold text-foreground">
 										{fmt(client.totalTTC)} €
 									</TableCell>
 								</TableRow>
@@ -292,7 +289,7 @@
 								<TableRow class="border-0 hover:bg-transparent">
 									<TableCell
 										colspan={7}
-										class="px-4 py-8 text-center text-[13px] text-muted-foreground"
+										class="px-2.5 py-8 text-center text-[12.5px] text-muted-foreground"
 									>
 										{search.trim()
 											? 'Aucun client ne correspond à la recherche.'

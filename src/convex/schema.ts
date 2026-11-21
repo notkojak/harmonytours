@@ -175,7 +175,10 @@ const contacts = defineTable({
 	// où le contact est daté : fiche contact, annonce de RDV, impression.
 	dateContact: v.optional(v.number()),
 	agencyId: v.optional(v.id('agences')),
-	createdBy: v.optional(v.id('users'))
+	createdBy: v.optional(v.id('users')),
+	// Fiche absorbée par une fusion de doublons : la fiche source est archivée
+	// et pointe vers la fiche principale, pour garder une trace de l'opération.
+	mergedInto: v.optional(v.id('contacts'))
 })
 	.index('by_agency', ['agencyId'])
 	.index('by_createdBy', ['createdBy'])
@@ -265,6 +268,11 @@ const ventes = defineTable({
 	// `datesPoses` pour rester visible dans l'agenda.
 	dateMetrage: v.optional(v.string()),
 	datePose: v.optional(v.string()),
+	// Confirmation explicite que l'étape a bien eu lieu. Une date passée ne suffit
+	// plus à considérer la pose / le métrage comme fait : tant que ces horodatages
+	// sont vides, l'étape reste « à confirmer » et remonte dans les alertes.
+	metrageConfirmeAt: v.optional(v.number()),
+	poseConfirmeAt: v.optional(v.number()),
 	// Paiement comptant ou financement ; pour un financement, `fiStatut` porte
 	// l'état du dossier (en attente / accepté / refusé). `fiAccepte` reste écrit
 	// pour les documents créés avant l'arrivée des trois états.

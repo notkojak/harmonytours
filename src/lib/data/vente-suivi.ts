@@ -1,9 +1,12 @@
 // Le suivi du dossier technique se déduit des dates et du calendrier :
-// - une date de pose passée (ou du jour) ⇒ « posée » (état final) ;
+// - une date de pose passée (ou du jour) reste « à confirmer » tant qu'un
+//   responsable n'a pas explicitement validé que la pose a bien eu lieu ;
 // - une date de pose à venir ⇒ « pose programmée » ;
-// - sinon une date de métrage passée ⇒ « métrée », à venir ⇒ « métrage programmé » ;
+// - sinon une date de métrage passée ⇒ « métrage à confirmer », à venir ⇒
+//   « métrage programmé » ;
 // - aucune date ⇒ pas de suivi.
-// La bascule « programmé » → état final est donc automatique le lendemain.
+// La confirmation est volontaire : une date passée ne prouve pas que le chantier
+// a été réalisé (report, absence, erreur de saisie).
 
 export type VenteSuivi = 'métrée' | 'posée';
 
@@ -21,30 +24,66 @@ export function suiviDeVente(vente: {
 	suivi?: string | null;
 	dateMetrage?: string | null;
 	datePose?: string | null;
+	metrageConfirmeAt?: number | null;
+	poseConfirmeAt?: number | null;
 }): string | null {
 	const jour = aujourdHuiIso();
-	if (vente.datePose) return vente.datePose > jour ? 'pose programmée' : 'posée';
-	if (vente.dateMetrage) return vente.dateMetrage > jour ? 'métré programmé' : 'métrée';
+	if (vente.datePose) {
+		if (vente.datePose > jour) return 'pose programmée';
+		return vente.poseConfirmeAt ? 'posée' : 'pose à confirmer';
+	}
+	if (vente.dateMetrage) {
+		if (vente.dateMetrage > jour) return 'métré programmé';
+		return vente.metrageConfirmeAt ? 'métrée' : 'métrage à confirmer';
+	}
 	return vente.suivi ?? null;
+}
+
+// Étape dont la date est passée sans confirmation : sert aux alertes et au
+// bouton « Confirmer » de la fiche.
+export function etapeAConfirmer(vente: {
+	dateMetrage?: string | null;
+	datePose?: string | null;
+	metrageConfirmeAt?: number | null;
+	poseConfirmeAt?: number | null;
+}): 'metrage' | 'pose' | null {
+	const jour = aujourdHuiIso();
+	if (vente.datePose && vente.datePose <= jour && !vente.poseConfirmeAt) return 'pose';
+	if (
+		!vente.datePose &&
+		vente.dateMetrage &&
+		vente.dateMetrage <= jour &&
+		!vente.metrageConfirmeAt
+	) {
+		return 'metrage';
+	}
+	return null;
 }
 
 export function suiviLabel(suivi: string | null | undefined): string {
 	if (suivi === 'posée') return 'Posée';
 	if (suivi === 'pose programmée') return 'Pose programmée';
+	if (suivi === 'pose à confirmer') return 'Pose à confirmer';
 	if (suivi === 'métrée') return 'Métrée';
 	if (suivi === 'métré programmé') return 'Métrage programmé';
+	if (suivi === 'métrage à confirmer') return 'Métrage à confirmer';
 	return '—';
 }
 
 // Teintes : métrage orange, pose vert ; une date encore à venir garde la même
-// couleur mais en pointillés, pour distinguer « programmé » de « fait ».
+// couleur mais en pointillés, pour distinguer « programmé » de « fait ». Une
+// étape passée non confirmée passe en ambre : elle demande une action.
 export function suiviClass(suivi: string | null | undefined): string {
 	if (suivi === 'posée') return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300';
 	if (suivi === 'pose programmée')
 		return 'border border-dashed border-emerald-500/40 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300';
+	if (suivi === 'pose à confirmer')
+		return 'border border-amber-500/50 bg-amber-500/15 text-amber-700 dark:text-amber-300';
 	if (suivi === 'métrée') return 'bg-orange-500/15 text-orange-700 dark:text-orange-300';
 	if (suivi === 'métré programmé')
 		return 'border border-dashed border-orange-500/40 bg-orange-500/5 text-orange-700 dark:text-orange-300';
+	if (suivi === 'métrage à confirmer')
+		return 'border border-amber-500/50 bg-amber-500/15 text-amber-700 dark:text-amber-300';
 	return 'bg-glass-2 text-muted-foreground';
 }
 
@@ -64,6 +103,11 @@ export function confortationClass(confortee: boolean | null | undefined): string
 // deux tableaux des ventes.
 export const PUCE =
 	'inline-flex items-center gap-1 rounded-sm px-2 py-0.5 text-[13px] font-semibold whitespace-nowrap';
+
+// Puce compacte des tableaux denses (statut, suivi, paiement) : même rendu que
+// PUCE, en plus petit, pour que neuf colonnes tiennent en largeur.
+export const PUCE_FINE =
+	'inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[11.5px] font-semibold whitespace-nowrap';
 
 // Prénom seul d'un commercial dans les ventes : « Pierre Durand » → « Pierre »,
 // et pour un binôme « Pierre Durand et Marie Dupont » → « Pierre et Marie ».

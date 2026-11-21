@@ -2,6 +2,7 @@
 	import { Menu, Moon, Sun } from '@lucide/svelte';
 	import StatPeriodPicker from './StatPeriodPicker.svelte';
 	import GlobalSearch from './GlobalSearch.svelte';
+	import AlertBell from './AlertBell.svelte';
 	import { getTheme, setTheme, type Theme } from '$lib/theme';
 
 	let { showPeriod = false, onMenu }: { showPeriod?: boolean; onMenu?: () => void } = $props();
@@ -38,6 +39,7 @@
 				<StatPeriodPicker />
 			</div>
 		{/if}
+		<AlertBell />
 		<button
 			type="button"
 			class="grid size-8 shrink-0 place-items-center rounded-full bg-white/10 text-white/70 transition-colors hover:bg-white/15 hover:text-white"

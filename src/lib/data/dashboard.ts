@@ -33,10 +33,6 @@ export const navSections = [
 		]
 	},
 	{
-		label: 'Pilotage',
-		items: [{ label: 'Direction', icon: 'chart', href: '/direction', managerOnly: true }]
-	},
-	{
 		label: 'Gestion',
 		items: [{ label: 'Administration', icon: 'shield', href: '/administration' }]
 	}

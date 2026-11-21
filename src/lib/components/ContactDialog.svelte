@@ -67,6 +67,7 @@
 		confortationClass,
 		confortationLabel,
 		dateCourt,
+		etapeAConfirmer,
 		paiementClass,
 		paiementLabel,
 		PUCE,
@@ -121,6 +122,7 @@
 		SelectTrigger
 	} from '$lib/components/ui/select/index.js';
 	import { Textarea } from '$lib/components/ui/textarea/index.js';
+	import VenteParcours from '$lib/components/VenteParcours.svelte';
 	import { contactSources, sourceClass, type ContactSource } from '$lib/data/sources';
 	import { FAMILLES } from '$lib/data/catalogue';
 	import { binomeClient } from '$lib/data/commercial';
@@ -162,11 +164,20 @@
 
 	const profile = useQuery(api.users.getProfile, () => (authState.isAuthenticated ? {} : 'skip'));
 	const isManager = $derived(canAccessAdministration(profile.data?.role));
-	// Écriture CRM : le commercial est en consultation seule (même règle côté
-	// serveur, convex/permissions.ts). Il garde la main sur sa fiche (coordonnées,
-	// note, questions découverte) mais pas sur l'issue du RDV ni sur les ventes.
-	const canWrite = $derived(canWriteCrm(profile.data?.role));
 	const myId = $derived((profile.data?._id as string | undefined) ?? undefined);
+	const myName = $derived(
+		`${profile.data?.firstName ?? ''} ${profile.data?.lastName ?? ''}`.trim().toLowerCase()
+	);
+	// Le commercial écrit sur ses propres fiches (créateur ou commercial du RDV) ;
+	// les managers gardent l'écriture sur tout leur périmètre. Même règle côté
+	// serveur (convex/contacts.ts et ventes.ts).
+	const isMyContact = $derived(
+		!!contact &&
+			((!!myId && contact.createdBy === myId) ||
+				(!!myId && contact.followUp?.commercialId === myId) ||
+				(!!myName && (contact.followUp?.commercial ?? '').trim().toLowerCase() === myName))
+	);
+	const canWrite = $derived(canWriteCrm(profile.data?.role) || isMyContact);
 	// Suppression possible pour un rôle qui écrit dans le CRM.
 	const canDelete = $derived(!!contact && canWrite);
 	// « Qui a pris le contact » : réservé au directeur de zone et au directeur
@@ -273,7 +284,20 @@
 		(n ?? 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 	const setDatesVente = useMutation(api.ventes.setDatesVente);
 	const setConfortation = useMutation(api.ventes.setConfortation);
+	const confirmerEtape = useMutation(api.ventes.confirmerEtape);
 	let suiviError = $state<{ venteId: string; message: string } | null>(null);
+
+	// Une date passée ne suffit pas : on confirme explicitement que la pose ou le
+	// métrage a bien eu lieu, ce qui sort le dossier des alertes.
+	async function confirmerEtapeVente(venteId: string, etape: 'metrage' | 'pose') {
+		suiviError = null;
+		try {
+			await confirmerEtape({ venteId: venteId as Id<'ventes'>, etape });
+		} catch (e) {
+			console.error(e);
+			suiviError = { venteId, message: 'Confirmation impossible.' };
+		}
+	}
 
 	// Confortation : le client a confirmé la vente. Case séparée du suivi.
 	async function toggleConfortation(venteId: string, confortee: boolean) {
@@ -984,16 +1008,6 @@
 		contact ? (contact.dateContact ?? contact._creationTime ?? null) : null
 	);
 
-	/** Dernier échange connu : recontact, prise de RDV ou vente. */
-	const dernierEchange = $derived.by(() => {
-		const dates = [
-			...(contact?.recontacts ?? []).map((r) => r.date),
-			...(contact?.rdvHistory ?? []).map((h) => h.at),
-			...(ventes.data ?? []).map((v) => v.date)
-		];
-		return dates.length ? Math.max(...dates) : null;
-	});
-
 	/** Ancienneté lisible : « aujourd'hui », « hier », « il y a 4 j ». */
 	function depuis(ms: number): string {
 		const auj = new Date();
@@ -1004,14 +1018,8 @@
 		return jours <= 0 ? "aujourd'hui" : jours === 1 ? 'hier' : `il y a ${jours} j`;
 	}
 
-	/** Ancienneté du dossier, sans répéter deux fois la même date. */
-	const resumeSuivi = $derived.by(() => {
-		if (!dateContact) return dernierEchange ? `Échangé ${depuis(dernierEchange)}` : '';
-		const pris = `Contact pris ${depuis(dateContact)}`;
-		if (!dernierEchange) return pris;
-		if (depuis(dernierEchange) === depuis(dateContact)) return pris;
-		return `${pris} · échangé ${depuis(dernierEchange)}`;
-	});
+	/** Ancienneté du dossier : date à laquelle le contact a été pris. */
+	const resumeSuivi = $derived.by(() => (dateContact ? `Contact pris ${depuis(dateContact)}` : ''));
 
 	/** Menu des actions secondaires de la fiche. */
 	let actionsOuvertes = $state(false);
@@ -1708,7 +1716,7 @@
 											.join(' + ')}
 										<div
 											class={[
-												'rounded-2xl px-3.5 py-3 transition-colors',
+												'rounded-2xl border border-line/50 px-3.5 py-3 transition-colors',
 												venteCardClass(vente.statut, suiviDeVente(vente))
 											].join(' ')}
 										>
@@ -1762,8 +1770,19 @@
 												</div>
 											</div>
 
-											<!-- État du dossier : confortation (accord client) puis suivi du métrage / pose. -->
-											<div class="mt-2.5 grid grid-cols-2 gap-1.5">
+											<!-- Parcours du dossier : signature → confortation → rétractation →
+											     métrage → pose. Panneau léger pour le détacher du reste. -->
+											<div class="mt-3 rounded-xl bg-card/60 px-3 py-2.5">
+												<p
+													class="mb-1.5 text-[9px] font-semibold tracking-[0.14em] text-muted-foreground uppercase"
+												>
+													Parcours
+												</p>
+												<VenteParcours {vente} />
+											</div>
+
+											<!-- État du dossier : les quatre leviers du suivi, sur deux colonnes. -->
+											<div class="mt-3 grid grid-cols-2 gap-2">
 												<div class="space-y-1">
 													<Label
 														class="text-[9.5px] font-semibold tracking-wider text-muted-foreground uppercase"
@@ -1805,11 +1824,11 @@
 													<Label
 														class="text-[9.5px] font-semibold tracking-wider text-muted-foreground uppercase"
 													>
-														Suivi pose
+														Suivi
 													</Label>
 													<div
 														class="flex h-8 w-full items-center rounded-full border-0 bg-card px-2"
-														title="Automatique : pose programmée tant que la date est à venir, posée une fois la date passée ; sinon métrage programmé / métrée selon la date de métrage"
+														title="Une date passée ne vaut pas confirmation : valide l'étape pour la clôturer"
 													>
 														<span
 															class={[
@@ -1819,11 +1838,20 @@
 														>
 															{suiviLabel(suiviDeVente(vente))}
 														</span>
+														{#if canWrite && etapeAConfirmer(vente)}
+															<button
+																type="button"
+																class="ml-auto inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 transition-colors hover:bg-emerald-500/25 dark:text-emerald-300"
+																onclick={() =>
+																	confirmerEtapeVente(vente._id, etapeAConfirmer(vente) ?? 'pose')}
+																title="Confirmer que l'étape a bien eu lieu"
+															>
+																<Check class="size-2.5" />
+																Confirmer
+															</button>
+														{/if}
 													</div>
 												</div>
-											</div>
-											<!-- Ajout rapide des dates du dossier, directement dans la fiche. -->
-											<div class="mt-1.5 grid grid-cols-2 gap-1.5">
 												<div class="space-y-1">
 													<Label
 														class="text-[9.5px] font-semibold tracking-wider text-muted-foreground uppercase"
@@ -1926,7 +1954,9 @@
 											{/if}
 
 											<!-- Statut (menu) -->
-											<div class="mt-2 flex items-center justify-between gap-2 pt-1.5">
+											<div
+												class="mt-3 flex items-center justify-between gap-2 border-t border-line/50 pt-2.5"
+											>
 												<div class="flex min-w-0 items-center gap-1.5">
 													{#if canWrite}
 														<Select

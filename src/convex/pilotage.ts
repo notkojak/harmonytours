@@ -39,6 +39,59 @@ function displayName(u: { firstName?: string; lastName?: string; email?: string 
 	return `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || u.email || 'Commercial';
 }
 
+// Date du jour en France : les dates du dossier sont des dates civiles.
+function jourParis(): string {
+	return new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Paris' });
+}
+
+function joursDepuisIso(iso: string | null | undefined, aujourdHui: string): number | null {
+	if (!iso) return null;
+	const jours = Math.round((Date.parse(aujourdHui) - Date.parse(iso)) / 86_400_000);
+	return Number.isFinite(jours) ? Math.max(0, jours) : null;
+}
+
+function ageJours(ms: number): number {
+	return Math.max(0, Math.floor((Date.now() - ms) / 86_400_000));
+}
+
+function fiStatutDe(v: Doc<'ventes'>): 'en attente' | 'accepté' | 'refusé' {
+	if (v.fiStatut === 'accepté' || v.fiStatut === 'refusé' || v.fiStatut === 'en attente') {
+		return v.fiStatut;
+	}
+	return v.fiAccepte ? 'accepté' : 'en attente';
+}
+
+// Centre d'actions : une seule liste triée par urgence, plutôt qu'une alerte par
+// sujet. Chaque entrée porte de quoi ouvrir la fiche et, pour les étapes
+// techniques, confirmer directement.
+type ActionKind =
+	| 'pose'
+	| 'metrage'
+	| 'fiRefuse'
+	| 'rdvAReprogrammer'
+	| 'nonConfortee'
+	| 'fiEnAttente'
+	| 'sansAction'
+	| 'clientSansSuite';
+
+type ActionItem = {
+	key: string;
+	kind: ActionKind;
+	titre: string;
+	date: string | null;
+	jours: number | null;
+	montantHT: number | null;
+	contactId: Id<'contacts'>;
+	venteId: Id<'ventes'> | null;
+	commercial: string | null;
+};
+
+const ACTIONS_PAR_CATEGORIE = 8;
+const ACTIONS_MAX = 40;
+const NON_CONFORTEE_MIN_JOURS = 7;
+const NON_CONFORTEE_MAX_JOURS = 120;
+const CLIENT_SANS_SUITE_JOURS = 21;
+
 export const direction = query({
 	args: { mois: v.optional(v.string()) },
 	handler: async (ctx, args) => {
@@ -73,9 +126,7 @@ export const direction = query({
 		const prev = localMonthBounds(shiftMonth(mois, -1));
 		const now = Date.now();
 		const isCurrent = mois === currentMonth();
-		const elapsedDays = isCurrent
-			? Math.min(days, Math.max(1, new Date().getDate()))
-			: days;
+		const elapsedDays = isCurrent ? Math.min(days, Math.max(1, new Date().getDate())) : days;
 
 		const usersByAgency = new Map<string, Doc<'users'>[]>();
 		for (const u of users) {
@@ -99,9 +150,7 @@ export const direction = query({
 		}
 
 		const statsFor = (agencyId: Id<'agences'> | null) => {
-			const agencyContacts = agencyId
-				? contacts.filter((c) => c.agencyId === agencyId)
-				: contacts;
+			const agencyContacts = agencyId ? contacts.filter((c) => c.agencyId === agencyId) : contacts;
 			const agencyVentes = agencyId
 				? ventes.filter(
 						(v) =>
@@ -109,9 +158,7 @@ export const direction = query({
 							(contactIdsOfAgency.get(agencyId)?.has(v.contactId) ?? false)
 					)
 				: ventes;
-			const agencyUsers = agencyId
-				? (usersByAgency.get(agencyId) ?? [])
-				: users;
+			const agencyUsers = agencyId ? (usersByAgency.get(agencyId) ?? []) : users;
 
 			const ca = { valide: 0, attente: 0, erreur: 0, annulee: 0, ventes: 0 };
 			for (const v of agencyVentes) {
@@ -162,12 +209,12 @@ export const direction = query({
 
 			const enAttente = agencyVentes.filter(
 				(v) =>
-					v.date >= start &&
-					v.date < end &&
-					(v.statut === 'en attente' || v.statut === undefined)
+					v.date >= start && v.date < end && (v.statut === 'en attente' || v.statut === undefined)
 			);
 			const attenteAge = enAttente.length
-				? Math.max(...enAttente.map((v) => Math.floor((now - (v.statutChangedAt ?? v.date)) / 86_400_000)))
+				? Math.max(
+						...enAttente.map((v) => Math.floor((now - (v.statutChangedAt ?? v.date)) / 86_400_000))
+					)
 				: 0;
 
 			return {
@@ -190,7 +237,7 @@ export const direction = query({
 				attenteAge,
 				projection:
 					isCurrent && elapsedDays > 0
-						? Math.round(((ca.valide / elapsedDays) * days) * 100) / 100
+						? Math.round((ca.valide / elapsedDays) * days * 100) / 100
 						: null
 			};
 		};
@@ -290,7 +337,8 @@ export const alertes = query({
 			c.createdBy === user._id ||
 			(!!c.followUp?.commercialId && c.followUp.commercialId === user._id);
 
-		const today = isoDay(Date.now());
+		const today = jourParis();
+		const myName = displayName(user).trim().toLowerCase();
 
 		const rappels = contacts
 			.filter(
@@ -310,9 +358,7 @@ export const alertes = query({
 				date: c.followUp?.date ?? null,
 				joursDeRetard: Math.max(
 					0,
-					Math.round(
-						(Date.parse(today) - Date.parse(c.followUp?.date ?? today)) / 86_400_000
-					)
+					Math.round((Date.parse(today) - Date.parse(c.followUp?.date ?? today)) / 86_400_000)
 				)
 			}));
 
@@ -334,37 +380,264 @@ export const alertes = query({
 				statut: c.followUp?.status ?? null
 			}));
 
-		const ventes = (await ctx.db.query('ventes').collect()).filter(
-			(v) => !v.deletedAt && (agencyIds === null || (!!v.agencyId && agencyIds.has(v.agencyId)))
-		);
+		const ventes = (await ctx.db.query('ventes').collect()).filter((v) => !v.deletedAt);
 		const contactById = new Map(allContacts.map((c) => [c._id, c]));
-		const enAttente =
-			manager
-				? ventes
-						.filter(
-							(v) =>
-								(v.statut === 'en attente' || v.statut === undefined) &&
-								Date.now() - (v.statutChangedAt ?? v.date) > 3 * 86_400_000
-						)
-						.sort((a, b) => a.date - b.date)
-						.slice(0, 8)
-						.map((v) => ({
-							_id: v._id,
-							contactId: v.contactId,
-							contactName: contactById.get(v.contactId)?.name ?? '—',
-							totalHT: v.totalHT,
-							jours: Math.floor((Date.now() - (v.statutChangedAt ?? v.date)) / 86_400_000)
-						}))
-				: [];
-		const enErreur = ventes.filter((v) => v.statut === 'erreur').length;
+
+		// Ventes réellement visibles : un commercial ne voit que les siennes, un
+		// manager celles de son périmètre (l'agence du contact prime sur celle de la
+		// vente, qui peut manquer sur les anciens dossiers).
+		const visibleVentes = ventes.filter((v) => {
+			const contact = contactById.get(v.contactId);
+			if (!contact || contact.deletedAt) return false;
+			if (manager) {
+				const agencyId = contact.agencyId ?? v.agencyId;
+				return !!agencyId && (agencyIds === null || agencyIds.has(agencyId));
+			}
+			return (
+				v.vendeurId === user._id ||
+				(v.binomeIds ?? []).includes(user._id) ||
+				contact.createdBy === user._id ||
+				(!!myName &&
+					!!contact.followUp?.commercial &&
+					contact.followUp.commercial.trim().toLowerCase() === myName)
+			);
+		});
+		const ventesByContact = new Map<string, Doc<'ventes'>[]>();
+		for (const v of visibleVentes) {
+			const list = ventesByContact.get(v.contactId) ?? [];
+			list.push(v);
+			ventesByContact.set(v.contactId, list);
+		}
+		const contactName = (v: Doc<'ventes'>) => contactById.get(v.contactId)?.name ?? '—';
+
+		// 1) Poses et métrages dont la date est passée sans confirmation.
+		const toutesPoses = visibleVentes.filter(
+			(v) => v.statut === 'valide' && !!v.datePose && v.datePose <= today && !v.poseConfirmeAt
+		);
+		const tousMetrages = visibleVentes.filter(
+			(v) =>
+				v.statut === 'valide' &&
+				!v.datePose &&
+				!!v.dateMetrage &&
+				v.dateMetrage <= today &&
+				!v.metrageConfirmeAt
+		);
+		const poses = toutesPoses
+			.sort((a, b) => (a.datePose ?? '').localeCompare(b.datePose ?? ''))
+			.slice(0, ACTIONS_PAR_CATEGORIE)
+			.map<ActionItem>((v) => ({
+				key: `pose:${v._id}`,
+				kind: 'pose',
+				titre: contactName(v),
+				date: v.datePose ?? null,
+				jours: joursDepuisIso(v.datePose, today),
+				montantHT: Math.round(v.totalHT * 100) / 100,
+				contactId: v.contactId,
+				venteId: v._id,
+				commercial: v.vendeurName
+			}));
+		const metrages = tousMetrages
+			.sort((a, b) => (a.dateMetrage ?? '').localeCompare(b.dateMetrage ?? ''))
+			.slice(0, ACTIONS_PAR_CATEGORIE)
+			.map<ActionItem>((v) => ({
+				key: `metrage:${v._id}`,
+				kind: 'metrage',
+				titre: contactName(v),
+				date: v.dateMetrage ?? null,
+				jours: joursDepuisIso(v.dateMetrage, today),
+				montantHT: Math.round(v.totalHT * 100) / 100,
+				contactId: v.contactId,
+				venteId: v._id,
+				commercial: v.vendeurName
+			}));
+
+		// 2) Financements en attente ou refusés.
+		const tousFiAttente = visibleVentes.filter(
+			(v) => v.statut === 'valide' && v.paiement === 'financement' && fiStatutDe(v) === 'en attente'
+		);
+		const tousFiRefuses = visibleVentes.filter(
+			(v) => v.statut !== 'annulée' && v.paiement === 'financement' && fiStatutDe(v) === 'refusé'
+		);
+		const fiAttente = tousFiAttente
+			.sort((a, b) => a.date - b.date)
+			.slice(0, ACTIONS_PAR_CATEGORIE)
+			.map<ActionItem>((v) => ({
+				key: `fiAttente:${v._id}`,
+				kind: 'fiEnAttente',
+				titre: contactName(v),
+				date: isoDay(v.date),
+				jours: ageJours(v.date),
+				montantHT: Math.round(v.totalHT * 100) / 100,
+				contactId: v.contactId,
+				venteId: v._id,
+				commercial: v.vendeurName
+			}));
+		const fiRefuses = tousFiRefuses
+			.sort((a, b) => a.date - b.date)
+			.slice(0, ACTIONS_PAR_CATEGORIE)
+			.map<ActionItem>((v) => ({
+				key: `fiRefuse:${v._id}`,
+				kind: 'fiRefuse',
+				titre: contactName(v),
+				date: isoDay(v.date),
+				jours: ageJours(v.date),
+				montantHT: Math.round(v.totalHT * 100) / 100,
+				contactId: v.contactId,
+				venteId: v._id,
+				commercial: v.vendeurName
+			}));
+
+		// 3) Ventes validées non confortées depuis plus d'une semaine.
+		const toutesNonConfortees = visibleVentes.filter((v) => {
+			if (v.statut !== 'valide' || v.confortee === true) return false;
+			const age = ageJours(v.date);
+			return age >= NON_CONFORTEE_MIN_JOURS && age <= NON_CONFORTEE_MAX_JOURS;
+		});
+		const nonConfortees = toutesNonConfortees
+			.sort((a, b) => a.date - b.date)
+			.slice(0, ACTIONS_PAR_CATEGORIE)
+			.map<ActionItem>((v) => ({
+				key: `nonConfortee:${v._id}`,
+				kind: 'nonConfortee',
+				titre: contactName(v),
+				date: isoDay(v.date),
+				jours: ageJours(v.date),
+				montantHT: Math.round(v.totalHT * 100) / 100,
+				contactId: v.contactId,
+				venteId: v._id,
+				commercial: v.vendeurName
+			}));
+
+		// 4) RDV « à reprogrammer » sans nouvelle date.
+		const tousRdvAReprogrammer = contacts.filter(
+			(c) => mine(c) && c.followUp?.type === 'rdv' && c.followUp.status === 'à reprogrammer'
+		);
+		const rdvAReprogrammer = tousRdvAReprogrammer
+			.sort((a, b) => (a.followUp?.date ?? '').localeCompare(b.followUp?.date ?? ''))
+			.slice(0, ACTIONS_PAR_CATEGORIE)
+			.map<ActionItem>((c) => ({
+				key: `rdv:${c._id}`,
+				kind: 'rdvAReprogrammer',
+				titre: c.name,
+				date: c.followUp?.date ?? null,
+				jours: joursDepuisIso(c.followUp?.date, today),
+				montantHT: null,
+				contactId: c._id,
+				venteId: null,
+				commercial: c.followUp?.commercial ?? null
+			}));
+
+		// 5) Contacts sans prochaine action planifiée (hors clients et dossiers clos).
+		const sansActionContacts = contacts.filter((c) => {
+			if (!mine(c) || c.isClient || c.statut === 'traité') return false;
+			const fu = c.followUp;
+			if (fu?.status === 'à reprogrammer') return false; // déjà dans sa catégorie
+			const aUneEcheance = !!fu && !fu.status && !!fu.date;
+			return !aUneEcheance;
+		});
+		const sansAction = sansActionContacts
+			.sort((a, b) => {
+				const da = a.followUp?.date ?? '';
+				const db = b.followUp?.date ?? '';
+				return da.localeCompare(db);
+			})
+			.slice(0, ACTIONS_PAR_CATEGORIE)
+			.map<ActionItem>((c) => ({
+				key: `sansAction:${c._id}`,
+				kind: 'sansAction',
+				titre: c.name,
+				date: c.followUp?.date ?? null,
+				jours: joursDepuisIso(c.followUp?.date, today),
+				montantHT: null,
+				contactId: c._id,
+				venteId: null,
+				commercial: c.followUp?.commercial ?? null
+			}));
+
+		// 6) Clients dont la vente validée n'a ni pose ni métrage planifiés.
+		const clientsSansSuite: Array<{ contact: Doc<'contacts'>; vente: Doc<'ventes'> }> = [];
+		for (const contact of contacts) {
+			if (!mine(contact) || !contact.isClient) continue;
+			const fu = contact.followUp;
+			if (fu && !fu.status && fu.date >= today) continue; // un suivi est déjà prévu
+			const vente = (ventesByContact.get(contact._id) ?? [])
+				.filter((v) => v.statut === 'valide')
+				.sort((a, b) => b.date - a.date)[0];
+			if (!vente) continue;
+			if (vente.datePose || vente.dateMetrage) continue;
+			if (ageJours(vente.date) < CLIENT_SANS_SUITE_JOURS) continue;
+			clientsSansSuite.push({ contact, vente });
+		}
+		clientsSansSuite.sort((a, b) => a.vente.date - b.vente.date);
+		const clientsSansSuiteItems = clientsSansSuite
+			.slice(0, ACTIONS_PAR_CATEGORIE)
+			.map<ActionItem>(({ contact, vente }) => ({
+				key: `clientSansSuite:${contact._id}`,
+				kind: 'clientSansSuite',
+				titre: contact.name,
+				date: isoDay(vente.date),
+				jours: ageJours(vente.date),
+				montantHT: Math.round(vente.totalHT * 100) / 100,
+				contactId: contact._id,
+				venteId: vente._id,
+				commercial: vente.vendeurName
+			}));
+
+		// Ordre de la liste : ce qui bloque un chantier ou un encaissement d'abord.
+		const items: ActionItem[] = [
+			...poses,
+			...metrages,
+			...fiRefuses,
+			...rdvAReprogrammer,
+			...nonConfortees,
+			...fiAttente,
+			...sansAction,
+			...clientsSansSuiteItems
+		].slice(0, ACTIONS_MAX);
+
+		const counts = {
+			pose: toutesPoses.length,
+			metrage: tousMetrages.length,
+			fiEnAttente: tousFiAttente.length,
+			fiRefuse: tousFiRefuses.length,
+			nonConfortee: toutesNonConfortees.length,
+			rdvAReprogrammer: tousRdvAReprogrammer.length,
+			sansAction: sansActionContacts.length,
+			clientSansSuite: clientsSansSuite.length
+		};
+		const actionsTotal = Object.values(counts).reduce((sum, n) => sum + n, 0);
+
+		const enAttente = manager
+			? visibleVentes
+					.filter(
+						(v) =>
+							(v.statut === 'en attente' || v.statut === undefined) &&
+							Date.now() - (v.statutChangedAt ?? v.date) > 3 * 86_400_000
+					)
+					.sort((a, b) => a.date - b.date)
+					.slice(0, 8)
+					.map((v) => ({
+						_id: v._id,
+						contactId: v.contactId,
+						contactName: contactById.get(v.contactId)?.name ?? '—',
+						totalHT: v.totalHT,
+						jours: Math.floor((Date.now() - (v.statutChangedAt ?? v.date)) / 86_400_000)
+					}))
+			: [];
+		const enErreur = visibleVentes.filter((v) => v.statut === 'erreur').length;
 
 		return {
 			rappels,
 			rdvDuJour,
 			enAttente,
 			enErreur,
+			actions: {
+				items,
+				counts,
+				total: actionsTotal
+			},
 			// Un chiffre unique pour la pastille de la cloche.
-			total: rappels.length + rdvDuJour.length + enAttente.length
+			total: rappels.length + rdvDuJour.length + enAttente.length + enErreur + actionsTotal
 		};
 	}
 });

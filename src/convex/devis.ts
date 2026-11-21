@@ -3,6 +3,7 @@ import { v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { canManageEmployes, getCurrentUser } from './permissions';
 import { canViewAllCrm, visibleAgencyIds } from './access';
+import { insererVente } from './ventes';
 
 // Devis : le chiffrage quitte le stockage local du navigateur. Un devis est
 // enregistré côté serveur, rattachable à une fiche, partageable dans l'agence
@@ -144,7 +145,9 @@ export const list = query({
 		for (const d of all) {
 			if (await canRead(ctx, user, d)) visible.push(d);
 		}
-		const contactIds = [...new Set(visible.map((d) => d.contactId).filter((id): id is Id<'contacts'> => !!id))];
+		const contactIds = [
+			...new Set(visible.map((d) => d.contactId).filter((id): id is Id<'contacts'> => !!id))
+		];
 		const contacts = await Promise.all(contactIds.map((id) => ctx.db.get(id)));
 		const names = new Map<string, string>();
 		for (const c of contacts) if (c) names.set(c._id, c.name);
@@ -203,13 +206,17 @@ export const convertirEnVente = mutation({
 		if (!contact || contact.deletedAt) throw new Error('Contact introuvable.');
 
 		let vendeurId: Id<'users'> = user._id;
-		let vendeurName = `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || user.email || 'Commercial';
+		let vendeurName =
+			`${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || user.email || 'Commercial';
 		if (args.vendeurId && args.vendeurId !== user._id) {
 			if (!canViewAllCrm(user)) throw new Error('Non autorisé à choisir un autre vendeur.');
 			const vendeur = await ctx.db.get(args.vendeurId);
 			if (!vendeur) throw new Error('Vendeur introuvable.');
 			vendeurId = vendeur._id;
-			vendeurName = `${vendeur.firstName ?? ''} ${vendeur.lastName ?? ''}`.trim() || vendeur.email || 'Commercial';
+			vendeurName =
+				`${vendeur.firstName ?? ''} ${vendeur.lastName ?? ''}`.trim() ||
+				vendeur.email ||
+				'Commercial';
 		}
 
 		const coef = 1 - Math.min(Math.max(devis.remise, 0), 100) / 100;
@@ -218,26 +225,18 @@ export const convertirEnVente = mutation({
 			tva: Math.round(l.tva * 1000) / 10,
 			montantHT: Math.round(l.prixUnitaireHT * l.quantite * coef * 100) / 100
 		}));
-		const totalHT = Math.round(produits.reduce((s, p) => s + p.montantHT, 0) * 100) / 100;
-		const totalTVA =
-			Math.round(produits.reduce((s, p) => s + (p.montantHT * p.tva) / 100, 0) * 100) / 100;
-		const totalTTC = Math.round((totalHT + totalTVA) * 100) / 100;
-
-		const venteId = await ctx.db.insert('ventes', {
-			contactId: contact._id,
+		// Même point d'entrée que la saisie directe : binôme figé, contact client
+		// et RDV passé en « vendu » sont gérés au même endroit.
+		const venteId = await insererVente(ctx, {
+			contact,
 			vendeurId,
 			vendeurName,
-			statut: 'en attente',
-			statutChangedAt: Date.now(),
-			date: Date.now(),
 			produits,
-			totalHT,
-			totalTVA,
-			totalTTC,
+			date: Date.now(),
+			statut: 'en attente',
 			agencyId: contact.agencyId ?? devis.agencyId
 		});
 		await ctx.db.patch(devis._id, { statut: 'accepté', venteId, updatedAt: Date.now() });
-		if (!contact.isClient) await ctx.db.patch(contact._id, { isClient: true });
 		return venteId;
 	}
 });

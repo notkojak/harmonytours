@@ -23,8 +23,7 @@ const EMERAUDE =
 	'bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/25 dark:bg-emerald-400/15 dark:text-emerald-200';
 const AMBRE =
 	'bg-amber-500/20 text-amber-800 hover:bg-amber-500/30 dark:bg-amber-400/15 dark:text-amber-200';
-const CIEL =
-	'bg-sky-500/15 text-sky-700 hover:bg-sky-500/25 dark:bg-sky-400/15 dark:text-sky-200';
+const CIEL = 'bg-sky-500/15 text-sky-700 hover:bg-sky-500/25 dark:bg-sky-400/15 dark:text-sky-200';
 const ORANGE =
 	'bg-orange-500/15 text-orange-700 hover:bg-orange-500/25 dark:bg-orange-400/15 dark:text-orange-200';
 const INDIGO =
@@ -33,8 +32,9 @@ const FUCHSIA =
 	'bg-fuchsia-500/15 text-fuchsia-700 hover:bg-fuchsia-500/25 dark:bg-fuchsia-400/15 dark:text-fuchsia-200';
 const NEUTRE =
 	'bg-slate-500/12 text-slate-700 hover:bg-slate-500/20 dark:bg-slate-400/15 dark:text-slate-200';
-const ROUGE =
-	'bg-red-500/12 text-red-700 hover:bg-red-500/20 dark:bg-red-400/15 dark:text-red-300';
+const ROUGE = 'bg-red-500/12 text-red-700 hover:bg-red-500/20 dark:bg-red-400/15 dark:text-red-300';
+const TEAL =
+	'bg-teal-500/15 text-teal-700 hover:bg-teal-500/25 dark:bg-teal-400/15 dark:text-teal-200';
 const BRAND = 'bg-brand/15 text-brand hover:bg-brand/22';
 
 // Type d'événement : violet réunion, vert formation, ambre prospection,
@@ -52,6 +52,9 @@ export const REUNION_FIXED_SLOT = VIOLET;
 
 // Dates de pose : orange, pour ne pas les confondre avec une gestion de dossier.
 export const DATE_POSE_STYLE = ORANGE;
+
+// Métrages : sarcelle, distincte de la pose et de la gestion de dossier.
+export const DATE_METRAGE_STYLE = TEAL;
 
 // RDV de confortation : il s'annonce dans l'agenda comme une date de pose, avec
 // son intitulé (« Confortation · client ») en plus de sa teinte.

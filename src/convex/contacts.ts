@@ -7,7 +7,7 @@ import {
 } from './_generated/server';
 import { v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
-import { assertCanWriteCrm, canManageEmployes, canReassignContact, canWriteCrm, getCurrentUser } from './permissions';
+import { canManageEmployes, canReassignContact, getCurrentUser } from './permissions';
 import { canViewAllCrm, isUserInScope, visibleAgencyIds } from './access';
 import { qualifValidator } from './schema';
 
@@ -298,7 +298,6 @@ export const setFollowUpFields = mutation({
 	},
 	handler: async (ctx, args) => {
 		const user = await getCurrentUser(ctx);
-		assertCanWriteCrm(user);
 		const contact = await ctx.db.get(args.contactId);
 		if (!contact) {
 			throw new Error('Contact introuvable.');
@@ -386,7 +385,6 @@ export const markTreated = mutation({
 	},
 	handler: async (ctx, { contactId, treated, reason }) => {
 		const user = await getCurrentUser(ctx);
-		assertCanWriteCrm(user);
 		const contact = await ctx.db.get(contactId);
 		if (!contact) {
 			throw new Error('Contact introuvable.');
@@ -607,7 +605,6 @@ export const remove = mutation({
 	args: { contactId: v.id('contacts') },
 	handler: async (ctx, args) => {
 		const user = await getCurrentUser(ctx);
-		assertCanWriteCrm(user);
 		const contact = await ctx.db.get(args.contactId);
 		if (!contact) {
 			throw new Error('Contact introuvable.');
@@ -636,7 +633,6 @@ export const restore = mutation({
 	args: { contactId: v.id('contacts') },
 	handler: async (ctx, args) => {
 		const user = await getCurrentUser(ctx);
-		assertCanWriteCrm(user);
 		const contact = await ctx.db.get(args.contactId);
 		if (!contact) {
 			throw new Error('Contact introuvable.');
@@ -688,6 +684,68 @@ export const findDoublons = query({
 				address: c.address ?? null,
 				isClient: !!c.isClient,
 				createdAt: c.dateContact ?? c._creationTime
+			}));
+	}
+});
+
+/**
+ * Groupes de doublons du périmètre, pour la fusion depuis l'administration.
+ * Regroupe les fiches actives par téléphone normalisé ou, à défaut, par nom
+ * (même agence). Réservé aux managers : la fusion est une opération lourde.
+ */
+export const doublonsGroupes = query({
+	args: {},
+	handler: async (ctx) => {
+		const user = await getCurrentUser(ctx);
+		if (!canManageEmployes(user)) return [];
+		const agencyIds = await visibleAgencyIds(ctx, user);
+		const contacts = (await ctx.db.query('contacts').collect()).filter((c) => {
+			if (c.deletedAt) return false;
+			if (agencyIds !== null && (!c.agencyId || !agencyIds.has(c.agencyId))) return false;
+			return true;
+		});
+
+		type Ligne = {
+			_id: Id<'contacts'>;
+			name: string;
+			phone: string | null;
+			address: string | null;
+			isClient: boolean;
+			createdAt: number;
+			agencyId: Id<'agences'> | null;
+		};
+		const groups = new Map<string, Ligne[]>();
+		for (const c of contacts) {
+			const phoneKey = phoneKeyOf(c.phone);
+			const nameKey = c.name.trim().toLowerCase();
+			// Le téléphone est la clé la plus fiable ; le nom seul peut réunir
+			// deux homonymes, d'où le suffixe d'agence.
+			const key = phoneKey
+				? `tel:${c.agencyId ?? 'sans-agence'}:${phoneKey}`
+				: nameKey.length >= 3
+					? `nom:${c.agencyId ?? 'sans-agence'}:${nameKey}`
+					: null;
+			if (!key) continue;
+			const list = groups.get(key) ?? [];
+			list.push({
+				_id: c._id,
+				name: c.name,
+				phone: c.phone ?? null,
+				address: c.address ?? null,
+				isClient: !!c.isClient,
+				createdAt: c.dateContact ?? c._creationTime,
+				agencyId: c.agencyId ?? null
+			});
+			groups.set(key, list);
+		}
+
+		return [...groups.values()]
+			.filter((list) => list.length > 1)
+			.sort((a, b) => b.length - a.length)
+			.slice(0, 25)
+			.map((list) => ({
+				key: list[0]._id,
+				contacts: [...list].sort((a, b) => a.createdAt - b.createdAt)
 			}));
 	}
 });
@@ -824,20 +882,15 @@ export const update = mutation({
 		if (!contact) {
 			throw new Error('Contact introuvable.');
 		}
-		// Le commercial peut corriger sa fiche (coordonnées, note, questions
-		// découverte) mais pas changer l'issue du RDV : le statut (vendu, déballé,
-		// annulé, à reprogrammer) est réservé aux rôles qui écrivent dans le CRM.
-		if (
-			!canWriteCrm(user) &&
-			args.followUp !== undefined &&
-			args.followUp.status !== contact.followUp?.status
-		) {
-			throw new Error('Non autorisé : ton rôle est en consultation seule sur le CRM.');
-		}
+		// Le commercial peut corriger sa fiche et l'issue de son RDV. Les autres
+		// personnes liées (commercial du binôme) gardent la main sur le suivi ; les
+		// managers écrivent sur leur périmètre. Le contrôle fin est fait plus bas.
 		const isCreator = contact.createdBy === user._id;
 		const myName = `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim().toLowerCase();
 		const isLinked =
-			!!contact.followUp?.commercial && contact.followUp.commercial.trim().toLowerCase() === myName;
+			contact.followUp?.commercialId === user._id ||
+			(!!contact.followUp?.commercial &&
+				contact.followUp.commercial.trim().toLowerCase() === myName);
 		// Le directeur de zone / directeur d'agence peut corriger la fiche d'un
 		// contact de son périmètre (dont la date et « qui a pris le contact »),
 		// même s'il n'en est pas le créateur.
@@ -846,13 +899,6 @@ export const update = mutation({
 			throw new Error('Non autorisé.');
 		}
 		assertRdvNotOnSunday(args.followUp, contact.followUp);
-		if (!isCreator && !canEditScope) {
-			// Commercial lié au RDV : autorisé uniquement à déplacer le RDV.
-			const keys = Object.keys(args).filter((k) => k !== 'contactId');
-			if (keys.some((k) => k !== 'followUp')) {
-				throw new Error('Non autorisé.');
-			}
-		}
 
 		const patch: {
 			name?: string;
@@ -1020,5 +1066,196 @@ export const migrateCommercialIds = internalMutation({
 			dryRun: !!dryRun,
 			details
 		};
+	}
+});
+
+/**
+ * Fusionne une fiche doublon dans une fiche principale.
+ *
+ * La fiche principale garde son identité et complète ses champs vides avec ceux
+ * du doublon. Les ventes, devis et documents du doublon sont réaffectés, puis la
+ * fiche source est archivée avec un lien `mergedInto` : rien n'est perdu et
+ * l'opération reste auditable. Réservé aux managers du périmètre.
+ */
+export const fusionner = mutation({
+	args: {
+		principalId: v.id('contacts'),
+		doublonId: v.id('contacts')
+	},
+	handler: async (ctx, args) => {
+		const user = await getCurrentUser(ctx);
+		if (!canManageEmployes(user)) {
+			throw new Error('Non autorisé : fusion réservée à l’administration.');
+		}
+		if (args.principalId === args.doublonId) {
+			throw new Error('Choisis deux fiches différentes.');
+		}
+		const principal = await ctx.db.get(args.principalId);
+		const doublon = await ctx.db.get(args.doublonId);
+		if (!principal || !doublon) {
+			throw new Error('Contact introuvable.');
+		}
+		if (principal.deletedAt) {
+			throw new Error('La fiche principale est archivée.');
+		}
+
+		// Périmètre : un directeur d'agence ne fusionne que dans son agence. Un
+		// administrateur peut aussi réparer une fiche ancienne sans agence.
+		const checkScope = async (contact: Doc<'contacts'>) => {
+			if (user.role === 'administrateur') return;
+			if (!contact.agencyId) {
+				throw new Error('Fiche sans agence : lance d’abord la réparation des fiches.');
+			}
+			const scopeIds = await visibleAgencyIds(ctx, user);
+			if (scopeIds !== null && !scopeIds.has(contact.agencyId)) {
+				throw new Error('Non autorisé pour cette agence.');
+			}
+		};
+		await checkScope(principal);
+		await checkScope(doublon);
+
+		const recontacts = [...(principal.recontacts ?? []), ...(doublon.recontacts ?? [])].sort(
+			(a, b) => a.date - b.date
+		);
+		const rdvHistory = [...(principal.rdvHistory ?? []), ...(doublon.rdvHistory ?? [])].sort(
+			(a, b) => a.at - b.at
+		);
+		const agencyId = principal.agencyId ?? doublon.agencyId;
+
+		await ctx.db.patch(principal._id, {
+			civilites: principal.civilites ?? doublon.civilites,
+			civilite: principal.civilite ?? doublon.civilite,
+			qualif: principal.qualif ?? doublon.qualif,
+			address: principal.address ?? doublon.address,
+			addressStreet: principal.addressStreet ?? doublon.addressStreet,
+			addressPostalCode: principal.addressPostalCode ?? doublon.addressPostalCode,
+			addressCity: principal.addressCity ?? doublon.addressCity,
+			latitude: principal.latitude ?? doublon.latitude,
+			longitude: principal.longitude ?? doublon.longitude,
+			phone: principal.phone ?? doublon.phone,
+			phoneKey: phoneKeyOf(principal.phone ?? doublon.phone),
+			projet: principal.projet ?? doublon.projet,
+			source: principal.source ?? doublon.source,
+			note: principal.note ?? doublon.note,
+			statut: principal.statut ?? doublon.statut,
+			followUp: principal.followUp ?? doublon.followUp,
+			recontacts,
+			rdvHistory,
+			isClient: !!principal.isClient || !!doublon.isClient,
+			printedAt: principal.printedAt ?? doublon.printedAt,
+			treatedAt: principal.treatedAt ?? doublon.treatedAt,
+			treatedReason: principal.treatedReason ?? doublon.treatedReason,
+			dateContact: principal.dateContact ?? doublon.dateContact,
+			agencyId,
+			createdBy: principal.createdBy ?? doublon.createdBy
+		});
+
+		let ventes = 0;
+		const ventesDoublon = await ctx.db
+			.query('ventes')
+			.withIndex('by_contact', (q) => q.eq('contactId', doublon._id))
+			.collect();
+		for (const vente of ventesDoublon) {
+			await ctx.db.patch(vente._id, {
+				contactId: principal._id,
+				...(vente.agencyId ? {} : { agencyId })
+			});
+			ventes++;
+		}
+
+		let devis = 0;
+		const devisDoublon = await ctx.db
+			.query('devis')
+			.withIndex('by_contact', (q) => q.eq('contactId', doublon._id))
+			.collect();
+		for (const d of devisDoublon) {
+			await ctx.db.patch(d._id, {
+				contactId: principal._id,
+				...(d.agencyId ? {} : { agencyId })
+			});
+			devis++;
+		}
+
+		let documents = 0;
+		const documentsDoublon = await ctx.db
+			.query('documents')
+			.withIndex('by_contact', (q) => q.eq('contactId', doublon._id))
+			.collect();
+		for (const doc of documentsDoublon) {
+			await ctx.db.patch(doc._id, { contactId: principal._id });
+			documents++;
+		}
+
+		// Le doublon est archivé (pas supprimé) et pointe vers la fiche absorbante.
+		await ctx.db.patch(doublon._id, {
+			deletedAt: Date.now(),
+			deletedBy: user._id,
+			mergedInto: principal._id
+		});
+
+		return { principalId: principal._id, ventes, devis, documents };
+	}
+});
+
+/**
+ * Réparation des données : rattache à leur agence les fiches (contacts, ventes,
+ * devis) créées avant que `agencyId` ne soit rempli. Sans agence, une fiche
+ * échappe aux managers, qui ne la voient ni dans les listes ni dans les
+ * statistiques. Réservé aux managers, avec un mode simulation.
+ */
+export const backfillAgency = mutation({
+	args: { dryRun: v.optional(v.boolean()) },
+	handler: async (ctx, { dryRun }) => {
+		const user = await getCurrentUser(ctx);
+		if (!canManageEmployes(user)) {
+			throw new Error('Non autorisé : réservé à l’administration.');
+		}
+		const scopeIds = await visibleAgencyIds(ctx, user);
+		const users = await ctx.db.query('users').collect();
+		const userById = new Map(users.map((u) => [u._id, u]));
+		const contacts = await ctx.db.query('contacts').collect();
+
+		const agencyByContact = new Map<Id<'contacts'>, Id<'agences'>>();
+		let contactsUpdated = 0;
+		for (const contact of contacts) {
+			const creator = contact.createdBy ? userById.get(contact.createdBy) : undefined;
+			const commercial = contact.followUp?.commercialId
+				? userById.get(contact.followUp.commercialId)
+				: undefined;
+			const agencyId = contact.agencyId ?? creator?.agencyId ?? commercial?.agencyId;
+			if (!agencyId) continue;
+			if (scopeIds !== null && !scopeIds.has(agencyId)) continue;
+			agencyByContact.set(contact._id, agencyId);
+			if (contact.agencyId) continue;
+			contactsUpdated++;
+			if (!dryRun) await ctx.db.patch(contact._id, { agencyId });
+		}
+
+		const ventes = await ctx.db.query('ventes').collect();
+		let ventesUpdated = 0;
+		for (const vente of ventes) {
+			if (vente.agencyId) continue;
+			const agencyId =
+				agencyByContact.get(vente.contactId) ?? userById.get(vente.vendeurId)?.agencyId;
+			if (!agencyId) continue;
+			if (scopeIds !== null && !scopeIds.has(agencyId)) continue;
+			ventesUpdated++;
+			if (!dryRun) await ctx.db.patch(vente._id, { agencyId });
+		}
+
+		const devis = await ctx.db.query('devis').collect();
+		let devisUpdated = 0;
+		for (const d of devis) {
+			if (d.agencyId) continue;
+			const agencyId = d.contactId
+				? agencyByContact.get(d.contactId)
+				: userById.get(d.createdBy)?.agencyId;
+			if (!agencyId) continue;
+			if (scopeIds !== null && !scopeIds.has(agencyId)) continue;
+			devisUpdated++;
+			if (!dryRun) await ctx.db.patch(d._id, { agencyId });
+		}
+
+		return { contactsUpdated, ventesUpdated, devisUpdated, dryRun: !!dryRun };
 	}
 });

@@ -8,6 +8,7 @@
 		LoaderCircle,
 		MapPin,
 		Plus,
+		Ruler,
 		Trash2,
 		Wrench
 	} from '@lucide/svelte';
@@ -18,6 +19,7 @@
 	import {
 		CONFORTATION_EMOJI,
 		DATE_POSE_STYLE,
+		DATE_METRAGE_STYLE,
 		EVENT_EMOJI,
 		EVENT_STYLE,
 		EVENT_TYPE_LABEL,
@@ -58,6 +60,7 @@
 	// s'affichent dans l'agenda, sans compter comme des RDV.
 	const ventes = useQuery(api.ventes.listVentes, () => (authState.isAuthenticated ? {} : 'skip'));
 	const removeDatePose = useMutation(api.ventes.removeDatePose);
+	const removeDateMetrage = useMutation(api.ventes.removeDateMetrage);
 
 	// Seul le créateur du RDV (ou le commercial lié, en binôme) peut le déplacer.
 	const myName = $derived(
@@ -137,19 +140,37 @@
 		return map;
 	});
 
-	// Dates de pose : une entrée par date, rattachée à sa vente.
+	// Dates de pose et de métrage : une entrée par date, rattachée à sa vente.
 	const poses = $derived.by((): PoseRow[] =>
-		(ventes.data ?? []).flatMap((v) =>
-			(v.datesPoses ?? []).map((p) => ({
-				id: p.id,
-				venteId: v._id,
-				date: p.date,
-				time: p.time ?? null,
-				note: p.note ?? null,
-				contactName: v.contactName,
-				vendeur: v.vendeurDisplay ?? v.vendeurName ?? null
-			}))
-		)
+		(ventes.data ?? []).flatMap((v) => {
+			const vendeur = v.vendeurDisplay ?? v.vendeurName ?? null;
+			return [
+				...(v.datesPoses ?? []).map((p) => ({
+					id: p.id,
+					kind: 'pose' as const,
+					venteId: v._id,
+					date: p.date,
+					time: p.time ?? null,
+					note: p.note ?? null,
+					contactName: v.contactName,
+					vendeur
+				})),
+				...(v.dateMetrage
+					? [
+							{
+								id: 'metrage',
+								kind: 'metrage' as const,
+								venteId: v._id,
+								date: v.dateMetrage,
+								time: null,
+								note: null,
+								contactName: v.contactName,
+								vendeur
+							}
+						]
+					: [])
+			];
+		})
 	);
 	const posesByDate = $derived.by(() => {
 		const map = new Map<string, PoseRow[]>();
@@ -172,6 +193,7 @@
 
 	type PoseRow = {
 		id: string;
+		kind: 'pose' | 'metrage';
 		venteId: string;
 		date: string;
 		time?: string | null;
@@ -357,14 +379,18 @@
 		if (!p || poseBusy) return;
 		poseBusy = true;
 		try {
-			await removeDatePose({
-				venteId: p.venteId as Id<'ventes'>,
-				datePoseId: p.id
-			});
+			if (p.kind === 'metrage') {
+				await removeDateMetrage({ venteId: p.venteId as Id<'ventes'> });
+			} else {
+				await removeDatePose({
+					venteId: p.venteId as Id<'ventes'>,
+					datePoseId: p.id
+				});
+			}
 			posePreviewOpen = false;
 			posePreview = null;
 		} catch (e) {
-			console.error('Suppression date de pose', e);
+			console.error('Suppression date technique', e);
 		} finally {
 			poseBusy = false;
 		}
@@ -480,6 +506,7 @@
 		{ label: 'RDV', dot: 'bg-brand' },
 		{ label: 'Confortation', dot: 'bg-fuchsia-500' },
 		{ label: 'Pose', dot: 'bg-orange-500' },
+		{ label: 'Métrage', dot: 'bg-teal-500' },
 		{ label: 'Annulé', dot: 'bg-red-500' }
 	];
 
@@ -1487,15 +1514,15 @@
 											onclick={() => openPosePreview(pose)}
 											class={[
 												'absolute z-10 flex flex-col items-start gap-0.5 overflow-hidden rounded-sm px-2 py-1 text-left text-[11px] font-medium',
-												DATE_POSE_STYLE
+												pose.kind === 'metrage' ? DATE_METRAGE_STYLE : DATE_POSE_STYLE
 											].join(' ')}
 											style={blockStyle(block)}
-											title={`Pose — ${pose.contactName}${pose.note ? ` · ${pose.note}` : ''}`}
+											title={`${pose.kind === 'metrage' ? 'Métrage' : 'Pose'} — ${pose.contactName}${pose.note ? ` · ${pose.note}` : ''}`}
 										>
 											<span
 												class="w-full overflow-hidden font-semibold text-ellipsis whitespace-nowrap max-md:overflow-visible max-md:text-[9.5px] max-md:whitespace-normal"
 											>
-												🔧 Pose · {pose.contactName}
+												{pose.kind === 'metrage' ? '📏 Métrage' : '🔧 Pose'} · {pose.contactName}
 											</span>
 											<span class="hidden font-mono text-[10px] leading-none opacity-80 sm:block">
 												{pose.time ?? 'Journée'}
@@ -1731,14 +1758,18 @@
 													e.stopPropagation();
 													openPosePreview(item.pose);
 												}}
-												class={[chipMonth, DATE_POSE_STYLE].join(' ')}
-												title={`Pose — ${item.pose.contactName}${item.pose.note ? ` · ${item.pose.note}` : ''}`}
+												class={[
+													chipMonth,
+													item.pose.kind === 'metrage' ? DATE_METRAGE_STYLE : DATE_POSE_STYLE
+												].join(' ')}
+												title={`${item.pose.kind === 'metrage' ? 'Métrage' : 'Pose'} — ${item.pose.contactName}${item.pose.note ? ` · ${item.pose.note}` : ''}`}
 											>
 												<span class="hidden font-mono text-[10px] opacity-70 sm:block">
 													{item.pose.time ?? ''}
 												</span>
 												<span class="min-w-0 flex-1 truncate"
-													>🔧 Pose · {item.pose.contactName}</span
+													>{item.pose.kind === 'metrage' ? '📏 Métrage' : '🔧 Pose'} · {item.pose
+														.contactName}</span
 												>
 											</button>
 										{:else if item.kind === 'reunion'}
@@ -1881,9 +1912,13 @@
 		<DialogHeader>
 			<DialogTitle class="flex items-center gap-2 text-[14px] font-semibold">
 				<span class="grid size-8 place-items-center rounded-xl bg-card2 text-muted-foreground">
-					<Wrench class="size-4" strokeWidth={1.7} />
+					{#if posePreview?.kind === 'metrage'}
+						<Ruler class="size-4" strokeWidth={1.7} />
+					{:else}
+						<Wrench class="size-4" strokeWidth={1.7} />
+					{/if}
 				</span>
-				Date de pose
+				{posePreview?.kind === 'metrage' ? 'Date de métrage' : 'Date de pose'}
 			</DialogTitle>
 		</DialogHeader>
 		{#if posePreview}

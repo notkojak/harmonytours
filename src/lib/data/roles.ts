@@ -45,9 +45,10 @@ export function canReassignContact(role: string | null | undefined): boolean {
 }
 
 /**
- * Rôles qui peuvent ÉCRIRE dans le CRM (créer/modifier/supprimer contacts,
- * clients et ventes, changer un statut). Le commercial est en consultation
- * seule : il voit ses fiches et ses ventes, il ne les modifie pas.
+ * Rôles qui peuvent ÉCRIRE dans le CRM sur tout leur périmètre (créer/modifier/
+ * supprimer contacts, clients et ventes, changer un statut). Le commercial
+ * n'est pas dans cette liste mais peut modifier ses propres fiches (créateur ou
+ * commercial du RDV) : voir canWriteContact / canWrite côté serveur.
  * Même liste que CRM_WRITE_ROLES côté serveur (convex/permissions.ts).
  */
 export const CRM_WRITE_ROLES = [
